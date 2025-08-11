@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MeetingAIHost (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MeetingAIHost (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
