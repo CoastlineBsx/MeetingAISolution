@@ -1,4 +1,3 @@
-
 #include "pch.h"
 #include <windows.h>
 #include <sddl.h>
@@ -8,8 +7,45 @@
 #include "paths.h"
 #include "sqlite3.h" 
 #include <filesystem> 
+#include "whisper_wrapper.h"  // 新增：包含 whisper 封装
+#include <shlobj.h>      // SHGetFolderPathW
+#include <codecvt>       // 宽/窄字符串转码（仅用于 Win -> UTF-8）
+#include <thread>
+#include <mutex>   // ★ 新增
+static std::once_flag g_model_once2; // ★ 新增：Worker 级只加载一次模型
+
+
+static std::string json_escape(const std::string& s) {
+    std::string o;
+    o.reserve(s.size() + 16);
+    for (unsigned char c : s) {
+        switch (c) {
+        case '\"': o += "\\\""; break;
+        case '\\': o += "\\\\"; break;
+        case '\b': o += "\\b";  break;
+        case '\f': o += "\\f";  break;
+        case '\n': o += "\\n";  break;
+        case '\r': o += "\\r";  break;
+        case '\t': o += "\\t";  break;
+        default:
+            if (c < 0x20) {
+                char buf[7];
+                snprintf(buf, sizeof(buf), "\\u%04x", c);
+                o += buf;
+            }
+            else {
+                o += static_cast<char>(c);
+            }
+        }
+    }
+    return o;
+}
+
+
 // --------- 追加：通用工具 & 退出标志 ----------
 static volatile BOOL g_shutdownRequested = FALSE;
+// 用于回调里把段结果写回 Host
+HANDLE g_pipe_for_callback = NULL;
 
 // 去掉首尾空白
 static inline std::string trim(std::string s) {
@@ -25,6 +61,120 @@ static bool isQuitMessage(const std::string& s) {
     // 粗判：必须包含 "type":"quit"
     return t.find("\"type\"") != std::string::npos &&
         t.find("\"quit\"") != std::string::npos;
+}
+
+// 新增：简单判断是否为转录命令
+static bool isTranscribeMessage(const std::string& s) {
+    auto t = trim(s);
+    return t.find("\"type\"") != std::string::npos &&
+        t.find("\"transcribe_file\"") != std::string::npos;
+}
+
+// 新增：从简单 JSON 中提取文件路径（简化版解析）
+static std::string extractFilePath(const std::string& json) {
+    size_t start = json.find("\"path\":");
+    if (start == std::string::npos) return "";
+    
+    start = json.find("\"", start + 7);
+    if (start == std::string::npos) return "";
+    start++;
+    
+    size_t end = json.find("\"", start);
+    if (end == std::string::npos) return "";
+    
+    return json.substr(start, end - start);
+}
+
+static std::string ResolveModelFileUtf8(const wchar_t* filename) {
+    namespace fs = std::filesystem;
+
+    // ★ 调试期固定路径
+    fs::path baseDir = L"D:\\Microsoft\\Microsoft Visual Studio Projects\\MeetingAISolution\\WorkerNative\\models";
+
+    // ★ 交付时改成：
+    // wchar_t commonAppData[MAX_PATH]{};
+    // if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, commonAppData))) {
+    //     baseDir = fs::path(commonAppData) / L"MeetingAI" / L"models";
+    // }
+
+    fs::path fullPath = baseDir / filename;
+
+    // 转 UTF-8
+    int n = WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string out(n - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, out.data(), n, nullptr, nullptr);
+
+    return out;
+}
+
+// 新增：处理转录命令
+static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
+    std::wcout << L"[Worker] 处理转录命令\n";
+
+    // ★ 仅初始化一次模型（工业做法A）
+    std::call_once(g_model_once2, [&] {
+        std::string modelPathOnce = ResolveModelFileUtf8(L"ggml-small.bin");
+        if (!InitWhisperOnce(modelPathOnce)) {
+            std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
+            DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+        }
+        else {
+            const char* ok = "{\"type\":\"stage\",\"name\":\"model_ready\"}\n";
+            DWORD written; WriteFile(hPipe, ok, (DWORD)strlen(ok), &written, nullptr);
+        }
+        });
+
+
+    // 提取文件路径
+    std::string audioPath = extractFilePath(command);
+    if (audioPath.empty()) {
+        std::string error = "{\"type\":\"error\",\"message\":\"无法解析音频文件路径\"}\n";
+        DWORD written;
+        WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
+        return;
+    }
+    
+    std::wcout << L"[Worker] 音频文件路径: " << audioPath.c_str() << L"\n";
+    
+    // 假设模型路径（你需要根据实际情况调整）
+    //std::string modelPath = "models\\ggml-small.bin";  
+    std::string modelPath = ResolveModelFileUtf8(L"ggml-small.bin");
+    g_pipe_for_callback = hPipe;
+    // 执行转录
+    std::vector<WhisperSegment> segments;
+    bool success = TranscribeAudioFile(modelPath, audioPath, segments);
+    g_pipe_for_callback = NULL; // 清理
+    if (!success) {
+        std::string error = "{\"type\":\"error\",\"message\":\"转录失败\"}\n";
+        DWORD written;
+        WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
+        return;
+    }
+    
+    // 发送每个转录片段
+    for (const auto& segment : segments) {
+        // 插入数据库
+        InsertTranscript("Unknown", segment.text, segment.start_time);
+        
+        // 发送给 Host
+        std::string response = std::string("{\"type\":\"asr_segment\",\"text\":\"") +
+            json_escape(segment.text) +
+            "\",\"t0_ms\":" + std::to_string((int)(segment.start_time * 1000)) +
+            ",\"t1_ms\":" + std::to_string((int)(segment.end_time * 1000)) + "}\n";
+
+
+            
+        DWORD written;
+        WriteFile(hPipe, response.data(), static_cast<DWORD>(response.size()), &written, nullptr);
+        
+        std::wcout << L"[Worker] 发送片段: " << segment.text.c_str() << L"\n";
+    }
+    
+    // 发送完成信号
+    std::string complete = "{\"type\":\"transcribe_complete\",\"segments\":" + 
+        std::to_string(segments.size()) + "}\n";
+    DWORD written;
+    WriteFile(hPipe, complete.data(), static_cast<DWORD>(complete.size()), &written, nullptr);
 }
 
 // 处理控制台关闭/注销/关机等信号，优雅退出
@@ -75,26 +225,7 @@ int wmain() {
     bool ok = InsertTranscript("system", "worker started", 0.0);
     std::cout << "[DB] insert result = " << (ok ? "ok" : "fail") << "\n";
 
-    //// ★ 新增 3: 统计当前记录数
-    //{
-    //    std::wstring dbw = Utf8ToW(GetDatabasePath());
-    //    sqlite3* db = nullptr;
-    //    if (sqlite3_open16(dbw.c_str(), &db) == SQLITE_OK) {
-    //        sqlite3_stmt* st = nullptr;
-    //        if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM transcripts;", -1, &st, nullptr) == SQLITE_OK) {
-    //            if (sqlite3_step(st) == SQLITE_ROW) {
-    //                int cnt = sqlite3_column_int(st, 0);
-    //                std::wcout << L"[DB] 当前总记录数: " << cnt << L"\n";
-    //            }
-    //            sqlite3_finalize(st);
-    //        }
-    //        sqlite3_close(db);
-    //    }
-    //    else {
-    //        std::wcerr << L"[Worker] 无法打开数据库！\n";
-    //    }
-    //}
-// ★ 新增 3：打印 DB 路径、是否存在、记录总数（ASCII 输出，避免中文编码问题）
+    // ★ 新增 3：打印 DB 路径、是否存在、记录总数（ASCII 输出，避免中文编码问题）
     {
         std::string dbPath = GetDatabasePath();
         std::cout << "[DB] path = " << dbPath << "\n";
@@ -234,7 +365,13 @@ int wmain() {
                     DWORD w = 0; WriteFile(hPipe, bye.data(), (DWORD)bye.size(), &w, nullptr);
                     break;
                 }
-
+                
+                // ---- 新增：转录命令处理 ----
+                if (isTranscribeMessage(buffer)) {
+                    handleTranscribeCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
 
                 // 正常回显
                 std::string resp = "{\"type\":\"pong\",\"echo\":\"" + buffer + "\"}\n";

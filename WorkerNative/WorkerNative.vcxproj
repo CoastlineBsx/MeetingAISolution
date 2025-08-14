@@ -106,19 +106,22 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;SQLITE_ENABLE_FTS5;SQLITE_THREADSAFE=1;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions);SQLITE_THREADSAFE=1;SQLITE_ENABLE_FTS5;SQLITE_ENABLE_JSON1;SQLITE_DEFAULT_WAL_SYNCHRONOUS=1</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>"$(ProjectDir)Third Party Tools\sqlite"</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir)Third Party Tools\sqlite;$(ProjectDir)Third Party Tools\whisper\$(Configuration);</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(ProjectDir)Third Party Tools\whisper\$(Configuration)\lib;</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib</AdditionalDependencies>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -131,17 +134,23 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;SQLITE_ENABLE_FTS5;SQLITE_THREADSAFE=1;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions);SQLITE_THREADSAFE=1;SQLITE_ENABLE_FTS5;SQLITE_ENABLE_JSON1;SQLITE_DEFAULT_WAL_SYNCHRONOUS=1</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>"$(ProjectDir)Third Party Tools\sqlite"</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Third Party Tools\sqlite;$(ProjectDir)Third Party Tools\whisper\$(Configuration);</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <OpenMPSupport>true</OpenMPSupport>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)Third Party Tools\whisper\$(Configuration)\lib;</AdditionalLibraryDirectories>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -158,6 +167,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
       <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsC</CompileAs>
     </ClCompile>
+    <ClCompile Include="whisper_wrapper.cpp" />
     <ClCompile Include="WorkerNative.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -165,6 +175,32 @@
     <ClInclude Include="paths.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Third Party Tools\sqlite\sqlite3.h" />
+    <ClInclude Include="Third Party Tools\whisper\ggml-alloc.h" />
+    <ClInclude Include="Third Party Tools\whisper\ggml-backend.h" />
+    <ClInclude Include="Third Party Tools\whisper\ggml-common.h" />
+    <ClInclude Include="Third Party Tools\whisper\ggml-cpu.h" />
+    <ClInclude Include="Third Party Tools\whisper\ggml.h" />
+    <ClInclude Include="Third Party Tools\whisper\release\ggml-alloc.h" />
+    <ClInclude Include="Third Party Tools\whisper\release\ggml-backend.h" />
+    <ClInclude Include="Third Party Tools\whisper\release\ggml-common.h" />
+    <ClInclude Include="Third Party Tools\whisper\release\ggml-cpu.h" />
+    <ClInclude Include="Third Party Tools\whisper\release\ggml.h" />
+    <ClInclude Include="Third Party Tools\whisper\release\whisper.h" />
+    <ClInclude Include="Third Party Tools\whisper\whisper.h" />
+    <ClInclude Include="whisper_wrapper.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="Third Party Tools\whisper\debug\lib\ggml-base.lib" />
+    <Library Include="Third Party Tools\whisper\debug\lib\ggml-cpu.lib" />
+    <Library Include="Third Party Tools\whisper\debug\lib\ggml.lib" />
+    <Library Include="Third Party Tools\whisper\debug\lib\whisper.lib" />
+    <Library Include="Third Party Tools\whisper\release\lib\ggml-base.lib" />
+    <Library Include="Third Party Tools\whisper\release\lib\ggml-cpu.lib" />
+    <Library Include="Third Party Tools\whisper\release\lib\ggml.lib" />
+    <Library Include="Third Party Tools\whisper\release\lib\whisper.lib" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="model\ggml-small.bin" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
