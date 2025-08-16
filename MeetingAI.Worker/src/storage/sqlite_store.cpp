@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "db.h"
+#include "db.hpp"
 #include "paths.h"
 #include "sqlite3.h"
 #include <iostream>

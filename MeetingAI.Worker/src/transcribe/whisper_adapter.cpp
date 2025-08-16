@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "whisper_wrapper.h"
+#include "transcriber.hpp"
 #include "whisper.h"
 #include <iostream>
 #include <fstream>

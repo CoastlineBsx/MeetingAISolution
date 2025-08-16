@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace MeetingAIHost;
+namespace MeetingAI.Host;
 
 // System.Text.Json 的 Source Generator 上下文
 [JsonSerializable(typeof(PingMessage))]

@@ -1,0 +1,157 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="models">
+      <UniqueIdentifier>{c4d0e881-483b-4d93-a066-42f2bc2cb4a1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include">
+      <UniqueIdentifier>{d782059b-67c0-4fe2-9728-b60b661361db}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party">
+      <UniqueIdentifier>{0db581fc-4e0f-417f-b0b0-46ee63e114af}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{56c3449f-9c49-4184-9c4d-2094ab16a71f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ipc">
+      <UniqueIdentifier>{c15a2d00-47e8-4850-a2d6-73fa58de2345}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\storage">
+      <UniqueIdentifier>{d0a74cbb-c7ba-4aed-beec-819498779a0b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\transcribe">
+      <UniqueIdentifier>{2a47510f-d2db-4225-af89-99a5b85ac45f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\util">
+      <UniqueIdentifier>{43c24efa-b871-48e8-9734-388c0c124d3c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="configs">
+      <UniqueIdentifier>{4cbd1c90-42fb-4a5b-a0a5-01156e917559}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai">
+      <UniqueIdentifier>{f8e4afc1-0ad1-43f1-9ed0-e0d7f59db711}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\whisper">
+      <UniqueIdentifier>{a5a7ce23-1ab4-45ca-8cd4-1b860c59d72b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\sqlite">
+      <UniqueIdentifier>{4a1da69c-a9e3-408a-8699-7101cc8f5f4c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\whisper\debug">
+      <UniqueIdentifier>{e5ecae05-06e5-4827-8697-1a9bb715df9b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\whisper\release">
+      <UniqueIdentifier>{d2afd235-49df-478a-af5d-bc2a8a3183ec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\whisper\debug\lib">
+      <UniqueIdentifier>{639c5ac8-a8ac-4974-b822-780c73e2a718}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\whisper\release\lib">
+      <UniqueIdentifier>{2cad56fd-1081-4510-8378-fc25d5ce369d}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\util\paths.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
+    <ClCompile Include="src\util\pch.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
+    <ClCompile Include="src\transcribe\whisper_adapter.cpp">
+      <Filter>src\transcribe</Filter>
+    </ClCompile>
+    <ClCompile Include="src\storage\sqlite_store.cpp">
+      <Filter>src\storage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\sqlite\sqlite3.c">
+      <Filter>third_party\sqlite</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\meetingai\transcriber.hpp">
+      <Filter>include\meetingai</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\paths.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\pch.h">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\meetingai\db.hpp">
+      <Filter>include\meetingai</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\sqlite\sqlite3.h">
+      <Filter>third_party\sqlite</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\debug\ggml.h">
+      <Filter>third_party\whisper\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\debug\ggml-alloc.h">
+      <Filter>third_party\whisper\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\debug\ggml-backend.h">
+      <Filter>third_party\whisper\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\debug\ggml-common.h">
+      <Filter>third_party\whisper\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\debug\ggml-cpu.h">
+      <Filter>third_party\whisper\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\debug\whisper.h">
+      <Filter>third_party\whisper\debug</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\release\ggml.h">
+      <Filter>third_party\whisper\release</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\release\ggml-alloc.h">
+      <Filter>third_party\whisper\release</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\release\ggml-backend.h">
+      <Filter>third_party\whisper\release</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\release\ggml-common.h">
+      <Filter>third_party\whisper\release</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\release\ggml-cpu.h">
+      <Filter>third_party\whisper\release</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\whisper\release\whisper.h">
+      <Filter>third_party\whisper\release</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="models\ggml-small.bin">
+      <Filter>models</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="third_party\whisper\debug\lib\ggml.lib">
+      <Filter>third_party\whisper\debug\lib</Filter>
+    </Library>
+    <Library Include="third_party\whisper\debug\lib\ggml-base.lib">
+      <Filter>third_party\whisper\debug\lib</Filter>
+    </Library>
+    <Library Include="third_party\whisper\debug\lib\ggml-cpu.lib">
+      <Filter>third_party\whisper\debug\lib</Filter>
+    </Library>
+    <Library Include="third_party\whisper\debug\lib\whisper.lib">
+      <Filter>third_party\whisper\debug\lib</Filter>
+    </Library>
+    <Library Include="third_party\whisper\release\lib\ggml.lib">
+      <Filter>third_party\whisper\release\lib</Filter>
+    </Library>
+    <Library Include="third_party\whisper\release\lib\ggml-base.lib">
+      <Filter>third_party\whisper\release\lib</Filter>
+    </Library>
+    <Library Include="third_party\whisper\release\lib\ggml-cpu.lib">
+      <Filter>third_party\whisper\release\lib</Filter>
+    </Library>
+    <Library Include="third_party\whisper\release\lib\whisper.lib">
+      <Filter>third_party\whisper\release\lib</Filter>
+    </Library>
+  </ItemGroup>
+</Project>

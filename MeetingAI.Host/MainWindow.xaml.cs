@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Windows.Storage.Pickers;  // 新增：文件选择器
 
-namespace MeetingAIHost;
+namespace MeetingAI.Host;
 
 public sealed partial class MainWindow : Window
 {
@@ -143,23 +143,22 @@ public sealed partial class MainWindow : Window
     }
 
 
-    // ★ 新增：自动定位 WorkerNative.exe
+    // ★ 新增：自动定位 MeetingAI.Worker.exe
     private string? FindWorkerExe()
     {
         var baseDir = AppContext.BaseDirectory;
         var candidates = new List<string>();
 
         // 1) 当前运行目录
-        candidates.Add(Path.Combine(baseDir, "WorkerNative.exe"));
+        candidates.Add(Path.Combine(baseDir, "MeetingAI.Worker.exe"));
 
-        // 2) 如果 Host 误从打包项目(MeetingAIHost)启动，映射到 Unpackaged 的 bin
-        //    ...\MeetingAIHost\bin\... -> ...\MeetingAIHost.Unpackaged\bin\...
+
         var altFromPackaged = baseDir.Replace(
-            Path.DirectorySeparatorChar + "MeetingAIHost" + Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar,
-            Path.DirectorySeparatorChar + "MeetingAIHost.Unpackaged" + Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar,
+            Path.DirectorySeparatorChar + "MeetingAI.Host" + Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar,
+            Path.DirectorySeparatorChar + "MeetingAI.Host" + Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar,
             StringComparison.OrdinalIgnoreCase
         );
-        candidates.Add(Path.Combine(altFromPackaged, "WorkerNative.exe"));
+        candidates.Add(Path.Combine(altFromPackaged, "MeetingAI.Worker.exe"));
 
         // 3) 往上几级做一次有限搜索（例如解决方案根）
         var roots = new[]
@@ -173,7 +172,7 @@ public sealed partial class MainWindow : Window
             {
                 if (Directory.Exists(r))
                 {
-                    var hit = Directory.EnumerateFiles(r, "WorkerNative.exe", SearchOption.AllDirectories)
+                    var hit = Directory.EnumerateFiles(r, "MeetingAI.Worker.exe", SearchOption.AllDirectories)
                         .FirstOrDefault();
                     if (!string.IsNullOrEmpty(hit)) candidates.Add(hit);
                 }
@@ -184,7 +183,7 @@ public sealed partial class MainWindow : Window
         var found = candidates.FirstOrDefault(File.Exists);
         if (found == null)
         {
-            OutputBox.Text += "[Host] 未找到 WorkerNative.exe。\n候选路径（依次尝试）：\n"
+            OutputBox.Text += "[Host] 未找到 MeetingAI.Worker.exe。\n候选路径（依次尝试）：\n"
                               + string.Join("\n", candidates.Distinct()) + "\n";
         }
         else
@@ -209,7 +208,7 @@ public sealed partial class MainWindow : Window
             var workerPath = FindWorkerExe();
             if (string.IsNullOrEmpty(workerPath))
             {
-                OutputBox.Text += "[Host] 请确认已生成 Worker，并把 WorkerNative.exe 复制到 Host 的输出目录，或按提示的候选路径检查。\n";
+                OutputBox.Text += "[Host] 请确认已生成 Worker，并把 MeetingAI.Worker.exe 复制到 Host 的输出目录，或按提示的候选路径检查。\n";
                 return;
             }
 

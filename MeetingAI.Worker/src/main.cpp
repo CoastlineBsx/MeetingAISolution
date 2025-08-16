@@ -3,11 +3,11 @@
 #include <sddl.h>
 #include <iostream>
 #include <string>
-#include "db.h"
+#include "db.hpp"
 #include "paths.h"
 #include "sqlite3.h" 
 #include <filesystem> 
-#include "whisper_wrapper.h"  // 新增：包含 whisper 封装
+#include "transcriber.hpp" // 新增：包含 whisper 封装
 #include <shlobj.h>      // SHGetFolderPathW
 #include <codecvt>       // 宽/窄字符串转码（仅用于 Win -> UTF-8）
 #include <thread>

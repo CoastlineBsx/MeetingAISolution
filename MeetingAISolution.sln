@@ -3,12 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36401.2
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeetingAIHost", "MeetingAIHost.Unpackaged\MeetingAIHost.csproj", "{1510EB75-48F4-547A-27FC-641C0107CD89}"
-	ProjectSection(ProjectDependencies) = postProject
-		{6110A05F-5D95-4C45-986A-4B1CB01AC71C} = {6110A05F-5D95-4C45-986A-4B1CB01AC71C}
-	EndProjectSection
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MeetingAI.Worker", "MeetingAI.Worker\MeetingAI.Worker.vcxproj", "{6110A05F-5D95-4C45-986A-4B1CB01AC71C}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WorkerNative", "WorkerNative\WorkerNative.vcxproj", "{6110A05F-5D95-4C45-986A-4B1CB01AC71C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeetingAI.Host", "MeetingAI.Host\MeetingAI.Host.csproj", "{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -20,24 +17,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|ARM64.ActiveCfg = Debug|ARM64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|ARM64.Build.0 = Debug|ARM64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|ARM64.Deploy.0 = Debug|ARM64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|x64.ActiveCfg = Debug|x64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|x64.Build.0 = Debug|x64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|x64.Deploy.0 = Debug|x64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|x86.ActiveCfg = Debug|x86
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|x86.Build.0 = Debug|x86
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Debug|x86.Deploy.0 = Debug|x86
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|ARM64.ActiveCfg = Release|ARM64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|ARM64.Build.0 = Release|ARM64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|ARM64.Deploy.0 = Release|ARM64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|x64.ActiveCfg = Release|x64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|x64.Build.0 = Release|x64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|x64.Deploy.0 = Release|x64
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|x86.ActiveCfg = Release|x86
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|x86.Build.0 = Release|x86
-		{1510EB75-48F4-547A-27FC-641C0107CD89}.Release|x86.Deploy.0 = Release|x86
 		{6110A05F-5D95-4C45-986A-4B1CB01AC71C}.Debug|ARM64.ActiveCfg = Debug|x64
 		{6110A05F-5D95-4C45-986A-4B1CB01AC71C}.Debug|ARM64.Build.0 = Debug|x64
 		{6110A05F-5D95-4C45-986A-4B1CB01AC71C}.Debug|x64.ActiveCfg = Debug|x64
@@ -50,6 +29,18 @@ Global
 		{6110A05F-5D95-4C45-986A-4B1CB01AC71C}.Release|x64.Build.0 = Release|x64
 		{6110A05F-5D95-4C45-986A-4B1CB01AC71C}.Release|x86.ActiveCfg = Release|Win32
 		{6110A05F-5D95-4C45-986A-4B1CB01AC71C}.Release|x86.Build.0 = Release|Win32
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Debug|ARM64.Build.0 = Debug|ARM64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Debug|x64.ActiveCfg = Debug|x64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Debug|x64.Build.0 = Debug|x64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Debug|x86.ActiveCfg = Debug|x86
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Debug|x86.Build.0 = Debug|x86
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Release|ARM64.ActiveCfg = Release|ARM64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Release|ARM64.Build.0 = Release|ARM64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Release|x64.ActiveCfg = Release|x64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Release|x64.Build.0 = Release|x64
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Release|x86.ActiveCfg = Release|x86
+		{5E1694C9-C44E-47BA-7FB1-98CA6C1A6806}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
