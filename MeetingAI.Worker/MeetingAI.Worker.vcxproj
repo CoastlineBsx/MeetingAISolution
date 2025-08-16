@@ -190,6 +190,7 @@
   <ItemGroup>
     <ClInclude Include="include\meetingai\db.hpp" />
     <ClInclude Include="include\meetingai\transcriber.hpp" />
+    <ClInclude Include="include\meetingai\util\1.h" />
     <ClInclude Include="src\util\paths.h" />
     <ClInclude Include="src\util\pch.h" />
     <ClInclude Include="third_party\sqlite\sqlite3.h" />

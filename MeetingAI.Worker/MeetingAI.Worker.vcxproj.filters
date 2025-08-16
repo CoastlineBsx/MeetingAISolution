@@ -49,6 +49,24 @@
     <Filter Include="third_party\whisper\release\lib">
       <UniqueIdentifier>{2cad56fd-1081-4510-8378-fc25d5ce369d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\meetingai\util">
+      <UniqueIdentifier>{0da0aadb-bb99-4b67-a03d-dbe117144187}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\app">
+      <UniqueIdentifier>{7a558aa6-9fc6-40bb-beb8-1e3621a3f7cf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\ipc">
+      <UniqueIdentifier>{d6ba3d5d-bdc3-42e8-8c56-4251b909f225}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\proto">
+      <UniqueIdentifier>{f25fcddf-200c-4c00-8c00-75d9f9d70953}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\storage">
+      <UniqueIdentifier>{21773904-8f7f-474f-80e3-5481f178f019}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\transcribe">
+      <UniqueIdentifier>{05e77de1-73cb-4722-87ee-641199fd4709}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\util\paths.cpp">
@@ -121,6 +139,9 @@
     </ClInclude>
     <ClInclude Include="third_party\whisper\release\whisper.h">
       <Filter>third_party\whisper\release</Filter>
+    </ClInclude>
+    <ClInclude Include="include\meetingai\util\1.h">
+      <Filter>include\meetingai\util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
