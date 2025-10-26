@@ -115,13 +115,13 @@
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)include\meetingai;$(ProjectDir)src\util;$(ProjectDir)third_party\sqlite;$(ProjectDir)third_party\whisper\$(Configuration)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\$(Configuration)\lib;</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);</AdditionalLibraryDirectories>
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib</AdditionalDependencies>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
@@ -141,7 +141,7 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)include\meetingai;$(ProjectDir)src\util;$(ProjectDir)third_party\sqlite;$(ProjectDir)third_party\whisper\$(Configuration)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <OpenMPSupport>true</OpenMPSupport>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -151,74 +151,63 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\$(Configuration)\lib;</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\main.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+    <ClCompile Include="src\ipc\pipe_security.cpp" />
+    <ClCompile Include="src\main\main.cpp" />
+    <ClCompile Include="src\pch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
     </ClCompile>
+    <ClCompile Include="src\proto\command_parser.cpp" />
     <ClCompile Include="src\storage\sqlite_store.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="src\transcribe\whisper_adapter.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="src\transcribe\whisper_transcriber.cpp" />
+    <ClCompile Include="src\util\logging.cpp" />
     <ClCompile Include="src\util\paths.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="src\util\pch.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="third_party\sqlite\sqlite3.c">
+    <ClCompile Include="third_party\sqlite\src\sqlite3.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-      </PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-      </PrecompiledHeaderFile>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\meetingai\db.hpp" />
-    <ClInclude Include="include\meetingai\transcriber.hpp" />
-    <ClInclude Include="include\meetingai\util\1.h" />
-    <ClInclude Include="src\util\paths.h" />
-    <ClInclude Include="src\util\pch.h" />
-    <ClInclude Include="third_party\sqlite\sqlite3.h" />
-    <ClInclude Include="third_party\whisper\debug\ggml-alloc.h" />
-    <ClInclude Include="third_party\whisper\debug\ggml-backend.h" />
-    <ClInclude Include="third_party\whisper\debug\ggml-common.h" />
-    <ClInclude Include="third_party\whisper\debug\ggml-cpu.h" />
-    <ClInclude Include="third_party\whisper\debug\ggml.h" />
-    <ClInclude Include="third_party\whisper\debug\whisper.h" />
-    <ClInclude Include="third_party\whisper\release\ggml-alloc.h" />
-    <ClInclude Include="third_party\whisper\release\ggml-backend.h" />
-    <ClInclude Include="third_party\whisper\release\ggml-common.h" />
-    <ClInclude Include="third_party\whisper\release\ggml-cpu.h" />
-    <ClInclude Include="third_party\whisper\release\ggml.h" />
-    <ClInclude Include="third_party\whisper\release\whisper.h" />
+    <ClInclude Include="include\meetingai\ipc\pipe_security.h" />
+    <ClInclude Include="include\meetingai\proto\command_parser.h" />
+    <ClInclude Include="include\meetingai\storage\database.hpp" />
+    <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
+    <ClInclude Include="include\meetingai\util\logging.h" />
+    <ClInclude Include="include\meetingai\util\paths.h" />
+    <ClInclude Include="src\pch.h" />
+    <ClInclude Include="third_party\sqlite\include\sqlite3.h" />
+    <ClInclude Include="third_party\whisper\include\ggml-alloc.h" />
+    <ClInclude Include="third_party\whisper\include\ggml-backend.h" />
+    <ClInclude Include="third_party\whisper\include\ggml-common.h" />
+    <ClInclude Include="third_party\whisper\include\ggml-cpu.h" />
+    <ClInclude Include="third_party\whisper\include\ggml.h" />
+    <ClInclude Include="third_party\whisper\include\whisper.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="models\ggml-small.bin" />
   </ItemGroup>
   <ItemGroup>
-    <Library Include="third_party\whisper\debug\lib\ggml-base.lib" />
-    <Library Include="third_party\whisper\debug\lib\ggml-cpu.lib" />
-    <Library Include="third_party\whisper\debug\lib\ggml.lib" />
-    <Library Include="third_party\whisper\debug\lib\whisper.lib" />
-    <Library Include="third_party\whisper\release\lib\ggml-base.lib" />
-    <Library Include="third_party\whisper\release\lib\ggml-cpu.lib" />
-    <Library Include="third_party\whisper\release\lib\ggml.lib" />
-    <Library Include="third_party\whisper\release\lib\whisper.lib" />
+    <Library Include="third_party\whisper\lib\x64\Debug\ggml-base.lib" />
+    <Library Include="third_party\whisper\lib\x64\Debug\ggml-cpu.lib" />
+    <Library Include="third_party\whisper\lib\x64\Debug\ggml.lib" />
+    <Library Include="third_party\whisper\lib\x64\Debug\whisper.lib" />
+    <Library Include="third_party\whisper\lib\x64\Release\ggml-base.lib" />
+    <Library Include="third_party\whisper\lib\x64\Release\ggml-cpu.lib" />
+    <Library Include="third_party\whisper\lib\x64\Release\ggml.lib" />
+    <Library Include="third_party\whisper\lib\x64\Release\whisper.lib" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

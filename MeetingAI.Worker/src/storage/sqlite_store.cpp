@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "db.hpp"
+#include "database.hpp"
 #include "paths.h"
 #include "sqlite3.h"
 #include <iostream>
@@ -40,7 +40,7 @@ static bool ExecSQL(sqlite3* db, const char* sql) {
         return false;
     }
     else {
-        std::cerr << "[DB] open path = " << GetDatabasePath() << "\n";
+        std::cerr << "[DB] open path = " << meetingai::util::getDatabasePath() << "\n";
         DumpDbPath(db);  // 打印数据库文件路径信息
     }
     return true;
@@ -49,7 +49,7 @@ static bool ExecSQL(sqlite3* db, const char* sql) {
 bool InitDatabaseOnce() {
     // 用 UTF-8 打开（跨平台更稳）
     sqlite3* db = nullptr;
-    const std::string db8 = GetDatabasePath();
+    const std::string db8 = meetingai::util::getDatabasePath();
     if (sqlite3_open(db8.c_str(), &db) != SQLITE_OK) {
         std::cerr << "[DB] open failed: " << sqlite3_errmsg(db) << "\n";
         return false;
@@ -172,7 +172,7 @@ bool InsertTranscript(const std::string& speaker,
     const std::string& text,
     double timestamp) {
     sqlite3* db = nullptr;
-    const std::string db8 = GetDatabasePath();
+    const std::string db8 = meetingai::util::getDatabasePath();
     if (sqlite3_open(db8.c_str(), &db) != SQLITE_OK) {
         std::cerr << "[DB] open failed: " << sqlite3_errmsg(db) << "\n";
         return false;

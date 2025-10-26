@@ -3,7 +3,7 @@
 #include <sddl.h>
 #include <iostream>
 #include <string>
-#include "db.hpp"
+#include "database.hpp"
 #include "paths.h"
 #include "sqlite3.h" 
 #include <filesystem> 
@@ -12,34 +12,41 @@
 #include <codecvt>       // 宽/窄字符串转码（仅用于 Win -> UTF-8）
 #include <thread>
 #include <mutex>   // ★ 新增
+#include "paths.h"
+#include "command_parser.h"
+#include "logging.h"
+#include "pipe_security.h"
+
+
+
 static std::once_flag g_model_once2; // ★ 新增：Worker 级只加载一次模型
 
-
-static std::string json_escape(const std::string& s) {
-    std::string o;
-    o.reserve(s.size() + 16);
-    for (unsigned char c : s) {
-        switch (c) {
-        case '\"': o += "\\\""; break;
-        case '\\': o += "\\\\"; break;
-        case '\b': o += "\\b";  break;
-        case '\f': o += "\\f";  break;
-        case '\n': o += "\\n";  break;
-        case '\r': o += "\\r";  break;
-        case '\t': o += "\\t";  break;
-        default:
-            if (c < 0x20) {
-                char buf[7];
-                snprintf(buf, sizeof(buf), "\\u%04x", c);
-                o += buf;
-            }
-            else {
-                o += static_cast<char>(c);
-            }
-        }
-    }
-    return o;
-}
+//
+//static std::string json_escape(const std::string& s) {
+//    std::string o;
+//    o.reserve(s.size() + 16);
+//    for (unsigned char c : s) {
+//        switch (c) {
+//        case '\"': o += "\\\""; break;
+//        case '\\': o += "\\\\"; break;
+//        case '\b': o += "\\b";  break;
+//        case '\f': o += "\\f";  break;
+//        case '\n': o += "\\n";  break;
+//        case '\r': o += "\\r";  break;
+//        case '\t': o += "\\t";  break;
+//        default:
+//            if (c < 0x20) {
+//                char buf[7];
+//                snprintf(buf, sizeof(buf), "\\u%04x", c);
+//                o += buf;
+//            }
+//            else {
+//                o += static_cast<char>(c);
+//            }
+//        }
+//    }
+//    return o;
+//}
 
 
 // --------- 追加：通用工具 & 退出标志 ----------
@@ -47,65 +54,65 @@ static volatile BOOL g_shutdownRequested = FALSE;
 // 用于回调里把段结果写回 Host
 HANDLE g_pipe_for_callback = NULL;
 
-// 去掉首尾空白
-static inline std::string trim(std::string s) {
-    size_t a = s.find_first_not_of(" \t\r\n");
-    size_t b = s.find_last_not_of(" \t\r\n");
-    if (a == std::string::npos) return "";
-    return s.substr(a, b - a + 1);
-}
+//// 去掉首尾空白
+//static inline std::string trim(std::string s) {
+//    size_t a = s.find_first_not_of(" \t\r\n");
+//    size_t b = s.find_last_not_of(" \t\r\n");
+//    if (a == std::string::npos) return "";
+//    return s.substr(a, b - a + 1);
+//}
+//
+//// 简单判断是否为 {"type":"quit"}（容忍空白/额外字段）
+//static bool isQuitMessage(const std::string& s) {
+//    auto t = trim(s);
+//    // 粗判：必须包含 "type":"quit"
+//    return t.find("\"type\"") != std::string::npos &&
+//        t.find("\"quit\"") != std::string::npos;
+//}
 
-// 简单判断是否为 {"type":"quit"}（容忍空白/额外字段）
-static bool isQuitMessage(const std::string& s) {
-    auto t = trim(s);
-    // 粗判：必须包含 "type":"quit"
-    return t.find("\"type\"") != std::string::npos &&
-        t.find("\"quit\"") != std::string::npos;
-}
+//// 新增：简单判断是否为转录命令
+//static bool isTranscribeMessage(const std::string& s) {
+//    auto t = trim(s);
+//    return t.find("\"type\"") != std::string::npos &&
+//        t.find("\"transcribe_file\"") != std::string::npos;
+//}
 
-// 新增：简单判断是否为转录命令
-static bool isTranscribeMessage(const std::string& s) {
-    auto t = trim(s);
-    return t.find("\"type\"") != std::string::npos &&
-        t.find("\"transcribe_file\"") != std::string::npos;
-}
-
-// 新增：从简单 JSON 中提取文件路径（简化版解析）
-static std::string extractFilePath(const std::string& json) {
-    size_t start = json.find("\"path\":");
-    if (start == std::string::npos) return "";
-    
-    start = json.find("\"", start + 7);
-    if (start == std::string::npos) return "";
-    start++;
-    
-    size_t end = json.find("\"", start);
-    if (end == std::string::npos) return "";
-    
-    return json.substr(start, end - start);
-}
-
-static std::string ResolveModelFileUtf8(const wchar_t* filename) {
-    namespace fs = std::filesystem;
-
-    // ★ 调试期固定路径
-    fs::path baseDir = L"D:\\Microsoft\\Microsoft Visual Studio Projects\\MeetingAISolution\\WorkerNative\\models";
-
-    // ★ 交付时改成：
-    // wchar_t commonAppData[MAX_PATH]{};
-    // if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, commonAppData))) {
-    //     baseDir = fs::path(commonAppData) / L"MeetingAI" / L"models";
-    // }
-
-    fs::path fullPath = baseDir / filename;
-
-    // 转 UTF-8
-    int n = WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string out(n - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, out.data(), n, nullptr, nullptr);
-
-    return out;
-}
+//// 新增：从简单 JSON 中提取文件路径（简化版解析）
+//static std::string extractFilePath(const std::string& json) {
+//    size_t start = json.find("\"path\":");
+//    if (start == std::string::npos) return "";
+//    
+//    start = json.find("\"", start + 7);
+//    if (start == std::string::npos) return "";
+//    start++;
+//    
+//    size_t end = json.find("\"", start);
+//    if (end == std::string::npos) return "";
+//    
+//    return json.substr(start, end - start);
+//}
+//
+//static std::string ResolveModelFileUtf8(const wchar_t* filename) {
+//    namespace fs = std::filesystem;
+//
+//    // ★ 调试期固定路径
+//    fs::path baseDir = L"D:\\Microsoft\\Microsoft Visual Studio Projects\\MeetingAISolution\\WorkerNative\\models";
+//
+//    // ★ 交付时改成：
+//    // wchar_t commonAppData[MAX_PATH]{};
+//    // if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, commonAppData))) {
+//    //     baseDir = fs::path(commonAppData) / L"MeetingAI" / L"models";
+//    // }
+//
+//    fs::path fullPath = baseDir / filename;
+//
+//    // 转 UTF-8
+//    int n = WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, nullptr, 0, nullptr, nullptr);
+//    std::string out(n - 1, '\0');
+//    WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, out.data(), n, nullptr, nullptr);
+//
+//    return out;
+//}
 
 // 新增：处理转录命令
 static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
@@ -113,7 +120,7 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
 
     // ★ 仅初始化一次模型（工业做法A）
     std::call_once(g_model_once2, [&] {
-        std::string modelPathOnce = ResolveModelFileUtf8(L"ggml-small.bin");
+        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-small.bin");
         if (!InitWhisperOnce(modelPathOnce)) {
             std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
             DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
@@ -126,7 +133,7 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
 
 
     // 提取文件路径
-    std::string audioPath = extractFilePath(command);
+    std::string audioPath = meetingai::proto::extractPath(command);
     if (audioPath.empty()) {
         std::string error = "{\"type\":\"error\",\"message\":\"无法解析音频文件路径\"}\n";
         DWORD written;
@@ -138,7 +145,7 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
     
     // 假设模型路径（你需要根据实际情况调整）
     //std::string modelPath = "models\\ggml-small.bin";  
-    std::string modelPath = ResolveModelFileUtf8(L"ggml-small.bin");
+    std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-small.bin");
     g_pipe_for_callback = hPipe;
     // 执行转录
     std::vector<WhisperSegment> segments;
@@ -158,7 +165,7 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
         
         // 发送给 Host
         std::string response = std::string("{\"type\":\"asr_segment\",\"text\":\"") +
-            json_escape(segment.text) +
+            meetingai::proto::jsonEscape(segment.text) +
             "\",\"t0_ms\":" + std::to_string((int)(segment.start_time * 1000)) +
             ",\"t1_ms\":" + std::to_string((int)(segment.end_time * 1000)) + "}\n";
 
@@ -192,26 +199,26 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
 }
 
 
-
-
-static void logLastError(const wchar_t* msg) {
-    DWORD err = GetLastError();
-    std::wcerr << msg << L" (code: " << err << L")\n";
-}
-
-bool createPipeSecurity(SECURITY_ATTRIBUTES& sa, PSECURITY_DESCRIPTOR& pSD) {
-    // 调试期：允许 AppContainer 和 Everyone 访问
-    LPCWSTR sddl = L"D:(A;;GA;;;AC)(A;;GA;;;WD)";
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        sddl, SDDL_REVISION_1, &pSD, nullptr)) {
-        logLastError(L"[Worker] SDDL parse failed");
-        return false;
-    }
-    sa.nLength = sizeof(sa);
-    sa.bInheritHandle = FALSE;
-    sa.lpSecurityDescriptor = pSD;
-    return true;
-}
+//
+//
+//static void logLastError(const wchar_t* msg) {
+//    DWORD err = GetLastError();
+//    std::wcerr << msg << L" (code: " << err << L")\n";
+//}
+//
+//bool createPipeSecurity(SECURITY_ATTRIBUTES& sa, PSECURITY_DESCRIPTOR& pSD) {
+//    // 调试期：允许 AppContainer 和 Everyone 访问
+//    LPCWSTR sddl = L"D:(A;;GA;;;AC)(A;;GA;;;WD)";
+//    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+//        sddl, SDDL_REVISION_1, &pSD, nullptr)) {
+//        logLastError(L"[Worker] SDDL parse failed");
+//        return false;
+//    }
+//    sa.nLength = sizeof(sa);
+//    sa.bInheritHandle = FALSE;
+//    sa.lpSecurityDescriptor = pSD;
+//    return true;
+//}
 
 int wmain() {
     // ★ 新增 1: 初始化数据库
@@ -227,7 +234,7 @@ int wmain() {
 
     // ★ 新增 3：打印 DB 路径、是否存在、记录总数（ASCII 输出，避免中文编码问题）
     {
-        std::string dbPath = GetDatabasePath();
+        std::string dbPath = meetingai::util::getDatabasePath();
         std::cout << "[DB] path = " << dbPath << "\n";
 
         bool exists = std::filesystem::exists(dbPath);
@@ -284,7 +291,7 @@ int wmain() {
 
     SECURITY_ATTRIBUTES sa{};
     PSECURITY_DESCRIPTOR pSD = nullptr;
-    if (!createPipeSecurity(sa, pSD)) return 1;
+    if (!meetingai::ipc::createPipeSecurity(sa, pSD)) return 1;
 
     bool shutdownRequested = false;
 
@@ -306,7 +313,7 @@ int wmain() {
             &sa
         );
         if (hPipe == INVALID_HANDLE_VALUE) {
-            logLastError(L"[Worker] CreateNamedPipe failed");
+            meetingai::util::logLastError(L"[IPC] CreateNamedPipe failed");
             break;
         }
 
@@ -316,7 +323,7 @@ int wmain() {
         BOOL connected = ConnectNamedPipe(hPipe, nullptr) ? TRUE :
             (GetLastError() == ERROR_PIPE_CONNECTED);
         if (!connected) {
-            logLastError(L"[Worker] ConnectNamedPipe failed");
+            meetingai::util::logLastError(L"[Worker] ConnectNamedPipe failed");
             CloseHandle(hPipe);
             continue; // 重新创建实例
         }
@@ -336,7 +343,7 @@ int wmain() {
                     std::wcout << L"[Worker] client disconnected\n";
                 }
                 else {
-                    logLastError(L"[Worker] ReadFile failed");
+                    meetingai::util::logLastError(L"[Worker] ReadFile failed");
                 }
                 break; // 退出连接循环，去清理并等待下一个客户端
             }
@@ -357,7 +364,7 @@ int wmain() {
                 std::wcout << L"[Worker] received: " << buffer.c_str() << L"\n";
 
                 // ---- 退出命令（容忍空白/额外字段）----
-                if (isQuitMessage(buffer)) {
+                if (meetingai::proto::isQuit(buffer)) {
                     std::wcout << L"[Worker] quit requested\n";
                     shutdownRequested = true; // 进程级退出
                     // 回个确认（可选）
@@ -367,7 +374,7 @@ int wmain() {
                 }
                 
                 // ---- 新增：转录命令处理 ----
-                if (isTranscribeMessage(buffer)) {
+                if (meetingai::proto::isTranscribe(buffer)) {
                     handleTranscribeCommand(hPipe, buffer);
                     buffer.clear();
                     continue;
@@ -377,7 +384,7 @@ int wmain() {
                 std::string resp = "{\"type\":\"pong\",\"echo\":\"" + buffer + "\"}\n";
                 DWORD written = 0;
                 if (!WriteFile(hPipe, resp.data(), static_cast<DWORD>(resp.size()), &written, nullptr)) {
-                    logLastError(L"[Worker] WriteFile failed");
+                    meetingai::util::logLastError(L"[Worker] WriteFile failed");
                     break; // 写失败也结束本次连接
                 }
                 else {
