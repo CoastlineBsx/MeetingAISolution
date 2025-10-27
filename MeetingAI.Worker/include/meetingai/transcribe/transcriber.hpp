@@ -1,26 +1,26 @@
-#pragma once
+ï»¿#pragma once
 #include <string>
 #include <vector>
 
-// Whisper ×ªÂ¼½á¹ûµÄ½á¹¹Ìå
+// Whisper è½¬å½•ç»“æœçš„ç»“æ„ä½“
 struct WhisperSegment {
     std::string text;
-    double start_time;  // Ãë
-    double end_time;    // Ãë
+    double start_time;  // ç§’
+    double end_time;    // ç§’
 };
 
-// ×ªÂ¼ÎÄ¼şµÄÖ÷º¯Êı£¨ÄÚ²¿»áÈ·±£Ä£ĞÍÖ»¼ÓÔØÒ»´Î£©
+// è½¬å½•æ–‡ä»¶çš„ä¸»å‡½æ•°ï¼ˆå†…éƒ¨ä¼šç¡®ä¿æ¨¡å‹åªåŠ è½½ä¸€æ¬¡ï¼‰
 bool TranscribeAudioFile(
     const std::string& modelPath,
     const std::string& audioPath,
     std::vector<WhisperSegment>& segments
 );
 
-// ³õÊ¼»¯ Whisper£¨ÏÔÊ½¼ÓÔØ£»Í¨³£²»Ö±½ÓÓÃ£©
+// åˆå§‹åŒ– Whisperï¼ˆæ˜¾å¼åŠ è½½ï¼›é€šå¸¸ä¸ç›´æ¥ç”¨ï¼‰
 bool InitWhisper(const std::string& modelPath);
 
-// ÇåÀí Whisper ×ÊÔ´£¨½ø³Ì½áÊøÊ±¿Éµ÷ÓÃ£©
+// æ¸…ç† Whisper èµ„æºï¼ˆè¿›ç¨‹ç»“æŸæ—¶å¯è°ƒç”¨ï¼‰
 void CleanupWhisper();
 
-// ¡ï ĞÂÔö£º½ö¼ÓÔØÒ»´Î£¨¶à´Îµ÷ÓÃÒ²Ö»»áÊ×´ÎÕæÕı¼ÓÔØ£©
+// â˜… æ–°å¢ï¼šä»…åŠ è½½ä¸€æ¬¡ï¼ˆå¤šæ¬¡è°ƒç”¨ä¹Ÿåªä¼šé¦–æ¬¡çœŸæ­£åŠ è½½ï¼‰
 bool InitWhisperOnce(const std::string& modelPath);

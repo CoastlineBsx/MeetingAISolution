@@ -63,14 +63,6 @@
   <ItemGroup>
     <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
-  </ItemGroup>
+
 
 </Project>

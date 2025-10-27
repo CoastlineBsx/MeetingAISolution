@@ -1,4 +1,4 @@
-#include "pch.h"
+ï»¿#include "pch.h"
 #include "database.hpp"
 #include "paths.h"
 #include "sqlite3.h"
@@ -9,7 +9,7 @@ static void DumpDbPath(sqlite3* db) {
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(db, "PRAGMA database_list;", -1, &st, nullptr) == SQLITE_OK) {
         while (sqlite3_step(st) == SQLITE_ROW) {
-            // ÁÐ 1: name, ÁÐ 2: file
+            // åˆ— 1: name, åˆ— 2: file
             const char* name = (const char*)sqlite3_column_text(st, 1);
             const char* file = (const char*)sqlite3_column_text(st, 2);
             std::cerr << "[DB] attached '" << (name ? name : "") << "' -> " << (file ? file : "") << "\n";
@@ -41,13 +41,13 @@ static bool ExecSQL(sqlite3* db, const char* sql) {
     }
     else {
         std::cerr << "[DB] open path = " << meetingai::util::getDatabasePath() << "\n";
-        DumpDbPath(db);  // ´òÓ¡Êý¾Ý¿âÎÄ¼þÂ·¾¶ÐÅÏ¢
+        DumpDbPath(db);  // æ‰“å°æ•°æ®åº“æ–‡ä»¶è·¯å¾„ä¿¡æ¯
     }
     return true;
 }
 
 bool InitDatabaseOnce() {
-    // ÓÃ UTF-8 ´ò¿ª£¨¿çÆ½Ì¨¸üÎÈ£©
+    // ç”¨ UTF-8 æ‰“å¼€ï¼ˆè·¨å¹³å°æ›´ç¨³ï¼‰
     sqlite3* db = nullptr;
     const std::string db8 = meetingai::util::getDatabasePath();
     if (sqlite3_open(db8.c_str(), &db) != SQLITE_OK) {
@@ -55,13 +55,13 @@ bool InitDatabaseOnce() {
         return false;
     }
 
-    // »ù±¾ÉèÖÃ
+    // åŸºæœ¬è®¾ç½®
     sqlite3_busy_timeout(db, 5000);
     ExecSQL(db, "PRAGMA foreign_keys=ON;");
     if (!ExecSQL(db, "PRAGMA journal_mode=WAL;")) { sqlite3_close(db); return false; }
     if (!ExecSQL(db, "PRAGMA synchronous=NORMAL;")) { sqlite3_close(db); return false; }
 
-    // ´´½¨ transcripts ±í£¬´æ×ªÂ¼£¨±£³ÖÄãµÄÔ­Ñù£©
+    // åˆ›å»º transcripts è¡¨ï¼Œå­˜è½¬å½•ï¼ˆä¿æŒä½ çš„åŽŸæ ·ï¼‰
     const char* create_sql =
         "CREATE TABLE IF NOT EXISTS transcripts ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -72,7 +72,7 @@ bool InitDatabaseOnce() {
         ");";
     if (!ExecSQL(db, create_sql)) { sqlite3_close(db); return false; }
 
-    // ÄãµÄÖ÷ DDL£¨Ô­Ñù±£Áô£©
+    // ä½ çš„ä¸» DDLï¼ˆåŽŸæ ·ä¿ç•™ï¼‰
     const char* ddl = R"SQL(
 BEGIN IMMEDIATE;
 
@@ -182,7 +182,7 @@ bool InsertTranscript(const std::string& speaker,
     ExecSQL(db, "PRAGMA foreign_keys=ON;");
     sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
 
-    // 1) ÈôÎÞ meeting£¬½¨Ò»Ìõ
+    // 1) è‹¥æ—  meetingï¼Œå»ºä¸€æ¡
     sqlite3_int64 mid = 0;
     {
         const char* q = "SELECT id FROM meeting ORDER BY id DESC LIMIT 1;";
@@ -199,7 +199,7 @@ bool InsertTranscript(const std::string& speaker,
         }
     }
 
-    // 2) ÈôÎÞ mic Á÷£¬½¨Ò»Ìõ
+    // 2) è‹¥æ—  mic æµï¼Œå»ºä¸€æ¡
     sqlite3_int64 sid = 0;
     {
         const char* q = "SELECT id FROM stream WHERE meeting_id=? AND type='mic' LIMIT 1;";
@@ -226,7 +226,7 @@ bool InsertTranscript(const std::string& speaker,
         }
     }
 
-    // 3) ²å segment£¨°Ñ timestamp Ãë ¡ú ºÁÃë£©
+    // 3) æ’ segmentï¼ˆæŠŠ timestamp ç§’ â†’ æ¯«ç§’ï¼‰
     sqlite3_int64 segId = 0;
     {
         const char* sql =
@@ -256,7 +256,7 @@ bool InsertTranscript(const std::string& speaker,
         segId = sqlite3_last_insert_rowid(db);
     }
 
-    // 4) È·±£ Whisper ÒÑµÇ¼Ç ¡ú ²å revision(live_asr)
+    // 4) ç¡®ä¿ Whisper å·²ç™»è®° â†’ æ’ revision(live_asr)
     int modelId = 0;
     {
         const char* q = "SELECT id FROM model_registry WHERE name='Whisper' AND type='asr' LIMIT 1;";

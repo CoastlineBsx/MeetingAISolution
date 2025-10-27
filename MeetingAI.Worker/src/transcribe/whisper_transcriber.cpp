@@ -1,4 +1,4 @@
-#include "pch.h"
+ï»¿#include "pch.h"
 #include "transcriber.hpp"
 #include "whisper.h"
 #include <iostream>
@@ -10,11 +10,11 @@
 #include <algorithm>
 #include <mutex>
 #include <atomic>
-#include <chrono>   // ¡ï ÓÃÓÚ¼ÆÊ±
+#include <chrono>   // â˜… ç”¨äºè®¡æ—¶
 
-extern HANDLE g_pipe_for_callback;   // ¡ï ÉùÃ÷£ºÓÃÍâÃæµÄÄÇ·İ
+extern HANDLE g_pipe_for_callback;   // â˜… å£°æ˜ï¼šç”¨å¤–é¢çš„é‚£ä»½
 
-// ×î¼ò JSON ×ªÒå£¬±ÜÃâ×ÖÄ»Àï´øÒıºÅ°Ñ JSON ¸ã»µ
+// æœ€ç®€ JSON è½¬ä¹‰ï¼Œé¿å…å­—å¹•é‡Œå¸¦å¼•å·æŠŠ JSON æå
 static std::string EscapeJson(const char* s) {
     std::string out; out.reserve(strlen(s) + 8);
     for (const unsigned char c : std::string(s)) {
@@ -42,7 +42,7 @@ static void OnProgress(whisper_context*, whisper_state*, int progress, void*) {
     }
 }
 
-// ¡ï ÓÃ state ¶ÁÈ¡ĞÂÆ¬¶Î£¨Óë with_state API ¶ÔÆë£©
+// â˜… ç”¨ state è¯»å–æ–°ç‰‡æ®µï¼ˆä¸ with_state API å¯¹é½ï¼‰
 static void OnNewSegment(whisper_context* /*ctx*/, whisper_state* state, int n_new, void* /*user_data*/) {
     const int n = whisper_full_n_segments_from_state(state);
     for (int i = n - n_new; i < n; ++i) {
@@ -67,15 +67,15 @@ static void OnNewSegment(whisper_context* /*ctx*/, whisper_state* state, int n_n
     }
 }
 
-// È«¾Ö whisper ÉÏÏÂÎÄ£¨³£×¤£¬±ÜÃâÖØ¸´¼ÓÔØÄ£ĞÍ£©
+// å…¨å±€ whisper ä¸Šä¸‹æ–‡ï¼ˆå¸¸é©»ï¼Œé¿å…é‡å¤åŠ è½½æ¨¡å‹ï¼‰
 static struct whisper_context* g_whisper_ctx = nullptr;
-static std::once_flag g_model_once; // Ö»¼ÓÔØÒ»´Î
+static std::once_flag g_model_once; // åªåŠ è½½ä¸€æ¬¡
 
-// ¼ò»¯°æ WAV ¼ÓÔØ£¨¼ÙÉè 16-bit PCM£¬44 ×Ö½ÚÍ·£©
+// ç®€åŒ–ç‰ˆ WAV åŠ è½½ï¼ˆå‡è®¾ 16-bit PCMï¼Œ44 å­—èŠ‚å¤´ï¼‰
 static bool LoadWavFile(const std::string& filename, std::vector<float>& audio_data) {
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
-        std::cerr << "[Whisper] ÎŞ·¨´ò¿ªÒôÆµÎÄ¼ş: " << filename << std::endl;
+        std::cerr << "[Whisper] æ— æ³•æ‰“å¼€éŸ³é¢‘æ–‡ä»¶: " << filename << std::endl;
         return false;
     }
     file.seekg(44);
@@ -91,32 +91,32 @@ static bool LoadWavFile(const std::string& filename, std::vector<float>& audio_d
         audio_data[i] = static_cast<float>(pcm_data[i]) / 32768.0f;
     }
 
-    std::cout << "[Whisper] ¼ÓÔØÒôÆµÎÄ¼ş³É¹¦£¬Ñù±¾Êı: " << audio_data.size() << std::endl;
+    std::cout << "[Whisper] åŠ è½½éŸ³é¢‘æ–‡ä»¶æˆåŠŸï¼Œæ ·æœ¬æ•°: " << audio_data.size() << std::endl;
     return true;
 }
 
-// ÏÔÊ½³õÊ¼»¯£¨²»½¨ÒéÃ¿´ÎÈÎÎñµ÷ÓÃ£©
+// æ˜¾å¼åˆå§‹åŒ–ï¼ˆä¸å»ºè®®æ¯æ¬¡ä»»åŠ¡è°ƒç”¨ï¼‰
 bool InitWhisper(const std::string& modelPath) {
     if (g_whisper_ctx != nullptr) {
         whisper_free(g_whisper_ctx);
         g_whisper_ctx = nullptr;
     }
 
-    std::cout << "[Whisper] ÕıÔÚ¼ÓÔØÄ£ĞÍ: " << modelPath << std::endl;
+    std::cout << "[Whisper] æ­£åœ¨åŠ è½½æ¨¡å‹: " << modelPath << std::endl;
 
     struct whisper_context_params cparams = whisper_context_default_params();
     g_whisper_ctx = whisper_init_from_file_with_params(modelPath.c_str(), cparams);
 
     if (g_whisper_ctx == nullptr) {
-        std::cerr << "[Whisper] Ä£ĞÍ¼ÓÔØÊ§°Ü: " << modelPath << std::endl;
+        std::cerr << "[Whisper] æ¨¡å‹åŠ è½½å¤±è´¥: " << modelPath << std::endl;
         return false;
     }
 
-    std::cout << "[Whisper] Ä£ĞÍ¼ÓÔØ³É¹¦" << std::endl;
+    std::cout << "[Whisper] æ¨¡å‹åŠ è½½æˆåŠŸ" << std::endl;
     return true;
 }
 
-// ¡ï ½ö¼ÓÔØÒ»´Î£¨¶à´Îµ÷ÓÃÒ²Ö»»áÊ×´ÎÕæÕı¼ÓÔØ£©
+// â˜… ä»…åŠ è½½ä¸€æ¬¡ï¼ˆå¤šæ¬¡è°ƒç”¨ä¹Ÿåªä¼šé¦–æ¬¡çœŸæ­£åŠ è½½ï¼‰
 bool InitWhisperOnce(const std::string& modelPath) {
     std::call_once(g_model_once, [&]() {
         (void)InitWhisper(modelPath);
@@ -136,61 +136,61 @@ bool TranscribeAudioFile(
     const std::string& audioPath,
     std::vector<WhisperSegment>& segments
 ) {
-    // ¡ª¡ª A£ºÖ»ÔÚµÚÒ»´Îµ÷ÓÃÊ±¼ÓÔØÄ£ĞÍ£¨Ëæºó¸´ÓÃÈ«¾Ö ctx£© ¡ª¡ª
+    // â€”â€” Aï¼šåªåœ¨ç¬¬ä¸€æ¬¡è°ƒç”¨æ—¶åŠ è½½æ¨¡å‹ï¼ˆéšåå¤ç”¨å…¨å±€ ctxï¼‰ â€”â€”
     if (!InitWhisperOnce(modelPath)) {
-        std::cerr << "[Whisper] Ä£ĞÍ³õÊ¼»¯Ê§°Ü£¨InitWhisperOnce£©: " << modelPath << std::endl;
+        std::cerr << "[Whisper] æ¨¡å‹åˆå§‹åŒ–å¤±è´¥ï¼ˆInitWhisperOnceï¼‰: " << modelPath << std::endl;
         return false;
     }
 
-    // ¼ÓÔØÒôÆµÎÄ¼ş
+    // åŠ è½½éŸ³é¢‘æ–‡ä»¶
     std::vector<float> audio_data;
     if (!LoadWavFile(audioPath, audio_data)) {
         return false;
     }
 
-    // ¡ª¡ª Ã¿´ÎÈÎÎñ½ö´´½¨ whisper_state£¨ÇáÁ¿£¬¿É²¢·¢£© ¡ª¡ª
-    whisper_state* st = whisper_init_state(g_whisper_ctx);   // ĞÂ API£º·µ»ØÖ¸Õë
+    // â€”â€” æ¯æ¬¡ä»»åŠ¡ä»…åˆ›å»º whisper_stateï¼ˆè½»é‡ï¼Œå¯å¹¶å‘ï¼‰ â€”â€”
+    whisper_state* st = whisper_init_state(g_whisper_ctx);   // æ–° APIï¼šè¿”å›æŒ‡é’ˆ
     if (!st) {
-        std::cerr << "[Whisper] ´´½¨ whisper_state Ê§°Ü" << std::endl;
+        std::cerr << "[Whisper] åˆ›å»º whisper_state å¤±è´¥" << std::endl;
         return false;
     }
 
-    // ¡ª¡ª ÉèÖÃ whisper ²ÎÊı£¨¹¤ÒµÕÛÖĞ£º°ë¾ä»°¾Í»Ø´«£© ¡ª¡ª
+    // â€”â€” è®¾ç½® whisper å‚æ•°ï¼ˆå·¥ä¸šæŠ˜ä¸­ï¼šåŠå¥è¯å°±å›ä¼ ï¼‰ â€”â€”
     struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
 
-    // ĞÔÄÜ£ºÓÃÂú CPU Ïß³Ì£¨Release | x64 ÏÂĞ§¹û×î¼Ñ£©
+    // æ€§èƒ½ï¼šç”¨æ»¡ CPU çº¿ç¨‹ï¼ˆRelease | x64 ä¸‹æ•ˆæœæœ€ä½³ï¼‰
     unsigned int t = std::thread::hardware_concurrency();
     if (t == 0) t = 4;
     params.n_threads = (int)t;
     std::cout << "[Whisper] n_threads = " << params.n_threads << std::endl;
 
-    // ·Ö¶ÎÓëÉÏÏÂÎÄ
-    params.max_tokens = 64;     // 48~96 Ö®¼äµ÷
-    params.max_len = 80;     // Ã¿¶Î×î³¤×Ö·û
-    params.split_on_word = true;   // ´Ê±ß½çÇĞ·Ö
-    params.audio_ctx = 768;    // ÉÏÏÂÎÄ´°¿Ú
-    params.no_context = true;   // ¡ï ¼ÓËÙ£º²»´øÈëÀúÊ·ÉÏÏÂÎÄ£¨Äãµ±Ç°Á÷³Ì²»ĞèÒªÉÏÏÂÎÄ£©
+    // åˆ†æ®µä¸ä¸Šä¸‹æ–‡
+    params.max_tokens = 64;     // 48~96 ä¹‹é—´è°ƒ
+    params.max_len = 80;     // æ¯æ®µæœ€é•¿å­—ç¬¦
+    params.split_on_word = true;   // è¯è¾¹ç•Œåˆ‡åˆ†
+    params.audio_ctx = 768;    // ä¸Šä¸‹æ–‡çª—å£
+    params.no_context = true;   // â˜… åŠ é€Ÿï¼šä¸å¸¦å…¥å†å²ä¸Šä¸‹æ–‡ï¼ˆä½ å½“å‰æµç¨‹ä¸éœ€è¦ä¸Šä¸‹æ–‡ï¼‰
 
-    // ÆäËûÉèÖÃ
-    params.language = "auto";   // ×Ô¶¯¼ì²âÓïÑÔ
-    params.translate = false;    // ²»·­Òë
+    // å…¶ä»–è®¾ç½®
+    params.language = "zh";   // è‡ªåŠ¨æ£€æµ‹è¯­è¨€
+    params.translate = false;    // ä¸ç¿»è¯‘
     params.print_realtime = false;
     params.print_progress = false;
     params.print_timestamps = true;
 
-    // »Øµ÷
+    // å›è°ƒ
     params.progress_callback = &OnProgress;
     params.progress_callback_user_data = nullptr;
     params.new_segment_callback_user_data = nullptr;
     params.new_segment_callback = &OnNewSegment;
 
-    // ¡ï Í³¼Æ×ÜºÄÊ±£¨´Ó¡°¿ªÊ¼×ªÂ¼¡±µ½ÍÆÀí½áÊø£©
+    // â˜… ç»Ÿè®¡æ€»è€—æ—¶ï¼ˆä»â€œå¼€å§‹è½¬å½•â€åˆ°æ¨ç†ç»“æŸï¼‰
     auto t_total_begin = std::chrono::high_resolution_clock::now();
 
-    std::cout << "[Whisper] ¿ªÊ¼×ªÂ¼£¬ÒôÆµ³¤¶È: "
-        << (audio_data.size() / 16000.0) << " Ãë" << std::endl;
+    std::cout << "[Whisper] å¼€å§‹è½¬å½•ï¼ŒéŸ³é¢‘é•¿åº¦: "
+        << (audio_data.size() / 16000.0) << " ç§’" << std::endl;
 
-    // ¡ª¡ª Ê¹ÓÃ with_state£º¸´ÓÃÈ«¾Ö ctx£¬½ö state ÊôÓÚ±¾´ÎÈÎÎñ ¡ª¡ª
+    // â€”â€” ä½¿ç”¨ with_stateï¼šå¤ç”¨å…¨å±€ ctxï¼Œä»… state å±äºæœ¬æ¬¡ä»»åŠ¡ â€”â€”
     auto t_begin = std::chrono::high_resolution_clock::now();
 
     int rc = whisper_full_with_state(g_whisper_ctx, st, params,
@@ -201,12 +201,12 @@ bool TranscribeAudioFile(
     std::cout << "[Whisper][Perf] infer=" << ms_infer << " ms" << std::endl;
 
     if (rc != 0) {
-        std::cerr << "[Whisper] ×ªÂ¼Ê§°Ü" << std::endl;
+        std::cerr << "[Whisper] è½¬å½•å¤±è´¥" << std::endl;
         whisper_free_state(st);
         return false;
     }
 
-    // ¡ª¡ª ÌáÈ¡×îÖÕ½á¹û£¨´Ó state È¡£»Ïß³Ì°²È«£© ¡ª¡ª
+    // â€”â€” æå–æœ€ç»ˆç»“æœï¼ˆä» state å–ï¼›çº¿ç¨‹å®‰å…¨ï¼‰ â€”â€”
     const int n_segments = whisper_full_n_segments_from_state(st);
     segments.clear();
     segments.reserve(n_segments);
@@ -214,7 +214,7 @@ bool TranscribeAudioFile(
     for (int i = 0; i < n_segments; ++i) {
         WhisperSegment seg;
         seg.text = whisper_full_get_segment_text_from_state(st, i);
-        seg.start_time = whisper_full_get_segment_t0_from_state(st, i) / 100.0; // cs ¡ú s
+        seg.start_time = whisper_full_get_segment_t0_from_state(st, i) / 100.0; // cs â†’ s
         seg.end_time = whisper_full_get_segment_t1_from_state(st, i) / 100.0;
 
         segments.push_back(seg);
@@ -224,12 +224,12 @@ bool TranscribeAudioFile(
             << seg.text << std::endl;
     }
 
-    whisper_free_state(st); // ÊÍ·Å±¾´ÎÈÎÎñµÄ state
+    whisper_free_state(st); // é‡Šæ”¾æœ¬æ¬¡ä»»åŠ¡çš„ state
 
     auto t_total_end = std::chrono::high_resolution_clock::now();
     auto ms_total = std::chrono::duration_cast<std::chrono::milliseconds>(t_total_end - t_total_begin).count();
     std::cout << "[Whisper][Perf] total=" << ms_total << " ms" << std::endl;
 
-    std::cout << "[Whisper] ×ªÂ¼Íê³É£¬¹² " << segments.size() << " ¸öÆ¬¶Î" << std::endl;
+    std::cout << "[Whisper] è½¬å½•å®Œæˆï¼Œå…± " << segments.size() << " ä¸ªç‰‡æ®µ" << std::endl;
     return true;
 }

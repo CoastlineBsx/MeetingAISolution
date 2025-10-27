@@ -1,10 +1,10 @@
-#pragma once
+ï»¿#pragma once
 #include <string>
 
-// ³õÊ¼»¯Êı¾İ¿â£¨´´½¨ meeting.db ºÍ transcripts ±í£©
+// åˆå§‹åŒ–æ•°æ®åº“ï¼ˆåˆ›å»º meeting.db å’Œ transcripts è¡¨ï¼‰
 bool InitDatabaseOnce();
 
-// ²åÈëÒ»Ìõ×ªÂ¼¼ÇÂ¼£ºspeaker ËµÁË text£¬·¢ÉúÔÚ timestamp Ãë
+// æ’å…¥ä¸€æ¡è½¬å½•è®°å½•ï¼šspeaker è¯´äº† textï¼Œå‘ç”Ÿåœ¨ timestamp ç§’
 bool InsertTranscript(const std::string& speaker,
     const std::string& text,
     double timestamp);

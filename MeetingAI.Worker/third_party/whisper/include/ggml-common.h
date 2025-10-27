@@ -1,4 +1,4 @@
-#ifndef GGML_COMMON_DECL
+﻿#ifndef GGML_COMMON_DECL
 
 #if defined(GGML_COMMON_DECL_C)
 #include <stdint.h>
