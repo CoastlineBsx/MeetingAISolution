@@ -1,20 +1,20 @@
-#pragma once
+ï»¿#pragma once
 #include <string>
 
 namespace meetingai::util {
-// UTF-8 ¡ú UTF-16
+// UTF-8 â†’ UTF-16
 std::wstring utf8ToW(const std::string& s);
 
-// exe ËùÔÚÄ¿Â¼£¨²»º¬ÎÄ¼şÃû£©
+// exe æ‰€åœ¨ç›®å½•ï¼ˆä¸å«æ–‡ä»¶åï¼‰
 std::string getExeDir();
 
-// Êı¾İ¸ùÄ¿Â¼£¨ÓÅÏÈ MEETINGAI_DATA_DIR£»Æä´Î±ãĞ¯Ä£Ê½ ./data£»·ñÔò %LOCALAPPDATA%\MeetingAI£»×îºó exe\data£©
+// æ•°æ®æ ¹ç›®å½•ï¼ˆä¼˜å…ˆ MEETINGAI_DATA_DIRï¼›å…¶æ¬¡ä¾¿æºæ¨¡å¼ ./dataï¼›å¦åˆ™ %LOCALAPPDATA%\MeetingAIï¼›æœ€å exe\dataï¼‰
 std::string getDataRoot();
 
-// meeting.db ÍêÕûÂ·¾¶£¨GetDataRoot() + "/meeting.db"£©
+// meeting.db å®Œæ•´è·¯å¾„ï¼ˆGetDataRoot() + "/meeting.db"ï¼‰
 std::string getDatabasePath();
 
-// ×éºÏÄ£ĞÍÂ·¾¶²¢×ª UTF-8
+// ç»„åˆæ¨¡å‹è·¯å¾„å¹¶è½¬ UTF-8
 std::string resolveModelFileUtf8(const wchar_t* filename);
 
 } // namespace meetingai::util

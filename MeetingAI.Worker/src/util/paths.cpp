@@ -1,4 +1,4 @@
-#include "pch.h"
+ï»¿#include "pch.h"
 #include "paths.h"
 #include <windows.h>
 #include <filesystem>
@@ -35,7 +35,7 @@ namespace meetingai::util {
     }
 
     std::string getDataRoot() {
-        // 1) »·¾³±äÁ¿ MEETINGAI_DATA_DIR
+        // 1) ç¯å¢ƒå˜é‡ MEETINGAI_DATA_DIR
         char* envUtf8 = nullptr; size_t len = 0;
         if (_dupenv_s(&envUtf8, &len, "MEETINGAI_DATA_DIR") == 0 && envUtf8) {
             std::string v(envUtf8); free(envUtf8);
@@ -45,7 +45,7 @@ namespace meetingai::util {
             }
         }
 
-        // 2) ±ãĞ¯Ä£Ê½£ºexe Í¬Ä¿Â¼´æÔÚ portable.flag ¡ú ./data
+        // 2) ä¾¿æºæ¨¡å¼ï¼šexe åŒç›®å½•å­˜åœ¨ portable.flag â†’ ./data
         auto exe = getExeDir();
         if (fs::exists(fs::path(exe) / "portable.flag")) {
             auto p = fs::path(exe) / "data";
@@ -53,7 +53,7 @@ namespace meetingai::util {
             return p.string();
         }
 
-        // 3) Ä¬ÈÏ£º%LOCALAPPDATA%\MeetingAI
+        // 3) é»˜è®¤ï¼š%LOCALAPPDATA%\MeetingAI
         wchar_t* wlap = nullptr; len = 0;
         if (_wdupenv_s(&wlap, &len, L"LOCALAPPDATA") == 0 && wlap) {
             fs::path root(wlap); free(wlap);
@@ -62,7 +62,7 @@ namespace meetingai::util {
             return wToUtf8(root.wstring());
         }
 
-        // 4) ¶µµ×£ºexe\data
+        // 4) å…œåº•ï¼šexe\data
         auto fb = fs::path(exe) / "data";
         fs::create_directories(fb);
         return fb.string();
@@ -73,10 +73,10 @@ namespace meetingai::util {
     }
 
     std::string resolveModelFileUtf8(const wchar_t* filename) {
-        // µ÷ÊÔÆÚ¹Ì¶¨Â·¾¶£¨°´Äãµ±Ç°ÏîÄ¿£©
+        // è°ƒè¯•æœŸå›ºå®šè·¯å¾„ï¼ˆæŒ‰ä½ å½“å‰é¡¹ç›®ï¼‰
         fs::path baseDir = L"D:\\Microsoft\\Microsoft Visual Studio Projects\\MeetingAISolution\\MeetingAI.Worker\\models";
 
-        // ½»¸¶ÆÚ¿É¸ÄÎª ProgramData£º
+        // äº¤ä»˜æœŸå¯æ”¹ä¸º ProgramDataï¼š
         // wchar_t commonAppData[MAX_PATH]{};
         // if (SUCCEEDED(::SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, commonAppData))) {
         //     baseDir = fs::path(commonAppData) / L"MeetingAI" / L"models";

@@ -1,20 +1,20 @@
-#pragma once
+ï»¿#pragma once
 #include <string>
 
 namespace meetingai::proto {
 
 	std::string trim(std::string s);
 
-	// ½«×Ö·û´®×ö JSON ×ªÒå£¨½ö×î»ù±¾µÄ¿ØÖÆ×Ö·ûÓëÒıºÅ/·´Ğ±¸Ü£©
+	// å°†å­—ç¬¦ä¸²åš JSON è½¬ä¹‰ï¼ˆä»…æœ€åŸºæœ¬çš„æ§åˆ¶å­—ç¬¦ä¸å¼•å·/åæ–œæ ï¼‰
 	std::string jsonEscape(const std::string& s);
 
-	// ÅĞ¶ÏÊÇ·ñÊÇ {"type":"quit"}£¨¿íËÉÆ¥Åä£©
+	// åˆ¤æ–­æ˜¯å¦æ˜¯ {"type":"quit"}ï¼ˆå®½æ¾åŒ¹é…ï¼‰
 	bool isQuit(const std::string& s);
 
-	// ÅĞ¶ÏÊÇ·ñÊÇ {"type":"transcribe_file"}£¨¿íËÉÆ¥Åä£©
+	// åˆ¤æ–­æ˜¯å¦æ˜¯ {"type":"transcribe_file"}ï¼ˆå®½æ¾åŒ¹é…ï¼‰
 	bool isTranscribe(const std::string& s);
 
-	// ´Ó {"path":"..."} ÌáÈ¡ path£»Ê§°Ü·µ»Ø¿Õ
+	// ä» {"path":"..."} æå– pathï¼›å¤±è´¥è¿”å›ç©º
 	std::string extractPath(const std::string& json);
 
 } // namespace meetingai::proto

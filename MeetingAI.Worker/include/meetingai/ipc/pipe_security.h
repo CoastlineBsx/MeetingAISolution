@@ -1,9 +1,9 @@
-#pragma once
+ï»¿#pragma once
 #include <windows.h>
 
 namespace meetingai::ipc {
 
-	// ÔÊĞí AppContainer(AC) Óë Everyone(WD) ·ÃÎÊµÄ°²È«ÊôĞÔ
+	// å…è®¸ AppContainer(AC) ä¸ Everyone(WD) è®¿é—®çš„å®‰å…¨å±æ€§
 	bool createPipeSecurity(SECURITY_ATTRIBUTES& sa, PSECURITY_DESCRIPTOR& pSD);
 
 } // namespace meetingai::ipc

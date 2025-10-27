@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "pipe_security.h"
 #include "logging.h"
 #include <sddl.h>

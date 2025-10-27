@@ -1,4 +1,4 @@
-#include "pch.h"
+ï»¿#include "pch.h"
 #include <windows.h>
 #include <sddl.h>
 #include <iostream>
@@ -7,11 +7,11 @@
 #include "paths.h"
 #include "sqlite3.h" 
 #include <filesystem> 
-#include "transcriber.hpp" // ĞÂÔö£º°üº¬ whisper ·â×°
+#include "transcriber.hpp" // æ–°å¢ï¼šåŒ…å« whisper å°è£…
 #include <shlobj.h>      // SHGetFolderPathW
-#include <codecvt>       // ¿í/Õ­×Ö·û´®×ªÂë£¨½öÓÃÓÚ Win -> UTF-8£©
+#include <codecvt>       // å®½/çª„å­—ç¬¦ä¸²è½¬ç ï¼ˆä»…ç”¨äº Win -> UTF-8ï¼‰
 #include <thread>
-#include <mutex>   // ¡ï ĞÂÔö
+#include <mutex>   // â˜… æ–°å¢
 #include "paths.h"
 #include "command_parser.h"
 #include "logging.h"
@@ -19,7 +19,7 @@
 
 
 
-static std::once_flag g_model_once2; // ¡ï ĞÂÔö£ºWorker ¼¶Ö»¼ÓÔØÒ»´ÎÄ£ĞÍ
+static std::once_flag g_model_once2; // â˜… æ–°å¢ï¼šWorker çº§åªåŠ è½½ä¸€æ¬¡æ¨¡å‹
 
 //
 //static std::string json_escape(const std::string& s) {
@@ -49,12 +49,12 @@ static std::once_flag g_model_once2; // ¡ï ĞÂÔö£ºWorker ¼¶Ö»¼ÓÔØÒ»´ÎÄ£ĞÍ
 //}
 
 
-// --------- ×·¼Ó£ºÍ¨ÓÃ¹¤¾ß & ÍË³ö±êÖ¾ ----------
+// --------- è¿½åŠ ï¼šé€šç”¨å·¥å…· & é€€å‡ºæ ‡å¿— ----------
 static volatile BOOL g_shutdownRequested = FALSE;
-// ÓÃÓÚ»Øµ÷Àï°Ñ¶Î½á¹ûĞ´»Ø Host
+// ç”¨äºå›è°ƒé‡ŒæŠŠæ®µç»“æœå†™å› Host
 HANDLE g_pipe_for_callback = NULL;
 
-//// È¥µôÊ×Î²¿Õ°×
+//// å»æ‰é¦–å°¾ç©ºç™½
 //static inline std::string trim(std::string s) {
 //    size_t a = s.find_first_not_of(" \t\r\n");
 //    size_t b = s.find_last_not_of(" \t\r\n");
@@ -62,22 +62,22 @@ HANDLE g_pipe_for_callback = NULL;
 //    return s.substr(a, b - a + 1);
 //}
 //
-//// ¼òµ¥ÅĞ¶ÏÊÇ·ñÎª {"type":"quit"}£¨ÈİÈÌ¿Õ°×/¶îÍâ×Ö¶Î£©
+//// ç®€å•åˆ¤æ–­æ˜¯å¦ä¸º {"type":"quit"}ï¼ˆå®¹å¿ç©ºç™½/é¢å¤–å­—æ®µï¼‰
 //static bool isQuitMessage(const std::string& s) {
 //    auto t = trim(s);
-//    // ´ÖÅĞ£º±ØĞë°üº¬ "type":"quit"
+//    // ç²—åˆ¤ï¼šå¿…é¡»åŒ…å« "type":"quit"
 //    return t.find("\"type\"") != std::string::npos &&
 //        t.find("\"quit\"") != std::string::npos;
 //}
 
-//// ĞÂÔö£º¼òµ¥ÅĞ¶ÏÊÇ·ñÎª×ªÂ¼ÃüÁî
+//// æ–°å¢ï¼šç®€å•åˆ¤æ–­æ˜¯å¦ä¸ºè½¬å½•å‘½ä»¤
 //static bool isTranscribeMessage(const std::string& s) {
 //    auto t = trim(s);
 //    return t.find("\"type\"") != std::string::npos &&
 //        t.find("\"transcribe_file\"") != std::string::npos;
 //}
 
-//// ĞÂÔö£º´Ó¼òµ¥ JSON ÖĞÌáÈ¡ÎÄ¼şÂ·¾¶£¨¼ò»¯°æ½âÎö£©
+//// æ–°å¢ï¼šä»ç®€å• JSON ä¸­æå–æ–‡ä»¶è·¯å¾„ï¼ˆç®€åŒ–ç‰ˆè§£æï¼‰
 //static std::string extractFilePath(const std::string& json) {
 //    size_t start = json.find("\"path\":");
 //    if (start == std::string::npos) return "";
@@ -95,10 +95,10 @@ HANDLE g_pipe_for_callback = NULL;
 //static std::string ResolveModelFileUtf8(const wchar_t* filename) {
 //    namespace fs = std::filesystem;
 //
-//    // ¡ï µ÷ÊÔÆÚ¹Ì¶¨Â·¾¶
+//    // â˜… è°ƒè¯•æœŸå›ºå®šè·¯å¾„
 //    fs::path baseDir = L"D:\\Microsoft\\Microsoft Visual Studio Projects\\MeetingAISolution\\WorkerNative\\models";
 //
-//    // ¡ï ½»¸¶Ê±¸Ä³É£º
+//    // â˜… äº¤ä»˜æ—¶æ”¹æˆï¼š
 //    // wchar_t commonAppData[MAX_PATH]{};
 //    // if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA, nullptr, 0, commonAppData))) {
 //    //     baseDir = fs::path(commonAppData) / L"MeetingAI" / L"models";
@@ -106,7 +106,7 @@ HANDLE g_pipe_for_callback = NULL;
 //
 //    fs::path fullPath = baseDir / filename;
 //
-//    // ×ª UTF-8
+//    // è½¬ UTF-8
 //    int n = WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, nullptr, 0, nullptr, nullptr);
 //    std::string out(n - 1, '\0');
 //    WideCharToMultiByte(CP_UTF8, 0, fullPath.c_str(), -1, out.data(), n, nullptr, nullptr);
@@ -114,15 +114,15 @@ HANDLE g_pipe_for_callback = NULL;
 //    return out;
 //}
 
-// ĞÂÔö£º´¦Àí×ªÂ¼ÃüÁî
+// æ–°å¢ï¼šå¤„ç†è½¬å½•å‘½ä»¤
 static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
-    std::wcout << L"[Worker] ´¦Àí×ªÂ¼ÃüÁî\n";
+    std::wcout << L"[Worker] å¤„ç†è½¬å½•å‘½ä»¤\n";
 
-    // ¡ï ½ö³õÊ¼»¯Ò»´ÎÄ£ĞÍ£¨¹¤Òµ×ö·¨A£©
+    // â˜… ä»…åˆå§‹åŒ–ä¸€æ¬¡æ¨¡å‹ï¼ˆå·¥ä¸šåšæ³•Aï¼‰
     std::call_once(g_model_once2, [&] {
         std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-small.bin");
         if (!InitWhisperOnce(modelPathOnce)) {
-            std::string err = "{\"type\":\"error\",\"message\":\"Ä£ĞÍ¼ÓÔØÊ§°Ü\"}\n";
+            std::string err = "{\"type\":\"error\",\"message\":\"æ¨¡å‹åŠ è½½å¤±è´¥\"}\n";
             DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
         }
         else {
@@ -132,38 +132,38 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
         });
 
 
-    // ÌáÈ¡ÎÄ¼şÂ·¾¶
+    // æå–æ–‡ä»¶è·¯å¾„
     std::string audioPath = meetingai::proto::extractPath(command);
     if (audioPath.empty()) {
-        std::string error = "{\"type\":\"error\",\"message\":\"ÎŞ·¨½âÎöÒôÆµÎÄ¼şÂ·¾¶\"}\n";
+        std::string error = "{\"type\":\"error\",\"message\":\"æ— æ³•è§£æéŸ³é¢‘æ–‡ä»¶è·¯å¾„\"}\n";
         DWORD written;
         WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
         return;
     }
     
-    std::wcout << L"[Worker] ÒôÆµÎÄ¼şÂ·¾¶: " << audioPath.c_str() << L"\n";
+    std::wcout << L"[Worker] éŸ³é¢‘æ–‡ä»¶è·¯å¾„: " << audioPath.c_str() << L"\n";
     
-    // ¼ÙÉèÄ£ĞÍÂ·¾¶£¨ÄãĞèÒª¸ù¾İÊµ¼ÊÇé¿öµ÷Õû£©
+    // å‡è®¾æ¨¡å‹è·¯å¾„ï¼ˆä½ éœ€è¦æ ¹æ®å®é™…æƒ…å†µè°ƒæ•´ï¼‰
     //std::string modelPath = "models\\ggml-small.bin";  
     std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-small.bin");
     g_pipe_for_callback = hPipe;
-    // Ö´ĞĞ×ªÂ¼
+    // æ‰§è¡Œè½¬å½•
     std::vector<WhisperSegment> segments;
     bool success = TranscribeAudioFile(modelPath, audioPath, segments);
-    g_pipe_for_callback = NULL; // ÇåÀí
+    g_pipe_for_callback = NULL; // æ¸…ç†
     if (!success) {
-        std::string error = "{\"type\":\"error\",\"message\":\"×ªÂ¼Ê§°Ü\"}\n";
+        std::string error = "{\"type\":\"error\",\"message\":\"è½¬å½•å¤±è´¥\"}\n";
         DWORD written;
         WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
         return;
     }
     
-    // ·¢ËÍÃ¿¸ö×ªÂ¼Æ¬¶Î
+    // å‘é€æ¯ä¸ªè½¬å½•ç‰‡æ®µ
     for (const auto& segment : segments) {
-        // ²åÈëÊı¾İ¿â
+        // æ’å…¥æ•°æ®åº“
         InsertTranscript("Unknown", segment.text, segment.start_time);
         
-        // ·¢ËÍ¸ø Host
+        // å‘é€ç»™ Host
         std::string response = std::string("{\"type\":\"asr_segment\",\"text\":\"") +
             meetingai::proto::jsonEscape(segment.text) +
             "\",\"t0_ms\":" + std::to_string((int)(segment.start_time * 1000)) +
@@ -174,17 +174,17 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
         DWORD written;
         WriteFile(hPipe, response.data(), static_cast<DWORD>(response.size()), &written, nullptr);
         
-        std::wcout << L"[Worker] ·¢ËÍÆ¬¶Î: " << segment.text.c_str() << L"\n";
+        std::wcout << L"[Worker] å‘é€ç‰‡æ®µ: " << segment.text.c_str() << L"\n";
     }
     
-    // ·¢ËÍÍê³ÉĞÅºÅ
+    // å‘é€å®Œæˆä¿¡å·
     std::string complete = "{\"type\":\"transcribe_complete\",\"segments\":" + 
         std::to_string(segments.size()) + "}\n";
     DWORD written;
     WriteFile(hPipe, complete.data(), static_cast<DWORD>(complete.size()), &written, nullptr);
 }
 
-// ´¦Àí¿ØÖÆÌ¨¹Ø±Õ/×¢Ïú/¹Ø»úµÈĞÅºÅ£¬ÓÅÑÅÍË³ö
+// å¤„ç†æ§åˆ¶å°å…³é—­/æ³¨é”€/å…³æœºç­‰ä¿¡å·ï¼Œä¼˜é›…é€€å‡º
 static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     switch (dwCtrlType) {
     case CTRL_C_EVENT:
@@ -193,7 +193,7 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     case CTRL_LOGOFF_EVENT:
     case CTRL_SHUTDOWN_EVENT:
         g_shutdownRequested = TRUE;
-        return TRUE; // ÎÒÃÇ´¦ÀíÁË
+        return TRUE; // æˆ‘ä»¬å¤„ç†äº†
     }
     return FALSE;
 }
@@ -207,7 +207,7 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
 //}
 //
 //bool createPipeSecurity(SECURITY_ATTRIBUTES& sa, PSECURITY_DESCRIPTOR& pSD) {
-//    // µ÷ÊÔÆÚ£ºÔÊĞí AppContainer ºÍ Everyone ·ÃÎÊ
+//    // è°ƒè¯•æœŸï¼šå…è®¸ AppContainer å’Œ Everyone è®¿é—®
 //    LPCWSTR sddl = L"D:(A;;GA;;;AC)(A;;GA;;;WD)";
 //    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
 //        sddl, SDDL_REVISION_1, &pSD, nullptr)) {
@@ -221,18 +221,18 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
 //}
 
 int wmain() {
-    // ¡ï ĞÂÔö 1: ³õÊ¼»¯Êı¾İ¿â
+    // â˜… æ–°å¢ 1: åˆå§‹åŒ–æ•°æ®åº“
     if (!InitDatabaseOnce()) {
-        std::wcerr << L"[Worker] Êı¾İ¿â³õÊ¼»¯Ê§°Ü£¡\n";
+        std::wcerr << L"[Worker] æ•°æ®åº“åˆå§‹åŒ–å¤±è´¥ï¼\n";
         return 1;
     }
 
-    // ¡ï ĞÂÔö 2: ²åÈëÒ»Ìõ²âÊÔ¼ÇÂ¼
+    // â˜… æ–°å¢ 2: æ’å…¥ä¸€æ¡æµ‹è¯•è®°å½•
     InsertTranscript("system", "worker started", 0.0);
     bool ok = InsertTranscript("system", "worker started", 0.0);
     std::cout << "[DB] insert result = " << (ok ? "ok" : "fail") << "\n";
 
-    // ¡ï ĞÂÔö 3£º´òÓ¡ DB Â·¾¶¡¢ÊÇ·ñ´æÔÚ¡¢¼ÇÂ¼×ÜÊı£¨ASCII Êä³ö£¬±ÜÃâÖĞÎÄ±àÂëÎÊÌâ£©
+    // â˜… æ–°å¢ 3ï¼šæ‰“å° DB è·¯å¾„ã€æ˜¯å¦å­˜åœ¨ã€è®°å½•æ€»æ•°ï¼ˆASCII è¾“å‡ºï¼Œé¿å…ä¸­æ–‡ç¼–ç é—®é¢˜ï¼‰
     {
         std::string dbPath = meetingai::util::getDatabasePath();
         std::cout << "[DB] path = " << dbPath << "\n";
@@ -241,7 +241,7 @@ int wmain() {
         std::cout << "[DB] exists = " << (exists ? "true" : "false") << "\n";
 
         sqlite3* db = nullptr;
-        if (sqlite3_open(dbPath.c_str(), &db) == SQLITE_OK) {   // ÓÃ UTF-8 °æ±¾´ò¿ª
+        if (sqlite3_open(dbPath.c_str(), &db) == SQLITE_OK) {   // ç”¨ UTF-8 ç‰ˆæœ¬æ‰“å¼€
             sqlite3_stmt* st = nullptr;
             if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM transcripts;", -1, &st, nullptr) == SQLITE_OK) {
                 if (sqlite3_step(st) == SQLITE_ROW) {
@@ -263,7 +263,7 @@ int wmain() {
         }
     }
 
-    // ¼ì²éÊÇ·ñ´«Èë --ppid ²ÎÊı£¨Host PID£©
+    // æ£€æŸ¥æ˜¯å¦ä¼ å…¥ --ppid å‚æ•°ï¼ˆHost PIDï¼‰
     DWORD parentPid = 0;
     for (int i = 1; i < __argc; i++) {
         if (std::wstring(__wargv[i]) == L"--ppid" && i + 1 < __argc) {
@@ -278,9 +278,9 @@ int wmain() {
 
     const wchar_t* pipeName = L"\\\\.\\pipe\\MeetingAI_Pipe";
 
-    // ¡ï ×¢²á¿ØÖÆÌ¨¿ØÖÆÊÂ¼ş
+    // â˜… æ³¨å†Œæ§åˆ¶å°æ§åˆ¶äº‹ä»¶
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
-    // --- µ¥ÊµÀı»¥³âÁ¿£¨µ±Ç°»á»°£© ---
+    // --- å•å®ä¾‹äº’æ–¥é‡ï¼ˆå½“å‰ä¼šè¯ï¼‰ ---
     HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\MeetingAI_Worker_Singleton");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         std::wcerr << L"[Worker] another instance is running. exit.\n";
@@ -296,19 +296,19 @@ int wmain() {
     bool shutdownRequested = false;
 
     while (!shutdownRequested && !g_shutdownRequested) {
-        // Èç¹û Host ÒÑÍË³ö£¬Ö±½Ó±ê¼Ç½áÊø
+        // å¦‚æœ Host å·²é€€å‡ºï¼Œç›´æ¥æ ‡è®°ç»“æŸ
         if (hParent && WaitForSingleObject(hParent, 0) == WAIT_OBJECT_0) {
             std::wcout << L"[Worker] Host exited, shutting down\n";
             shutdownRequested = true;
-            break; // Ö±½ÓÌø³öÑ­»·
+            break; // ç›´æ¥è·³å‡ºå¾ªç¯
         }
 
-        // 1) ´´½¨¹ÜµÀ£¨µ¥ÊµÀı£»¿Í»§¶Ë¶Ï¿ªºóÔÙÑ­»·´´½¨£©
+        // 1) åˆ›å»ºç®¡é“ï¼ˆå•å®ä¾‹ï¼›å®¢æˆ·ç«¯æ–­å¼€åå†å¾ªç¯åˆ›å»ºï¼‰
         HANDLE hPipe = CreateNamedPipeW(
             pipeName,
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-            1,              // µ¥ÊµÀı¼´¿É£»ĞèÒª²¢·¢ÔÙ¿ª¶àÊµÀı
+            1,              // å•å®ä¾‹å³å¯ï¼›éœ€è¦å¹¶å‘å†å¼€å¤šå®ä¾‹
             4096, 4096, 0,
             &sa
         );
@@ -319,24 +319,24 @@ int wmain() {
 
         std::wcout << L"[Worker] pipe created, waiting for client...\n";
 
-        // 2) µÈ´ı¿Í»§¶Ë
+        // 2) ç­‰å¾…å®¢æˆ·ç«¯
         BOOL connected = ConnectNamedPipe(hPipe, nullptr) ? TRUE :
             (GetLastError() == ERROR_PIPE_CONNECTED);
         if (!connected) {
             meetingai::util::logLastError(L"[Worker] ConnectNamedPipe failed");
             CloseHandle(hPipe);
-            continue; // ÖØĞÂ´´½¨ÊµÀı
+            continue; // é‡æ–°åˆ›å»ºå®ä¾‹
         }
 
         std::wcout << L"[Worker] client connected\n";
 
-        // 3) Á¬½Ó´æ»îÆÚ¼ä£¬Ñ­»·¶ÁÈ¡¡°°´ĞĞ¡±µÄ¶àÌõÏûÏ¢
+        // 3) è¿æ¥å­˜æ´»æœŸé—´ï¼Œå¾ªç¯è¯»å–â€œæŒ‰è¡Œâ€çš„å¤šæ¡æ¶ˆæ¯
         std::string buffer;
         DWORD read = 0;
         char ch = 0;
 
         while (true) {
-            // ReadFile »á×èÈûÖ±µ½ÓĞÊı¾İ»ò¶Ô¶Ë¹Ø±Õ
+            // ReadFile ä¼šé˜»å¡ç›´åˆ°æœ‰æ•°æ®æˆ–å¯¹ç«¯å…³é—­
             if (!ReadFile(hPipe, &ch, 1, &read, nullptr)) {
                 DWORD err = GetLastError();
                 if (err == ERROR_BROKEN_PIPE) {
@@ -345,53 +345,53 @@ int wmain() {
                 else {
                     meetingai::util::logLastError(L"[Worker] ReadFile failed");
                 }
-                break; // ÍË³öÁ¬½ÓÑ­»·£¬È¥ÇåÀí²¢µÈ´ıÏÂÒ»¸ö¿Í»§¶Ë
+                break; // é€€å‡ºè¿æ¥å¾ªç¯ï¼Œå»æ¸…ç†å¹¶ç­‰å¾…ä¸‹ä¸€ä¸ªå®¢æˆ·ç«¯
             }
             if (read == 0) {
-                // ¶Ô¶ËÓÅÑÅ¹Ø±Õ
+                // å¯¹ç«¯ä¼˜é›…å…³é—­
                 std::wcout << L"[Worker] client closed\n";
                 break;
             }
 
-            // ¡ï ĞÂÔö£ºÈ«¾ÖÍË³ö¼ì²é
+            // â˜… æ–°å¢ï¼šå…¨å±€é€€å‡ºæ£€æŸ¥
             if (g_shutdownRequested) {
                 std::wcout << L"[Worker] global shutdown requested\n";
-                break; // Ìø³öÁ¬½ÓÑ­»·
+                break; // è·³å‡ºè¿æ¥å¾ªç¯
             }
 
             if (ch == '\n') {
-                // ÊÕµ½Ò»ÕûĞĞ£¬´¦Àí²¢»Ø¸´
+                // æ”¶åˆ°ä¸€æ•´è¡Œï¼Œå¤„ç†å¹¶å›å¤
                 std::wcout << L"[Worker] received: " << buffer.c_str() << L"\n";
 
-                // ---- ÍË³öÃüÁî£¨ÈİÈÌ¿Õ°×/¶îÍâ×Ö¶Î£©----
+                // ---- é€€å‡ºå‘½ä»¤ï¼ˆå®¹å¿ç©ºç™½/é¢å¤–å­—æ®µï¼‰----
                 if (meetingai::proto::isQuit(buffer)) {
                     std::wcout << L"[Worker] quit requested\n";
-                    shutdownRequested = true; // ½ø³Ì¼¶ÍË³ö
-                    // »Ø¸öÈ·ÈÏ£¨¿ÉÑ¡£©
+                    shutdownRequested = true; // è¿›ç¨‹çº§é€€å‡º
+                    // å›ä¸ªç¡®è®¤ï¼ˆå¯é€‰ï¼‰
                     std::string bye = "{\"type\":\"bye\"}\n";
                     DWORD w = 0; WriteFile(hPipe, bye.data(), (DWORD)bye.size(), &w, nullptr);
                     break;
                 }
                 
-                // ---- ĞÂÔö£º×ªÂ¼ÃüÁî´¦Àí ----
+                // ---- æ–°å¢ï¼šè½¬å½•å‘½ä»¤å¤„ç† ----
                 if (meetingai::proto::isTranscribe(buffer)) {
                     handleTranscribeCommand(hPipe, buffer);
                     buffer.clear();
                     continue;
                 }
 
-                // Õı³£»ØÏÔ
+                // æ­£å¸¸å›æ˜¾
                 std::string resp = "{\"type\":\"pong\",\"echo\":\"" + buffer + "\"}\n";
                 DWORD written = 0;
                 if (!WriteFile(hPipe, resp.data(), static_cast<DWORD>(resp.size()), &written, nullptr)) {
                     meetingai::util::logLastError(L"[Worker] WriteFile failed");
-                    break; // Ğ´Ê§°ÜÒ²½áÊø±¾´ÎÁ¬½Ó
+                    break; // å†™å¤±è´¥ä¹Ÿç»“æŸæœ¬æ¬¡è¿æ¥
                 }
                 else {
                     std::wcout << L"[Worker] response sent to client\n";
                 }
 
-                // Çå¿Õ»º³å£¬¼ÌĞøµÈ´ıÏÂÒ»ÌõÏûÏ¢
+                // æ¸…ç©ºç¼“å†²ï¼Œç»§ç»­ç­‰å¾…ä¸‹ä¸€æ¡æ¶ˆæ¯
                 buffer.clear();
             }
             else {
@@ -399,7 +399,7 @@ int wmain() {
             }
         }
 
-        // 4) ÇåÀíµ±Ç°Á¬½Ó£¬»Øµ½Íâ²ã while µÈ´ıÏÂÒ»¸ö¿Í»§¶Ë»òÍË³ö
+        // 4) æ¸…ç†å½“å‰è¿æ¥ï¼Œå›åˆ°å¤–å±‚ while ç­‰å¾…ä¸‹ä¸€ä¸ªå®¢æˆ·ç«¯æˆ–é€€å‡º
         FlushFileBuffers(hPipe);
         DisconnectNamedPipe(hPipe);
         CloseHandle(hPipe);

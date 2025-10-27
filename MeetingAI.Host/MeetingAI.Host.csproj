@@ -60,5 +60,8 @@
   <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <WindowsPackageType>None</WindowsPackageType>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Update="C:\Users\baish\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\include\MddBootstrapAutoInitializer.cs" Link="MddBootstrapAutoInitializer.cs" />
+  </ItemGroup>
 
 </Project>
