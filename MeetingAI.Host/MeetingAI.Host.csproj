@@ -9,7 +9,7 @@
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
-    <EnableMsixTooling>true</EnableMsixTooling>
+    <EnableMsixTooling>false</EnableMsixTooling>
     <Nullable>enable</Nullable>
     <!-- 保持默认：自动包含 App.xaml / *.xaml，避免重复 -->
     <!-- 不要设置 EnableDefaultPageItems=false -->
@@ -60,5 +60,17 @@
   <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <WindowsPackageType>None</WindowsPackageType>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
+  </ItemGroup>
 
 </Project>

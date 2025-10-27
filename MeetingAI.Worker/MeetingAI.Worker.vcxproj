@@ -197,7 +197,7 @@
     <ClInclude Include="third_party\whisper\include\whisper.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="models\ggml-small.bin" />
+    <None Include="models\ggml-large-v3-q5_0.bin" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="third_party\whisper\lib\x64\Debug\ggml-base.lib" />

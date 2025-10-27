@@ -120,7 +120,7 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
 
     // ★ 仅初始化一次模型（工业做法A）
     std::call_once(g_model_once2, [&] {
-        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-small.bin");
+        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3-q5_0.bin");
         if (!InitWhisperOnce(modelPathOnce)) {
             std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
             DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
@@ -145,7 +145,7 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
     
     // 假设模型路径（你需要根据实际情况调整）
     //std::string modelPath = "models\\ggml-small.bin";  
-    std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-small.bin");
+    std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3-q5_0.bin");
     g_pipe_for_callback = hPipe;
     // 执行转录
     std::vector<WhisperSegment> segments;

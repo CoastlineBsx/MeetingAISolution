@@ -160,7 +160,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="models\ggml-small.bin">
+    <None Include="models\ggml-large-v3-q5_0.bin">
       <Filter>models</Filter>
     </None>
   </ItemGroup>
