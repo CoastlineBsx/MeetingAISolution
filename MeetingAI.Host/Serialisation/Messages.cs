@@ -1,4 +1,4 @@
-﻿//// namespace 建议用 MeetingAI.Host；这样 MainWindow 不需要额外 using
+//// namespace 建议用 MeetingAI.Host；这样 MainWindow 不需要额外 using
 //namespace MeetingAI.Host;
 
 //public sealed class PingMessage

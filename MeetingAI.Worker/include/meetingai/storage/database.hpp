@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <string>
 
 // 初始化数据库（创建 meeting.db 和 transcripts 表）

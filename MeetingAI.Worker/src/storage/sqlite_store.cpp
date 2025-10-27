@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "database.hpp"
 #include "paths.h"
 #include "sqlite3.h"

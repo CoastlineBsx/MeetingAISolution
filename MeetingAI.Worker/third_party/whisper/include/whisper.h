@@ -1,4 +1,4 @@
-﻿#ifndef WHISPER_H
+#ifndef WHISPER_H
 #define WHISPER_H
 
 #include "ggml.h"

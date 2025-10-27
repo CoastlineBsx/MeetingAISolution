@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using MeetingAI.Host.Contracts.Messages;
 
 namespace MeetingAI.Host.Contracts;

@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include <windows.h>
 #include <sddl.h>
 #include <iostream>

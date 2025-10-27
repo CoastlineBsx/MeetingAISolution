@@ -1,4 +1,4 @@
-﻿namespace MeetingAI.Host.Contracts.Messages;
+namespace MeetingAI.Host.Contracts.Messages;
 
 public sealed class PingMessage
 {

@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "paths.h"
 #include <windows.h>
 #include <filesystem>
