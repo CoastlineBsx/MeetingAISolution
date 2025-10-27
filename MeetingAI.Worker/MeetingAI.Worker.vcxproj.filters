@@ -163,6 +163,9 @@
     <None Include="models\ggml-large-v3-q5_0.bin">
       <Filter>models</Filter>
     </None>
+    <None Include="models\ggml-large-v3.bin">
+      <Filter>models</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Library Include="third_party\whisper\lib\x64\Debug\ggml.lib">
