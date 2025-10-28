@@ -18,7 +18,43 @@
         <StackPanel Orientation="Horizontal" Grid.ColumnSpan="2" Spacing="8">
             <Button x:Name="BtnStart" Content="启动 Worker" Click="BtnStart_Click"/>
             <Button x:Name="BtnPing"  Content="发送测试消息" Click="BtnPing_Click" IsEnabled="False"/>
+
+            <!-- 测试转录组 -->
             <Button x:Name="BtnTranscribe" Content="测试转录" Click="BtnTranscribe_Click" IsEnabled="False"/>
+            <ComboBox x:Name="CmbTranscribeMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                <ComboBoxItem Content="🎤 对话/会议"/>
+                <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                <ComboBoxItem Content="🎭 混合模式"/>
+            </ComboBox>
+            <ComboBox x:Name="CmbTranscribeLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                <ComboBoxItem Content="🌐 自动"/>
+                <ComboBoxItem Content="🇨🇳 中文"/>
+                <ComboBoxItem Content="🇺🇸 英语"/>
+                <ComboBoxItem Content="🇯🇵 日语"/>
+                <ComboBoxItem Content="🇰🇷 韩语"/>
+                <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                <ComboBoxItem Content="🇫🇷 法语"/>
+                <ComboBoxItem Content="🇩🇪 德语"/>
+            </ComboBox>
+
+            <!-- 扬声器转录组 -->
+            <Button x:Name="BtnLoopback" Content="扬声器转录" Click="BtnLoopback_Click" IsEnabled="False"/>
+            <ComboBox x:Name="CmbLoopbackMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                <ComboBoxItem Content="🎤 对话/会议"/>
+                <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                <ComboBoxItem Content="🎭 混合模式"/>
+            </ComboBox>
+            <ComboBox x:Name="CmbLoopbackLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                <ComboBoxItem Content="🌐 自动"/>
+                <ComboBoxItem Content="🇨🇳 中文"/>
+                <ComboBoxItem Content="🇺🇸 英语"/>
+                <ComboBoxItem Content="🇯🇵 日语"/>
+                <ComboBoxItem Content="🇰🇷 韩语"/>
+                <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                <ComboBoxItem Content="🇫🇷 法语"/>
+                <ComboBoxItem Content="🇩🇪 德语"/>
+            </ComboBox>
+
             <Button x:Name="BtnStop"  Content="停止 Worker" Click="BtnStop_Click" IsEnabled="False"/>
             <TextBlock x:Name="LblStatus" Margin="12,0,0,0" VerticalAlignment="Center"/>
         </StackPanel>

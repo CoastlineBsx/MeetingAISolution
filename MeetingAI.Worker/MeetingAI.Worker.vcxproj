@@ -119,7 +119,7 @@
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad_full\include;$(ProjectDir)third_party\libfvad_full\src;</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -145,7 +145,7 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad_full\include;$(ProjectDir)third_party\libfvad_full\src;</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <OpenMPSupport>true</OpenMPSupport>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -183,6 +183,54 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\fvad.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\signal_processing\division_operations.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\signal_processing\energy.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\signal_processing\get_scaling_square.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\signal_processing\resample_48khz.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\signal_processing\resample_by_2_internal.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\signal_processing\resample_fractional.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\signal_processing\spl_inl.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\vad\vad_core.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\vad\vad_filterbank.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\vad\vad_gmm.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="third_party\libfvad_full\src\vad\vad_sp.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\meetingai\ipc\pipe_security.h" />
@@ -199,6 +247,7 @@
     <ClInclude Include="third_party\whisper\include\ggml-cpu.h" />
     <ClInclude Include="third_party\whisper\include\ggml.h" />
     <ClInclude Include="third_party\whisper\include\whisper.h" />
+    <ClInclude Include="third_party\libfvad_full\include\fvad.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="models\ggml-large-v3-q5_0.bin" />

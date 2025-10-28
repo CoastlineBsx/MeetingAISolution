@@ -12,6 +12,9 @@ using Microsoft.UI.Xaml;
 using Windows.Storage.Pickers;
 using MeetingAI.Host.Contracts;
 using MeetingAI.Host.Contracts.Messages;
+using NAudio.Wave;
+using FFMpegCore;
+using FFMpegCore.Enums;
 
 namespace MeetingAI.Host;
 
@@ -25,6 +28,12 @@ public sealed partial class MainWindow : Window
 
     // 本次转录的“完成”信号（收到 complete/error 时置位）
     private TaskCompletionSource<bool>? _transcribeTcs;
+
+    // 扬声器回放录音相关
+    private WasapiLoopbackCapture? _loopback;
+    private WaveFileWriter? _loopbackWriter;
+    private string? _loopbackTempFile;
+    private bool _isLoopback;
 
     private const string PipeName = "MeetingAI_Pipe";
 
@@ -70,18 +79,54 @@ public sealed partial class MainWindow : Window
 
             await AppendLineAsync($"[Host] 选择的音频文件: {file.Path}");
 
+            // ★ 如果是MP3/M4A，转换为WAV
+            string audioPath = file.Path;
+            if (file.Path.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                file.Path.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))
+            {
+                audioPath = await ConvertToWavAsync(file.Path);
+                if (string.IsNullOrEmpty(audioPath))
+                {
+                    await AppendLineAsync("[Host] 音频格式转换失败");
+                    return;
+                }
+            }
+
             // 确保管道连接（含后台读循环）
             await EnsurePipeAsync();
 
+            // 获取选择的模式
+            string mode = CmbTranscribeMode.SelectedIndex switch
+            {
+                0 => "speech",  // 对话/会议
+                1 => "music",   // 音乐/歌曲
+                2 => "mixed",   // 混合模式
+                _ => "auto"     // 自动检测
+            };
+
+            // 获取测试转录的语言选择
+            string language = CmbTranscribeLanguage.SelectedIndex switch
+            {
+                0 => "auto",  // 自动
+                1 => "zh",    // 中文
+                2 => "en",    // 英语
+                3 => "ja",    // 日语
+                4 => "ko",    // 韩语
+                5 => "es",    // 西班牙语
+                6 => "fr",    // 法语
+                7 => "de",    // 德语
+                _ => "auto"   // 默认自动
+            };
+
             // 发送转录命令
-            var cmd = new TranscribeFileCommand { path = file.Path };
+            var cmd = new TranscribeFileCommand { path = audioPath, mode = mode, language = language };
             var json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.TranscribeFileCommand) + "\n";
 
             var buf = Encoding.UTF8.GetBytes(json);
             await _pipe!.WriteAsync(buf, 0, buf.Length);
             await _pipe.FlushAsync();
 
-            await AppendLineAsync("[Host] 转录命令已发送，等待结果...");
+            await AppendLineAsync($"[Host] 转录命令已发送（模式: {mode}，语言: {language}），等待结果...");
 
             // 为本次转录创建“完成信号”
             _transcribeTcs?.TrySetCanceled();
@@ -108,10 +153,121 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // 扬声器回放录音：开始/停止并在停止后发送转录
+    private async void BtnLoopback_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!_isLoopback)
+            {
+                await StartLoopbackAsync();
+            }
+            else
+            {
+                await StopLoopbackAndTranscribeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Host] 扬声器录音异常：{ex.Message}");
+        }
+    }
+
+    private async Task StartLoopbackAsync()
+    {
+        _loopbackTempFile = Path.Combine(Path.GetTempPath(), $"speaker_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
+        _loopback = new WasapiLoopbackCapture();
+
+        // ★ 保存原始格式，让 Worker 端统一做音频处理（抗混叠重采样、高通滤波等）
+        _loopbackWriter = new WaveFileWriter(_loopbackTempFile, _loopback.WaveFormat);
+
+        await AppendLineAsync($"[Host] 录制格式: {_loopback.WaveFormat.SampleRate}Hz, " +
+            $"{_loopback.WaveFormat.BitsPerSample}bit, {_loopback.WaveFormat.Channels}声道, " +
+            $"{_loopback.WaveFormat.Encoding}");
+
+        _loopback.DataAvailable += (_, args) =>
+        {
+            _loopbackWriter?.Write(args.Buffer, 0, args.BytesRecorded);
+        };
+
+        _loopback.RecordingStopped += async (_, __) =>
+        {
+            try { _loopbackWriter?.Dispose(); } catch { }
+            _loopbackWriter = null;
+            try { _loopback?.Dispose(); } catch { }
+            _loopback = null;
+            await AppendLineAsync($"[Host] 扬声器录音已停止，文件：{_loopbackTempFile}");
+        };
+
+        _loopback.StartRecording();
+        _isLoopback = true;
+        BtnLoopback.Content = "停止扬声器转录";
+        await AppendLineAsync("[Host] 开始录制扬声器音频...");
+    }
+
+    private async Task StopLoopbackAndTranscribeAsync()
+    {
+        if (_loopback != null)
+        {
+            _loopback.StopRecording();
+        }
+        _isLoopback = false;
+        BtnLoopback.Content = "扬声器转录";
+
+        var path = _loopbackTempFile;
+        if (!string.IsNullOrEmpty(path) && File.Exists(path))
+        {
+            await EnsurePipeAsync();
+
+            // 获取扬声器转录的模式选择
+            string mode = CmbLoopbackMode.SelectedIndex switch
+            {
+                0 => "speech",  // 对话/会议
+                1 => "music",   // 音乐/歌曲
+                2 => "mixed",   // 混合模式
+                _ => "auto"     // 自动检测
+            };
+
+            // 获取扬声器转录的语言选择
+            string language = CmbLoopbackLanguage.SelectedIndex switch
+            {
+                0 => "auto",  // 自动
+                1 => "zh",    // 中文
+                2 => "en",    // 英语
+                3 => "ja",    // 日语
+                4 => "ko",    // 韩语
+                5 => "es",    // 西班牙语
+                6 => "fr",    // 法语
+                7 => "de",    // 德语
+                _ => "auto"   // 默认自动
+            };
+
+            var cmd = new TranscribeFileCommand { path = path!, mode = mode, language = language };
+            var json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.TranscribeFileCommand) + "\n";
+            var buf = Encoding.UTF8.GetBytes(json);
+            await _pipe!.WriteAsync(buf, 0, buf.Length);
+            await _pipe.FlushAsync();
+            await AppendLineAsync($"[Host] 已发送扬声器录音转录命令（模式: {mode}，语言: {language}）：{path}");
+
+            _transcribeTcs?.TrySetCanceled();
+            _transcribeTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+        else
+        {
+            await AppendLineAsync("[Host] 未找到录制的文件，取消转录。");
+        }
+    }
+
     private void StopWorkerOnExit()
     {
         try
         {
+            // 停止扬声器录音（若在录制中）
+            try { if (_loopback is not null) _loopback.StopRecording(); } catch { }
+            _isLoopback = false;
+            _loopbackWriter = null;
+            _loopback = null;
+
             _pipeCts?.Cancel();
             _pipeCts = null;
             _readLoopTask = null;
@@ -204,6 +360,7 @@ public sealed partial class MainWindow : Window
             await Task.Delay(700); // 给 Worker 时间创建管道
             BtnPing.IsEnabled = true;
             BtnTranscribe.IsEnabled = true;
+            BtnLoopback.IsEnabled = true;
             BtnStop.IsEnabled = true;
             BtnStart.IsEnabled = false;
             LblStatus.Text = "Worker 已启动";
@@ -312,6 +469,11 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            // 若在录制扬声器，先停止但不触发转录
+            try { if (_loopback is not null) _loopback.StopRecording(); } catch { }
+            _isLoopback = false;
+            BtnLoopback.Content = "扬声器转录";
+
             if (_pipe is { IsConnected: true })
             {
                 var cmd = new QuitMessage();
@@ -341,6 +503,7 @@ public sealed partial class MainWindow : Window
 
             BtnPing.IsEnabled = false;
             BtnTranscribe.IsEnabled = false;
+            BtnLoopback.IsEnabled = false;
             BtnStop.IsEnabled = false;
             BtnStart.IsEnabled = true;
             LblStatus.Text = "已停止";
@@ -373,9 +536,98 @@ public sealed partial class MainWindow : Window
 
             BtnPing.IsEnabled = false;
             BtnTranscribe.IsEnabled = false;
+            BtnLoopback.IsEnabled = false;
             BtnStop.IsEnabled = false;
             BtnStart.IsEnabled = true;
             LblStatus.Text = "已停止(异常)";
         }
     }
+
+    // MP3/M4A 转 WAV（使用 FFMpegCore - 自动下载FFmpeg）
+    private async Task<string?> ConvertToWavAsync(string sourcePath)
+    {
+        return await Task.Run(async () =>
+        {
+            try
+            {
+                var tempWav = Path.Combine(Path.GetTempPath(), $"converted_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
+
+                // ★ 自动下载FFmpeg（首次运行）
+                await EnsureFFmpegAsync();
+
+                _ = AppendLineAsync("[Host] 使用FFmpeg处理音频（工业级）...");
+
+                // 使用FFMpegCore进行高级音频处理
+                await FFMpegArguments
+                    .FromFileInput(sourcePath)
+                    .OutputToFile(tempWav, true, options => options
+                        .WithAudioCodec("pcm_s16le")          // PCM 16-bit
+                        .WithAudioSamplingRate(16000)         // 16kHz
+                        .WithCustomArgument("-ac 1")          // 单声道
+                        .WithCustomArgument("-af \"highpass=f=200,lowpass=f=3000,loudnorm=I=-16:TP=-1.5:LRA=11\"")
+                    )
+                    .ProcessAsynchronously();
+
+                if (File.Exists(tempWav))
+                {
+                    _ = AppendLineAsync($"[Host] FFmpeg转换完成: {tempWav}");
+                    return tempWav;
+                }
+                else
+                {
+                    _ = AppendLineAsync("[Host] FFmpeg转换失败，使用NAudio备选");
+                    return ConvertWithNAudio(sourcePath, tempWav);
+                }
+            }
+            catch (Exception ex)
+            {
+                _ = AppendLineAsync($"[Host] FFmpeg失败: {ex.Message}，使用NAudio备选");
+                var tempWav = Path.Combine(Path.GetTempPath(), $"converted_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
+                return ConvertWithNAudio(sourcePath, tempWav);
+            }
+        });
+    }
+
+    // 确保FFmpeg已下载（自动安装）
+    private async Task EnsureFFmpegAsync()
+    {
+        await Task.Run(() =>
+        {
+            try
+            {
+                // FFMpegCore 会自动从 GitHub 下载 FFmpeg
+                // 默认位置：%LOCALAPPDATA%\FFMpegCore\
+                GlobalFFOptions.Configure(options =>
+                {
+                    // 可以自定义FFmpeg路径（可选）
+                    // options.BinaryFolder = @"C:\ffmpeg\bin";
+                });
+
+                _ = AppendLineAsync("[Host] FFmpeg已就绪");
+            }
+            catch (Exception ex)
+            {
+                _ = AppendLineAsync($"[Host] FFmpeg配置警告: {ex.Message}");
+            }
+        });
+    }
+
+    // NAudio备选方案（FFmpeg不可用时）
+    private string? ConvertWithNAudio(string sourcePath, string outputPath)
+    {
+        try
+        {
+            using var reader = new NAudio.Wave.AudioFileReader(sourcePath);
+            var outFormat = new NAudio.Wave.WaveFormat(16000, 16, 1);
+            using var resampler = new NAudio.Wave.MediaFoundationResampler(reader, outFormat);
+            NAudio.Wave.WaveFileWriter.CreateWaveFile(outputPath, resampler);
+            _ = AppendLineAsync($"[Host] NAudio转换完成: {outputPath}");
+            return outputPath;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
+

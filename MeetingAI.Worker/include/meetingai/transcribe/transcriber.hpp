@@ -13,7 +13,9 @@ struct WhisperSegment {
 bool TranscribeAudioFile(
     const std::string& modelPath,
     const std::string& audioPath,
-    std::vector<WhisperSegment>& segments
+    std::vector<WhisperSegment>& segments,
+    const std::string& sceneMode = "auto",  // auto/speech/music/mixed
+    const std::string& language = "auto"    // auto/zh/en/ja/ko/es/fr/de...
 );
 
 // 初始化 Whisper（显式加载；通常不直接用）

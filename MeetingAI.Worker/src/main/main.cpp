@@ -147,9 +147,18 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
     //std::string modelPath = "models\\ggml-small.bin";  
     std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
     g_pipe_for_callback = hPipe;
+    
+    // 提取mode参数
+    std::string sceneMode = meetingai::proto::extractMode(command);
+    std::cout << "[Worker] 转录模式: " << sceneMode << std::endl;
+
+    // 提取language参数
+    std::string language = meetingai::proto::extractLanguage(command);
+    std::cout << "[Worker] 语言设置: " << language << std::endl;
+
     // 执行转录
     std::vector<WhisperSegment> segments;
-    bool success = TranscribeAudioFile(modelPath, audioPath, segments);
+    bool success = TranscribeAudioFile(modelPath, audioPath, segments, sceneMode, language);
     g_pipe_for_callback = NULL; // 清理
     if (!success) {
         std::string error = "{\"type\":\"error\",\"message\":\"转录失败\"}\n";

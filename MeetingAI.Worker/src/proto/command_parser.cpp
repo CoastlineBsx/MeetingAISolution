@@ -64,4 +64,40 @@ namespace meetingai::proto {
         return json.substr(start, end - start);
     }
 
+    std::string extractMode(const std::string& json) {
+        // 查找 "mode":"..."
+        size_t pos = json.find("\"mode\"");
+        if (pos == std::string::npos) return "auto";
+
+        size_t colon = json.find(":", pos);
+        if (colon == std::string::npos) return "auto";
+
+        size_t start = json.find("\"", colon);
+        if (start == std::string::npos) return "auto";
+        start++;
+
+        size_t end = json.find("\"", start);
+        if (end == std::string::npos) return "auto";
+
+        return json.substr(start, end - start);
+    }
+
+    std::string extractLanguage(const std::string& json) {
+        // 查找 "language":"..."
+        size_t pos = json.find("\"language\"");
+        if (pos == std::string::npos) return "auto";
+
+        size_t colon = json.find(":", pos);
+        if (colon == std::string::npos) return "auto";
+
+        size_t start = json.find("\"", colon);
+        if (start == std::string::npos) return "auto";
+        start++;
+
+        size_t end = json.find("\"", start);
+        if (end == std::string::npos) return "auto";
+
+        return json.substr(start, end - start);
+    }
+
 } // namespace meetingai::proto

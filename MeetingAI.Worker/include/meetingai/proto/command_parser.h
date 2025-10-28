@@ -17,4 +17,10 @@ namespace meetingai::proto {
 	// 从 {"path":"..."} 提取 path；失败返回空
 	std::string extractPath(const std::string& json);
 
+	// 从 {"mode":"..."} 提取 mode；失败返回 "auto"
+	std::string extractMode(const std::string& json);
+
+	// 从 {"language":"..."} 提取 language；失败返回 "auto"
+	std::string extractLanguage(const std::string& json);
+
 } // namespace meetingai::proto
