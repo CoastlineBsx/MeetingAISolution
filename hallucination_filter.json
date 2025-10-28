@@ -1,0 +1,70 @@
+{
+  "description": "Whisper幻觉过滤配置 - 可自定义规则，无需重新编译",
+
+  "whisper_features": {
+    "no_speech_prob_threshold": 0.8,
+    "avg_logprob_threshold": -1.2,
+    "compression_ratio_threshold": 2.4,
+    "compression_ratio_threshold_zh": 4.5,
+    "compression_ratio_threshold_ja": 4.0,
+    "compression_ratio_threshold_ko": 4.0
+  },
+
+  "text_filters": {
+    "min_length": 2,
+    "max_length": 200,
+
+    "exact_matches": [
+      "优优独播",
+      "优酷独播",
+      "独播剧场",
+      "YoYo Television",
+      "Television Series Exclusive",
+      "字幕",
+      "Subtitle",
+      "请不要相信",
+      "仅供",
+      "版权所有",
+      "Copyright",
+      "youtube.com",
+      "bilibili.com",
+      "订阅",
+      "Subscribe",
+      "作曲",
+      "作词",
+      "编曲",
+      "制作人",
+      "混音",
+      "母带",
+      "出品",
+      "发行",
+      "制作公司",
+      "录音",
+      "音乐公司",
+      "QQ音乐",
+      "网易云音乐",
+      "网易音乐",
+      "酷狗音乐",
+      "酷我音乐",
+      "Apple Music",
+      "Spotify",
+      "JOOX"
+    ],
+
+    "artist_names": [
+      "李宗盛",
+      "周杰伦",
+      "林俊杰",
+      "陈奕迅",
+      "邓紫棋"
+    ],
+
+    "repeat_patterns": [
+      "好好好好",
+      "哦哦哦哦",
+      "啊啊啊啊",
+      "嗯嗯嗯嗯",
+      "呃呃呃呃"
+    ]
+  }
+}

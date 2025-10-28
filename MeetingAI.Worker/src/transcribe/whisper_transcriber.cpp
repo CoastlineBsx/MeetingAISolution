@@ -4,6 +4,7 @@
 #include "fvad.h"  // ★ WebRTC VAD
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <vector>
 #include <windows.h>
 #include <thread>
@@ -39,6 +40,157 @@ static std::string EscapeJson(const char* s) {
         }
     }
     return out;
+}
+
+// ★★ 幻觉过滤配置（可从JSON加载）
+struct HallucinationFilterConfig {
+    // Whisper 官方特征阈值
+    float no_speech_prob_threshold = 0.8f;
+    float avg_logprob_threshold = -1.2f;
+    float compression_ratio_threshold = 2.4f;  // 英文默认
+
+    // ★ 不同语言的 compression_ratio 阈值（因为tokenizer效率不同）
+    float compression_ratio_threshold_zh = 4.5f;  // 中文（汉字密度高）
+    float compression_ratio_threshold_ja = 4.0f;  // 日语
+    float compression_ratio_threshold_ko = 4.0f;  // 韩语
+
+    // 文本过滤
+    int min_length = 2;
+    int max_length = 200;
+    std::vector<std::string> exact_matches;
+    std::vector<std::string> artist_names;
+    std::vector<std::string> repeat_patterns;
+};
+
+// 简单的 JSON 配置加载（轻量实现，避免依赖第三方库）
+static HallucinationFilterConfig LoadHallucinationConfig(const std::string& json_path) {
+    HallucinationFilterConfig config;
+
+    std::ifstream file(json_path);
+    if (!file.is_open()) {
+        std::cout << "[Config] 未找到配置文件: " << json_path << "，使用默认配置" << std::endl;
+        return config;
+    }
+
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    // 简单解析（查找关键字段）
+    auto extract_float = [&](const std::string& key) -> float {
+        size_t pos = content.find("\"" + key + "\"");
+        if (pos == std::string::npos) return 0.0f;
+        pos = content.find(":", pos);
+        if (pos == std::string::npos) return 0.0f;
+        return std::stof(content.substr(pos + 1));
+    };
+
+    auto extract_int = [&](const std::string& key) -> int {
+        size_t pos = content.find("\"" + key + "\"");
+        if (pos == std::string::npos) return 0;
+        pos = content.find(":", pos);
+        if (pos == std::string::npos) return 0;
+        return std::stoi(content.substr(pos + 1));
+    };
+
+    auto extract_string_array = [&](const std::string& key) -> std::vector<std::string> {
+        std::vector<std::string> result;
+        size_t pos = content.find("\"" + key + "\"");
+        if (pos == std::string::npos) return result;
+        pos = content.find("[", pos);
+        if (pos == std::string::npos) return result;
+        size_t end_pos = content.find("]", pos);
+        if (end_pos == std::string::npos) return result;
+
+        std::string array_content = content.substr(pos + 1, end_pos - pos - 1);
+        std::istringstream ss(array_content);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            // 去除空格和引号
+            item.erase(0, item.find_first_not_of(" \t\n\r\""));
+            item.erase(item.find_last_not_of(" \t\n\r\"") + 1);
+            if (!item.empty()) {
+                result.push_back(item);
+            }
+        }
+        return result;
+    };
+
+    // 读取配置
+    try {
+        config.no_speech_prob_threshold = extract_float("no_speech_prob_threshold");
+        config.avg_logprob_threshold = extract_float("avg_logprob_threshold");
+        config.compression_ratio_threshold = extract_float("compression_ratio_threshold");
+        config.compression_ratio_threshold_zh = extract_float("compression_ratio_threshold_zh");
+        config.compression_ratio_threshold_ja = extract_float("compression_ratio_threshold_ja");
+        config.compression_ratio_threshold_ko = extract_float("compression_ratio_threshold_ko");
+        config.min_length = extract_int("min_length");
+        config.max_length = extract_int("max_length");
+        config.exact_matches = extract_string_array("exact_matches");
+        config.artist_names = extract_string_array("artist_names");
+        config.repeat_patterns = extract_string_array("repeat_patterns");
+
+        std::cout << "[Config] 加载配置成功: " << json_path << std::endl;
+        std::cout << "[Config] - no_speech_prob: " << config.no_speech_prob_threshold << std::endl;
+        std::cout << "[Config] - avg_logprob: " << config.avg_logprob_threshold << std::endl;
+        std::cout << "[Config] - compression_ratio (en): " << config.compression_ratio_threshold << std::endl;
+        std::cout << "[Config] - compression_ratio (zh): " << config.compression_ratio_threshold_zh << std::endl;
+        std::cout << "[Config] - exact_matches: " << config.exact_matches.size() << " 项" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "[Config] 解析配置失败: " << e.what() << "，使用默认配置" << std::endl;
+    }
+
+    return config;
+}
+
+// 全局配置（首次使用时加载）
+static HallucinationFilterConfig g_hallucination_config;
+static std::once_flag g_config_once;
+
+// ★★ 简繁检测函数（用于debug）
+static void AnalyzeChineseVariant(const std::vector<WhisperSegment>& segments) {
+    // 常见简繁字对照（用于检测）
+    const std::vector<std::pair<std::string, std::string>> simplified_traditional_pairs = {
+        {"这", "這"}, {"个", "個"}, {"们", "們"}, {"国", "國"}, {"发", "發"},
+        {"说", "說"}, {"时", "時"}, {"为", "為"}, {"能", "能"}, {"过", "過"},
+        {"里", "裡"}, {"头", "頭"}, {"吃", "吃"}, {"着", "著"}, {"没", "沒"},
+        {"听", "聽"}, {"会", "會"}, {"学", "學"}, {"对", "對"}, {"问", "問"}
+    };
+
+    int simplified_count = 0;
+    int traditional_count = 0;
+
+    for (const auto& seg : segments) {
+        for (const auto& [simp, trad] : simplified_traditional_pairs) {
+            size_t pos = 0;
+            // 统计简体字出现次数
+            while ((pos = seg.text.find(simp, pos)) != std::string::npos) {
+                simplified_count++;
+                pos += simp.length();
+            }
+            // 统计繁体字出现次数
+            pos = 0;
+            while ((pos = seg.text.find(trad, pos)) != std::string::npos) {
+                traditional_count++;
+                pos += trad.length();
+            }
+        }
+    }
+
+    int total = simplified_count + traditional_count;
+    if (total > 0) {
+        float simp_ratio = (float)simplified_count / total * 100;
+        float trad_ratio = (float)traditional_count / total * 100;
+        std::cout << "[ChineseVariant] 简体字: " << simplified_count << " (" << simp_ratio << "%), "
+                  << "繁体字: " << traditional_count << " (" << trad_ratio << "%)" << std::endl;
+
+        if (trad_ratio > 60) {
+            std::cout << "[ChineseVariant] ★ 主要输出繁体（可能是台湾口音/粤语）" << std::endl;
+        } else if (simp_ratio > 60) {
+            std::cout << "[ChineseVariant] ★ 主要输出简体（可能是大陆口音）" << std::endl;
+        } else {
+            std::cout << "[ChineseVariant] ★ 简繁混合输出（口音不明显或音质差）" << std::endl;
+        }
+    }
 }
 
 static void OnProgress(whisper_context*, whisper_state*, int progress, void*) {
@@ -932,6 +1084,37 @@ bool TranscribeAudioFile(
             // ★ 时间戳需要加上段落的起始时间
             seg.start_time = voice_seg.start_time + (whisper_full_get_segment_t0_from_state(st, i) / 100.0);
             seg.end_time = voice_seg.start_time + (whisper_full_get_segment_t1_from_state(st, i) / 100.0);
+
+            // ★★ 获取 Whisper 官方特征（用于幻觉检测）
+            seg.no_speech_prob = whisper_full_get_segment_no_speech_prob_from_state(st, i);
+
+            // ★★ 获取 token 数量（用于计算 avg_logprob 和 compression_ratio）
+            int n_tokens = whisper_full_n_tokens_from_state(st, i);
+
+            // ★★ 计算 avg_logprob（OpenAI Whisper 官方方法）
+            if (n_tokens > 0) {
+                float sum_logprob = 0.0f;
+                for (int j = 0; j < n_tokens; ++j) {
+                    float token_p = whisper_full_get_token_p_from_state(st, i, j);
+                    // ★ OpenAI 方法：用极小值替代0，避免 log(0)
+                    token_p = token_p > 1e-10f ? token_p : 1e-10f;
+                    sum_logprob += std::log(token_p);
+                }
+                seg.avg_logprob = sum_logprob / n_tokens;
+            } else {
+                seg.avg_logprob = 0.0f;
+            }
+
+            // ★★ 计算 compression_ratio（OpenAI Whisper 官方方法）
+            // OpenAI 定义：compression_ratio = len(text) / len(tokens)
+            // 正常情况：1 token ≈ 1-2 个字符，ratio 约 1.0-2.0
+            // 重复文本（如"你好你好你好"）：ratio > 2.4（token没增加，字符翻倍）
+            if (n_tokens > 0) {
+                seg.compression_ratio = (float)seg.text.length() / n_tokens;
+            } else {
+                seg.compression_ratio = 1.0f;  // 无token时设为正常值
+            }
+
             all_whisper_segments.push_back(seg);
         }
 
@@ -942,49 +1125,106 @@ bool TranscribeAudioFile(
     std::cout << "[Whisper][Perf] total_infer=" << total_infer_ms << " ms" << std::endl;
     std::cout << "[Whisper] 原始转录段数: " << all_whisper_segments.size() << std::endl;
 
-    // ★ 幻觉文本检测（常见模式）
-    auto is_hallucination = [](const std::string& text) -> bool {
-        // 常见的Whisper幻觉模式
-        const std::vector<std::string> hallucination_patterns = {
-            // 视频平台
-            "优优独播", "优酷独播", "独播剧场", "YoYo Television",
-            "Television Series Exclusive", "字幕", "Subtitle",
-            "请不要相信", "仅供", "版权所有", "Copyright",
-            "youtube.com", "bilibili.com", "订阅", "Subscribe",
-
-            // ★ 音乐元数据幻觉（新增）
-            "作曲", "作词", "编曲", "制作人", "混音", "母带",
-            "出品", "发行", "制作公司", "录音", "音乐公司",
-            "QQ音乐", "网易云音乐", "网易音乐", "酷狗音乐", "酷我音乐",
-            "Apple Music", "Spotify", "JOOX",
-
-            // ★ 常见重复幻觉词（新增）
-            "好好好好", "哦哦哦哦", "啊啊啊啊",
-            "嗯嗯嗯嗯", "呃呃呃呃",
-
-            // ★ 艺人名字重复（当作元数据处理）
-            "李宗盛", "周杰伦", "林俊杰", "陈奕迅", "邓紫棋"
+    // ★★ 加载幻觉过滤配置（首次使用时加载）
+    std::call_once(g_config_once, []() {
+        // 尝试从多个位置加载配置文件
+        std::vector<std::string> config_paths = {
+            "hallucination_filter.json",
+            "../hallucination_filter.json",
+            "../../hallucination_filter.json",
+            "../../../hallucination_filter.json"
         };
 
-        // 转换为小写比较（对英文不区分大小写）
+        for (const auto& path : config_paths) {
+            std::ifstream test(path);
+            if (test.good()) {
+                g_hallucination_config = LoadHallucinationConfig(path);
+                return;
+            }
+        }
+
+        std::cout << "[Config] 未找到配置文件，使用默认配置" << std::endl;
+    });
+
+    // ★★ 获取检测到的语言，选择合适的 compression_ratio 阈值
+    int detected_lang_id = whisper_full_lang_id_from_state(st);
+    const char* detected_lang = whisper_lang_str(detected_lang_id);
+    float compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold;  // 默认英文
+
+    if (detected_lang != nullptr) {
+        std::string lang_str(detected_lang);
+        if (lang_str == "zh") {
+            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_zh;
+        } else if (lang_str == "ja") {
+            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_ja;
+        } else if (lang_str == "ko") {
+            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_ko;
+        }
+        std::cout << "[Filter] 检测到语言: " << lang_str
+                  << ", compression_ratio阈值: " << compression_ratio_threshold << std::endl;
+    }
+
+    // ★★ 工业级幻觉检测（Whisper官方特征 + 可配置规则）
+    auto is_hallucination = [&](const WhisperSegment& seg) -> bool {
+        const auto& cfg = g_hallucination_config;
+
+        // ★★★ 阶段1：Whisper 官方特征过滤（最可靠）
+        if (seg.no_speech_prob > cfg.no_speech_prob_threshold) {
+            std::cout << "[Filter][Official] 无语音段 (no_speech_prob=" << seg.no_speech_prob << "): \"" << seg.text << "\"" << std::endl;
+            return true;
+        }
+
+        if (seg.avg_logprob < cfg.avg_logprob_threshold) {
+            std::cout << "[Filter][Official] 低置信度段 (avg_logprob=" << seg.avg_logprob << "): \"" << seg.text << "\"" << std::endl;
+            return true;
+        }
+
+        // ★★ 使用根据语言动态选择的阈值（而不是配置中的固定值）
+        if (seg.compression_ratio > compression_ratio_threshold) {
+            std::cout << "[Filter][Official] 高压缩率/重复文本 (ratio=" << seg.compression_ratio
+                      << ", 阈值=" << compression_ratio_threshold << "): \"" << seg.text << "\"" << std::endl;
+            return true;
+        }
+
+        // ★★★ 阶段2：文本规则过滤（可配置）
+        const std::string& text = seg.text;
+
+        // 长度检查
+        if (text.length() < cfg.min_length || text.length() > cfg.max_length) {
+            std::cout << "[Filter][Length] 异常长度 (len=" << text.length() << "): \"" << text << "\"" << std::endl;
+            return true;
+        }
+
+        // 精确匹配（视频平台、音乐元数据等）
         std::string text_lower = text;
         std::transform(text_lower.begin(), text_lower.end(), text_lower.begin(), ::tolower);
 
-        for (const auto& pattern : hallucination_patterns) {
+        for (const auto& pattern : cfg.exact_matches) {
             std::string pattern_lower = pattern;
             std::transform(pattern_lower.begin(), pattern_lower.end(), pattern_lower.begin(), ::tolower);
-
             if (text_lower.find(pattern_lower) != std::string::npos) {
+                std::cout << "[Filter][ExactMatch] 匹配黑名单 \"" << pattern << "\": \"" << text << "\"" << std::endl;
                 return true;
             }
         }
 
-        // ★ 检测过短或过长的异常文本
-        if (text.length() < 2 || text.length() > 200) {
-            return true;
+        // 艺人名字（单独检测）
+        for (const auto& artist : cfg.artist_names) {
+            if (text.find(artist) != std::string::npos) {
+                std::cout << "[Filter][Artist] 艺人名字 \"" << artist << "\": \"" << text << "\"" << std::endl;
+                return true;
+            }
         }
 
-        // ★ 检测重复字符（如"合合合合"）
+        // 重复模式（如"啊啊啊啊"）
+        for (const auto& repeat : cfg.repeat_patterns) {
+            if (text.find(repeat) != std::string::npos) {
+                std::cout << "[Filter][Repeat] 重复模式 \"" << repeat << "\": \"" << text << "\"" << std::endl;
+                return true;
+            }
+        }
+
+        // 检测全字符相同（如"合合合合"）
         if (text.length() >= 4) {
             bool all_same = true;
             for (size_t i = 1; i < text.length(); ++i) {
@@ -993,7 +1233,10 @@ bool TranscribeAudioFile(
                     break;
                 }
             }
-            if (all_same) return true;
+            if (all_same) {
+                std::cout << "[Filter][AllSame] 全字符相同: \"" << text << "\"" << std::endl;
+                return true;
+            }
         }
 
         return false;
@@ -1001,15 +1244,29 @@ bool TranscribeAudioFile(
 
     // ★ 过滤幻觉文本
     std::vector<WhisperSegment> whisper_segments;
+    int filtered_by_official = 0;
+    int filtered_by_rules = 0;
+
     for (const auto& seg : all_whisper_segments) {
-        if (is_hallucination(seg.text)) {
-            std::cout << "[Whisper] 过滤幻觉文本: \"" << seg.text << "\"" << std::endl;
+        // 先检查官方特征（使用动态选择的阈值）
+        bool is_halluc_official = (seg.no_speech_prob > g_hallucination_config.no_speech_prob_threshold ||
+                                    seg.avg_logprob < g_hallucination_config.avg_logprob_threshold ||
+                                    seg.compression_ratio > compression_ratio_threshold);
+
+        if (is_hallucination(seg)) {
+            if (is_halluc_official) {
+                filtered_by_official++;
+            } else {
+                filtered_by_rules++;
+            }
             continue;
         }
         whisper_segments.push_back(seg);
     }
 
-    std::cout << "[Whisper] 过滤后转录段数: " << whisper_segments.size() << std::endl;
+    std::cout << "[Filter] 过滤统计: 官方特征=" << filtered_by_official
+              << ", 文本规则=" << filtered_by_rules
+              << ", 保留=" << whisper_segments.size() << std::endl;
 
     // ★★ 新的合并逻辑：基于 VAD 的人声段落，填充非人声段落为 [音乐] ★★
     segments.clear();
@@ -1057,6 +1314,11 @@ bool TranscribeAudioFile(
         std::cout << "[Final] Segment " << i << ": ["
                   << seg.start_time << "s - " << seg.end_time << "s] "
                   << seg.text << std::endl;
+    }
+
+    // ★★ 分析简繁输出比例（仅中文时）
+    if (detected_lang != nullptr && std::string(detected_lang) == "zh") {
+        AnalyzeChineseVariant(segments);
     }
 
     whisper_free_state(st); // 释放本次任务的 state
