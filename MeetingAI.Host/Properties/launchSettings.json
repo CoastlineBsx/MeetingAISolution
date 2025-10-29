@@ -1,9 +1,6 @@
 {
   "profiles": {
-    "MeetingAIHost (Package)": {
-      "commandName": "MsixPackage"
-    },
-    "MeetingAIHost (Unpackaged)": {
+    "MeetingAI.Host": {
       "commandName": "Project"
     }
   }

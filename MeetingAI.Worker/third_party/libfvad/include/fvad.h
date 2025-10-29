@@ -12,6 +12,9 @@
 #ifndef FVAD_H_
 #define FVAD_H_
 
+#include <stddef.h>  // for size_t
+#include <stdint.h>  // for int16_t
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -2,17 +2,27 @@
   "description": "Whisper幻觉过滤配置 - 可自定义规则，无需重新编译",
 
   "whisper_features": {
-    "no_speech_prob_threshold": 0.8,
-    "avg_logprob_threshold": -1.2,
-    "compression_ratio_threshold": 2.4,
-    "compression_ratio_threshold_zh": 4.5,
-    "compression_ratio_threshold_ja": 4.0,
-    "compression_ratio_threshold_ko": 4.0
+    "no_speech_prob_threshold": 0.9,
+    "avg_logprob_threshold": -1.8,
+
+    "compression_ratio_threshold": 5.5,
+    "compression_ratio_threshold_zh": 6.5,
+    "compression_ratio_threshold_ja": 6.0,
+    "compression_ratio_threshold_ko": 6.0,
+    "compression_ratio_threshold_es": 5.5,
+    "compression_ratio_threshold_fr": 5.5,
+    "compression_ratio_threshold_de": 5.0,
+    "compression_ratio_threshold_ru": 6.5,
+    "compression_ratio_threshold_ar": 7.0,
+
+    "_comment": "工业界标准（最大化保留策略）：只过滤明确的幻觉重复文本，宁可误报也不漏报真实内容。参考OpenAI/AssemblyAI商业标准。"
   },
 
   "text_filters": {
-    "min_length": 2,
-    "max_length": 200,
+    "min_length": 1,
+    "max_length": 500,
+
+    "_comment_rules": "文本规则仅过滤明确的元数据/水印，保留所有可能的真实对话内容",
 
     "exact_matches": [
       "优优独播",
