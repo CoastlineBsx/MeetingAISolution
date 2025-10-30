@@ -14,6 +14,26 @@
     <!-- 保持默认：自动包含 App.xaml / *.xaml，避免重复 -->
     <!-- 不要设置 EnableDefaultPageItems=false -->
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Configuration\**" />
+    <Compile Remove="Presentation\**" />
+    <Compile Remove="Services\**" />
+    <Content Remove="Configuration\**" />
+    <Content Remove="Presentation\**" />
+    <Content Remove="Services\**" />
+    <EmbeddedResource Remove="Configuration\**" />
+    <EmbeddedResource Remove="Presentation\**" />
+    <EmbeddedResource Remove="Services\**" />
+    <None Remove="Configuration\**" />
+    <None Remove="Presentation\**" />
+    <None Remove="Services\**" />
+    <Page Remove="Configuration\**" />
+    <Page Remove="Presentation\**" />
+    <Page Remove="Services\**" />
+    <PRIResource Remove="Configuration\**" />
+    <PRIResource Remove="Presentation\**" />
+    <PRIResource Remove="Services\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <Content Include="Assets\SplashScreen.scale-200.png" />
@@ -40,11 +60,6 @@
   <!-- 让“打包和发布”菜单可用（保持原样） -->
   <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <ProjectCapability Include="Msix" />
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Configuration\" />
-    <Folder Include="Presentation\" />
-    <Folder Include="Services\" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">

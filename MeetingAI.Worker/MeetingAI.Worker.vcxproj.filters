@@ -114,6 +114,18 @@
     <ClCompile Include="src\pch.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="third_party\libfvad\src\fvad.c" />
+    <ClCompile Include="third_party\libfvad\src\signal_processing\division_operations.c" />
+    <ClCompile Include="third_party\libfvad\src\signal_processing\energy.c" />
+    <ClCompile Include="third_party\libfvad\src\signal_processing\get_scaling_square.c" />
+    <ClCompile Include="third_party\libfvad\src\signal_processing\resample_48khz.c" />
+    <ClCompile Include="third_party\libfvad\src\signal_processing\resample_by_2_internal.c" />
+    <ClCompile Include="third_party\libfvad\src\signal_processing\resample_fractional.c" />
+    <ClCompile Include="third_party\libfvad\src\signal_processing\spl_inl.c" />
+    <ClCompile Include="third_party\libfvad\src\vad\vad_core.c" />
+    <ClCompile Include="third_party\libfvad\src\vad\vad_filterbank.c" />
+    <ClCompile Include="third_party\libfvad\src\vad\vad_gmm.c" />
+    <ClCompile Include="third_party\libfvad\src\vad\vad_sp.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\meetingai\util\paths.h">
@@ -158,6 +170,7 @@
     <ClInclude Include="include\meetingai\transcribe\transcriber.hpp">
       <Filter>include\meetingai\transcribe</Filter>
     </ClInclude>
+    <ClInclude Include="third_party\libfvad\include\fvad.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="models\ggml-large-v3-q5_0.bin">
