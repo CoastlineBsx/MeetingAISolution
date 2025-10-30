@@ -43,23 +43,23 @@ static std::string EscapeJson(const char* s) {
     return out;
 }
 
-// ★★ 幻觉过滤配置（可从JSON加载）
+// ★★ 后处理过滤配置（可从JSON加载）
 // ★★★ 工业界标准：最大化保留策略（参考OpenAI Whisper API / AssemblyAI / Deepgram）
-struct HallucinationFilterConfig {
-    // Whisper 官方特征阈值（宽松配置，只过滤明确的幻觉）
-    float no_speech_prob_threshold = 0.9f;   // 只过滤90%确定的静音
-    float avg_logprob_threshold = -1.8f;     // 保留更多低置信度内容
-    float compression_ratio_threshold = 5.5f;  // 英文默认（工业界标准）
+struct PostProcessingFilterConfig {
+    // Whisper 后处理质量指标阈值（宽松配置，只过滤明确的幻觉）
+    float no_speech_probability_threshold = 0.9f;   // 只过滤90%确定的静音
+    float average_log_probability_threshold = -1.8f;     // 保留更多低置信度内容
+    float text_compression_ratio_threshold = 5.5f;  // 英文默认（工业界标准）
 
-    // ★ 不同语言的 compression_ratio 阈值（基于工业界最佳实践）
-    float compression_ratio_threshold_zh = 6.5f;  // 中文（汉字密度高）
-    float compression_ratio_threshold_ja = 6.0f;  // 日语
-    float compression_ratio_threshold_ko = 6.0f;  // 韩语
-    float compression_ratio_threshold_es = 5.5f;  // 西班牙语
-    float compression_ratio_threshold_fr = 5.5f;  // 法语
-    float compression_ratio_threshold_de = 5.0f;  // 德语（长单词多）
-    float compression_ratio_threshold_ru = 6.5f;  // 俄语
-    float compression_ratio_threshold_ar = 7.0f;  // 阿拉伯语（连写效率最高）
+    // ★ 不同语言的 text_compression_ratio 阈值（基于工业界最佳实践）
+    float text_compression_ratio_threshold_zh = 6.5f;  // 中文（汉字密度高）
+    float text_compression_ratio_threshold_ja = 6.0f;  // 日语
+    float text_compression_ratio_threshold_ko = 6.0f;  // 韩语
+    float text_compression_ratio_threshold_es = 5.5f;  // 西班牙语
+    float text_compression_ratio_threshold_fr = 5.5f;  // 法语
+    float text_compression_ratio_threshold_de = 5.0f;  // 德语（长单词多）
+    float text_compression_ratio_threshold_ru = 6.5f;  // 俄语
+    float text_compression_ratio_threshold_ar = 7.0f;  // 阿拉伯语（连写效率最高）
 
     // 文本过滤（最大保留）
     int min_length = 1;    // 保留单字（如"啊"、"嗯"）
@@ -70,8 +70,8 @@ struct HallucinationFilterConfig {
 };
 
 // 简单的 JSON 配置加载（轻量实现，避免依赖第三方库）
-static HallucinationFilterConfig LoadHallucinationConfig(const std::string& json_path) {
-    HallucinationFilterConfig config;
+static PostProcessingFilterConfig LoadPostProcessingConfig(const std::string& json_path) {
+    PostProcessingFilterConfig config;
 
     std::ifstream file(json_path);
     if (!file.is_open()) {
@@ -124,35 +124,35 @@ static HallucinationFilterConfig LoadHallucinationConfig(const std::string& json
 
     // 读取配置
     try {
-        config.no_speech_prob_threshold = extract_float("no_speech_prob_threshold");
-        config.avg_logprob_threshold = extract_float("avg_logprob_threshold");
-        config.compression_ratio_threshold = extract_float("compression_ratio_threshold");
-        config.compression_ratio_threshold_zh = extract_float("compression_ratio_threshold_zh");
-        config.compression_ratio_threshold_ja = extract_float("compression_ratio_threshold_ja");
-        config.compression_ratio_threshold_ko = extract_float("compression_ratio_threshold_ko");
-        config.compression_ratio_threshold_es = extract_float("compression_ratio_threshold_es");
-        config.compression_ratio_threshold_fr = extract_float("compression_ratio_threshold_fr");
-        config.compression_ratio_threshold_de = extract_float("compression_ratio_threshold_de");
-        config.compression_ratio_threshold_ru = extract_float("compression_ratio_threshold_ru");
-        config.compression_ratio_threshold_ar = extract_float("compression_ratio_threshold_ar");
+        config.no_speech_probability_threshold = extract_float("no_speech_probability_threshold");
+        config.average_log_probability_threshold = extract_float("average_log_probability_threshold");
+        config.text_compression_ratio_threshold = extract_float("text_compression_ratio_threshold");
+        config.text_compression_ratio_threshold_zh = extract_float("text_compression_ratio_threshold_zh");
+        config.text_compression_ratio_threshold_ja = extract_float("text_compression_ratio_threshold_ja");
+        config.text_compression_ratio_threshold_ko = extract_float("text_compression_ratio_threshold_ko");
+        config.text_compression_ratio_threshold_es = extract_float("text_compression_ratio_threshold_es");
+        config.text_compression_ratio_threshold_fr = extract_float("text_compression_ratio_threshold_fr");
+        config.text_compression_ratio_threshold_de = extract_float("text_compression_ratio_threshold_de");
+        config.text_compression_ratio_threshold_ru = extract_float("text_compression_ratio_threshold_ru");
+        config.text_compression_ratio_threshold_ar = extract_float("text_compression_ratio_threshold_ar");
         config.min_length = extract_int("min_length");
         config.max_length = extract_int("max_length");
         config.exact_matches = extract_string_array("exact_matches");
         config.artist_names = extract_string_array("artist_names");
         config.repeat_patterns = extract_string_array("repeat_patterns");
 
-        std::cout << "[Config] 加载配置成功: " << json_path << std::endl;
-        std::cout << "[Config] - no_speech_prob: " << config.no_speech_prob_threshold << std::endl;
-        std::cout << "[Config] - avg_logprob: " << config.avg_logprob_threshold << std::endl;
-        std::cout << "[Config] - compression_ratio (en): " << config.compression_ratio_threshold << std::endl;
-        std::cout << "[Config] - compression_ratio (zh): " << config.compression_ratio_threshold_zh << std::endl;
-        std::cout << "[Config] - compression_ratio (ja): " << config.compression_ratio_threshold_ja << std::endl;
-        std::cout << "[Config] - compression_ratio (ko): " << config.compression_ratio_threshold_ko << std::endl;
-        std::cout << "[Config] - compression_ratio (es): " << config.compression_ratio_threshold_es << std::endl;
-        std::cout << "[Config] - compression_ratio (fr): " << config.compression_ratio_threshold_fr << std::endl;
-        std::cout << "[Config] - compression_ratio (de): " << config.compression_ratio_threshold_de << std::endl;
-        std::cout << "[Config] - compression_ratio (ru): " << config.compression_ratio_threshold_ru << std::endl;
-        std::cout << "[Config] - compression_ratio (ar): " << config.compression_ratio_threshold_ar << std::endl;
+        std::cout << "[PostProcessing] 加载配置成功: " << json_path << std::endl;
+        std::cout << "[PostProcessing] - no_speech_probability: " << config.no_speech_probability_threshold << std::endl;
+        std::cout << "[PostProcessing] - average_log_probability: " << config.average_log_probability_threshold << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (en): " << config.text_compression_ratio_threshold << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (zh): " << config.text_compression_ratio_threshold_zh << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (ja): " << config.text_compression_ratio_threshold_ja << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (ko): " << config.text_compression_ratio_threshold_ko << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (es): " << config.text_compression_ratio_threshold_es << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (fr): " << config.text_compression_ratio_threshold_fr << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (de): " << config.text_compression_ratio_threshold_de << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (ru): " << config.text_compression_ratio_threshold_ru << std::endl;
+        std::cout << "[PostProcessing] - text_compression_ratio (ar): " << config.text_compression_ratio_threshold_ar << std::endl;
         std::cout << "[Config] - exact_matches: " << config.exact_matches.size() << " 项" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[Config] 解析配置失败: " << e.what() << "，使用默认配置" << std::endl;
@@ -162,7 +162,7 @@ static HallucinationFilterConfig LoadHallucinationConfig(const std::string& json
 }
 
 // 全局配置（首次使用时加载）
-static HallucinationFilterConfig g_hallucination_config;
+static PostProcessingFilterConfig g_postprocessing_config;
 static std::once_flag g_config_once;
 
 // ★★ 简繁检测函数（用于debug）
@@ -836,7 +836,7 @@ static void MergeSegmentsWithSilence(
             gap.end_time = entry.start_time;
             // 根据场景选择标记
             if (scene == AudioScene::MUSIC) {
-                gap.text = "[音乐]";  // 音乐模式下，未识别的可能是纯音乐
+                gap.text = " ♪♪♪";  // 音乐模式下，未识别的可能是纯音乐
             } else {
                 gap.text = "[无法识别]";  // 其他模式下
             }
@@ -854,7 +854,7 @@ static void MergeSegmentsWithSilence(
         gap.start_time = last_covered_time;
         gap.end_time = audio_duration;
         if (scene == AudioScene::MUSIC) {
-            gap.text = "[音乐]";
+            gap.text = " ♪♪♪";
         } else {
             gap.text = "[无法识别]";
         }
@@ -1104,13 +1104,13 @@ bool TranscribeAudioFile(
             seg.start_time = voice_seg.start_time + (whisper_full_get_segment_t0_from_state(st, i) / 100.0);
             seg.end_time = voice_seg.start_time + (whisper_full_get_segment_t1_from_state(st, i) / 100.0);
 
-            // ★★ 获取 Whisper 官方特征（用于幻觉检测）
-            seg.no_speech_prob = whisper_full_get_segment_no_speech_prob_from_state(st, i);
+            // ★★ 获取 Whisper 后处理质量指标
+            seg.no_speech_probability = whisper_full_get_segment_no_speech_prob_from_state(st, i);
 
-            // ★★ 获取 token 数量（用于计算 avg_logprob 和 compression_ratio）
+            // ★★ 获取 token 数量（用于计算后处理指标）
             int n_tokens = whisper_full_n_tokens_from_state(st, i);
 
-            // ★★ 计算 avg_logprob（OpenAI Whisper 官方方法）
+            // ★★ 计算 average_log_probability（OpenAI Whisper 官方方法）
             if (n_tokens > 0) {
                 float sum_logprob = 0.0f;
                 for (int j = 0; j < n_tokens; ++j) {
@@ -1119,19 +1119,19 @@ bool TranscribeAudioFile(
                     token_p = token_p > 1e-10f ? token_p : 1e-10f;
                     sum_logprob += std::log(token_p);
                 }
-                seg.avg_logprob = sum_logprob / n_tokens;
+                seg.average_log_probability = sum_logprob / n_tokens;
             } else {
-                seg.avg_logprob = 0.0f;
+                seg.average_log_probability = 0.0f;
             }
 
-            // ★★ 计算 compression_ratio（OpenAI Whisper 官方方法）
-            // OpenAI 定义：compression_ratio = len(text) / len(tokens)
+            // ★★ 计算 text_compression_ratio（OpenAI Whisper 官方方法）
+            // OpenAI 定义：text_compression_ratio = len(text) / len(tokens)
             // 正常情况：1 token ≈ 1-2 个字符，ratio 约 1.0-2.0
-            // 重复文本（如"你好你好你好"）：ratio > 2.4（token没增加，字符翻倍）
+            // 重复文本（如"你好你好你好"）：ratio > 5.5（token没增加，字符翻倍）
             if (n_tokens > 0) {
-                seg.compression_ratio = (float)seg.text.length() / n_tokens;
+                seg.text_compression_ratio = (float)seg.text.length() / n_tokens;
             } else {
-                seg.compression_ratio = 1.0f;  // 无token时设为正常值
+                seg.text_compression_ratio = 1.0f;  // 无token时设为正常值
             }
 
             all_whisper_segments.push_back(seg);
@@ -1157,7 +1157,7 @@ bool TranscribeAudioFile(
         for (const auto& path : config_paths) {
             std::ifstream test(path);
             if (test.good()) {
-                g_hallucination_config = LoadHallucinationConfig(path);
+                g_postprocessing_config = LoadPostProcessingConfig(path);
                 return;
             }
         }
@@ -1165,52 +1165,52 @@ bool TranscribeAudioFile(
         std::cout << "[Config] 未找到配置文件，使用默认配置" << std::endl;
     });
 
-    // ★★ 获取检测到的语言，选择合适的 compression_ratio 阈值
+    // ★★ 获取检测到的语言，选择合适的 text_compression_ratio 阈值
     int detected_lang_id = whisper_full_lang_id_from_state(st);
     const char* detected_lang = whisper_lang_str(detected_lang_id);
-    float compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold;  // 默认英文
+    float compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold;  // 默认英文
 
     if (detected_lang != nullptr) {
         std::string lang_str(detected_lang);
         if (lang_str == "zh") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_zh;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_zh;
         } else if (lang_str == "ja") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_ja;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_ja;
         } else if (lang_str == "ko") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_ko;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_ko;
         } else if (lang_str == "es") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_es;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_es;
         } else if (lang_str == "fr") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_fr;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_fr;
         } else if (lang_str == "de") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_de;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_de;
         } else if (lang_str == "ru") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_ru;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_ru;
         } else if (lang_str == "ar") {
-            compression_ratio_threshold = g_hallucination_config.compression_ratio_threshold_ar;
+            compression_ratio_threshold = g_postprocessing_config.text_compression_ratio_threshold_ar;
         }
         std::cout << "[Filter] 检测到语言: " << lang_str
-                  << ", compression_ratio阈值: " << compression_ratio_threshold << std::endl;
+                  << ", text_compression_ratio阈值: " << compression_ratio_threshold << std::endl;
     }
 
     // ★★ 工业级幻觉检测（Whisper官方特征 + 可配置规则）
     auto is_hallucination = [&](const WhisperSegment& seg) -> bool {
-        const auto& cfg = g_hallucination_config;
+        const auto& cfg = g_postprocessing_config;
 
         // ★★★ 阶段1：Whisper 官方特征过滤（最可靠）
-        if (seg.no_speech_prob > cfg.no_speech_prob_threshold) {
-            std::cout << "[Filter][Official] 无语音段 (no_speech_prob=" << seg.no_speech_prob << "): \"" << seg.text << "\"" << std::endl;
+        if (seg.no_speech_probability > cfg.no_speech_probability_threshold) {
+            std::cout << "[Filter][Official] 无语音段 (no_speech_probability=" << seg.no_speech_probability << "): \"" << seg.text << "\"" << std::endl;
             return true;
         }
 
-        if (seg.avg_logprob < cfg.avg_logprob_threshold) {
-            std::cout << "[Filter][Official] 低置信度段 (avg_logprob=" << seg.avg_logprob << "): \"" << seg.text << "\"" << std::endl;
+        if (seg.average_log_probability < cfg.average_log_probability_threshold) {
+            std::cout << "[Filter][Official] 低置信度段 (average_log_probability=" << seg.average_log_probability << "): \"" << seg.text << "\"" << std::endl;
             return true;
         }
 
         // ★★ 使用根据语言动态选择的阈值（而不是配置中的固定值）
-        if (seg.compression_ratio > compression_ratio_threshold) {
-            std::cout << "[Filter][Official] 高压缩率/重复文本 (ratio=" << seg.compression_ratio
+        if (seg.text_compression_ratio > compression_ratio_threshold) {
+            std::cout << "[Filter][Official] 高压缩率/重复文本 (ratio=" << seg.text_compression_ratio
                       << ", 阈值=" << compression_ratio_threshold << "): \"" << seg.text << "\"" << std::endl;
             return true;
         }
@@ -1278,9 +1278,9 @@ bool TranscribeAudioFile(
 
     for (const auto& seg : all_whisper_segments) {
         // 先检查官方特征（使用动态选择的阈值）
-        bool is_halluc_official = (seg.no_speech_prob > g_hallucination_config.no_speech_prob_threshold ||
-                                    seg.avg_logprob < g_hallucination_config.avg_logprob_threshold ||
-                                    seg.compression_ratio > compression_ratio_threshold);
+        bool is_halluc_official = (seg.no_speech_probability > g_postprocessing_config.no_speech_probability_threshold ||
+                                    seg.average_log_probability < g_postprocessing_config.average_log_probability_threshold ||
+                                    seg.text_compression_ratio > compression_ratio_threshold);
 
         if (is_hallucination(seg)) {
             if (is_halluc_official) {
@@ -1344,7 +1344,7 @@ bool TranscribeAudioFile(
         std::cout << "[Filter] 连续重复过滤: " << repeat_filtered << " 段" << std::endl;
     }
 
-    // ★★ 新的合并逻辑：基于 VAD 的人声段落，填充非人声段落为 [音乐] ★★
+    // ★★ 新的合并逻辑：基于 VAD 的人声段落，填充非人声段落为 ♪♪♪ ★★
     segments.clear();
     // audio_duration 已在前面定义，这里直接使用
     double last_time = 0.0;
@@ -1352,12 +1352,12 @@ bool TranscribeAudioFile(
 
     // 按时间顺序合并人声段落和非人声段落
     for (const auto& voice_seg : voice_segments) {
-        // 如果有间隙（非人声段落），填充 [音乐]
+        // 如果有间隙（非人声段落），填充 ♪♪♪
         if (voice_seg.start_time - last_time > 1.0) {
             WhisperSegment gap;
             gap.start_time = last_time;
             gap.end_time = voice_seg.start_time;
-            gap.text = "[音乐]";  // 纯音乐，没有人声
+            gap.text = " ♪♪♪";  // 纯音乐，没有人声
             segments.push_back(gap);
         }
 
@@ -1376,7 +1376,7 @@ bool TranscribeAudioFile(
         WhisperSegment gap;
         gap.start_time = last_time;
         gap.end_time = audio_duration;
-        gap.text = "[音乐]";
+        gap.text = " ♪♪♪";
         segments.push_back(gap);
     }
 

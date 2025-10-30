@@ -55,6 +55,28 @@
                 <ComboBoxItem Content="🇩🇪 德语"/>
             </ComboBox>
 
+            <!-- 麦克风转录组 -->
+            <Button x:Name="BtnMicrophone" Content="🎤 麦克风转录" Click="BtnMicrophone_Click" IsEnabled="False"/>
+            <ComboBox x:Name="CmbMicrophoneDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMicrophoneDevice_SelectionChanged">
+                <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
+            </ComboBox>
+            <ComboBox x:Name="CmbMicrophoneMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                <ComboBoxItem Content="🎤 对话/会议"/>
+                <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                <ComboBoxItem Content="🎭 混合模式"/>
+            </ComboBox>
+            <ComboBox x:Name="CmbMicrophoneLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                <ComboBoxItem Content="🌐 自动"/>
+                <ComboBoxItem Content="🇨🇳 中文"/>
+                <ComboBoxItem Content="🇺🇸 英语"/>
+                <ComboBoxItem Content="🇯🇵 日语"/>
+                <ComboBoxItem Content="🇰🇷 韩语"/>
+                <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                <ComboBoxItem Content="🇫🇷 法语"/>
+                <ComboBoxItem Content="🇩🇪 德语"/>
+            </ComboBox>
+            <CheckBox x:Name="ChkMicrophoneDenoise" Content="降噪" IsChecked="True" VerticalAlignment="Center"/>
+
             <Button x:Name="BtnStop"  Content="停止 Worker" Click="BtnStop_Click" IsEnabled="False"/>
             <TextBlock x:Name="LblStatus" Margin="12,0,0,0" VerticalAlignment="Center"/>
         </StackPanel>

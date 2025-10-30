@@ -9,10 +9,12 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
 using MeetingAI.Host.Contracts;
 using MeetingAI.Host.Contracts.Messages;
 using NAudio.Wave;
+using NAudio.CoreAudioApi;
 using FFMpegCore;
 using FFMpegCore.Enums;
 
@@ -35,6 +37,13 @@ public sealed partial class MainWindow : Window
     private string? _loopbackTempFile;
     private bool _isLoopback;
 
+    // 麦克风录音相关
+    private WasapiCapture? _microphone;
+    private WaveFileWriter? _microphoneWriter;
+    private string? _microphoneTempFile;
+    private bool _isMicrophone;
+    private string? _selectedMicrophoneId;
+
     private const string PipeName = "MeetingAI_Pipe";
 
     public MainWindow()
@@ -46,6 +55,9 @@ public sealed partial class MainWindow : Window
 
         // 窗口关闭时自动清理 Worker 和管道
         this.Closed += (_, _) => StopWorkerOnExit();
+
+        // 枚举麦克风设备
+        EnumerateMicrophoneDevices();
     }
 
     private Task AppendLineAsync(string text)
@@ -268,6 +280,12 @@ public sealed partial class MainWindow : Window
             _loopbackWriter = null;
             _loopback = null;
 
+            // 停止麦克风录音（若在录制中）
+            try { if (_microphone is not null) _microphone.StopRecording(); } catch { }
+            _isMicrophone = false;
+            _microphoneWriter = null;
+            _microphone = null;
+
             _pipeCts?.Cancel();
             _pipeCts = null;
             _readLoopTask = null;
@@ -361,6 +379,7 @@ public sealed partial class MainWindow : Window
             BtnPing.IsEnabled = true;
             BtnTranscribe.IsEnabled = true;
             BtnLoopback.IsEnabled = true;
+            BtnMicrophone.IsEnabled = true;
             BtnStop.IsEnabled = true;
             BtnStart.IsEnabled = false;
             LblStatus.Text = "Worker 已启动";
@@ -628,6 +647,233 @@ public sealed partial class MainWindow : Window
         {
             return null;
         }
+    }
+
+    // ==================== 麦克风录音功能 ====================
+
+    // 枚举所有麦克风设备
+    private void EnumerateMicrophoneDevices()
+    {
+        try
+        {
+            var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+            var devices = enumerator.EnumerateAudioEndPoints(NAudio.CoreAudioApi.DataFlow.Capture, NAudio.CoreAudioApi.DeviceState.Active);
+
+            // 清除除了默认项之外的所有项
+            while (CmbMicrophoneDevice.Items.Count > 1)
+            {
+                CmbMicrophoneDevice.Items.RemoveAt(1);
+            }
+
+            // 添加分隔符
+            var separator = new ComboBoxItem { Content = "─────────────", IsEnabled = false };
+            CmbMicrophoneDevice.Items.Add(separator);
+
+            // 添加所有麦克风设备
+            foreach (var device in devices)
+            {
+                var item = new ComboBoxItem
+                {
+                    Content = device.FriendlyName,
+                    Tag = device.ID
+                };
+                CmbMicrophoneDevice.Items.Add(item);
+            }
+
+            _ = AppendLineAsync($"[Host] 已枚举 {devices.Count} 个麦克风设备");
+        }
+        catch (Exception ex)
+        {
+            _ = AppendLineAsync($"[Host] 枚举麦克风设备失败: {ex.Message}");
+        }
+    }
+
+    // 麦克风设备选择变化
+    private void CmbMicrophoneDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbMicrophoneDevice.SelectedItem is ComboBoxItem item && item.Tag is string deviceId)
+        {
+            _selectedMicrophoneId = deviceId;
+        }
+        else
+        {
+            _selectedMicrophoneId = null; // 使用默认设备
+        }
+    }
+
+    // 麦克风录音：开始/停止并在停止后发送转录
+    private async void BtnMicrophone_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!_isMicrophone)
+            {
+                await StartMicrophoneAsync();
+            }
+            else
+            {
+                await StopMicrophoneAndTranscribeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Host] 麦克风录音异常：{ex.Message}");
+        }
+    }
+
+    private async Task StartMicrophoneAsync()
+    {
+        _microphoneTempFile = Path.Combine(Path.GetTempPath(), $"microphone_{DateTime.Now:yyyyMMdd_HHmmss}_raw.wav");
+
+        // 根据选择的设备 ID 创建 WasapiCapture
+        if (_selectedMicrophoneId == null || _selectedMicrophoneId == "default")
+        {
+            // 使用默认麦克风
+            _microphone = new WasapiCapture();
+            await AppendLineAsync("[Host] 使用默认麦克风");
+        }
+        else
+        {
+            // 使用指定的麦克风设备
+            var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+            var device = enumerator.GetDevice(_selectedMicrophoneId);
+            _microphone = new WasapiCapture(device);
+            await AppendLineAsync($"[Host] 使用麦克风: {device.FriendlyName}");
+        }
+
+        // ★ 保存原始格式
+        _microphoneWriter = new WaveFileWriter(_microphoneTempFile, _microphone.WaveFormat);
+
+        await AppendLineAsync($"[Host] 录制格式: {_microphone.WaveFormat.SampleRate}Hz, " +
+            $"{_microphone.WaveFormat.BitsPerSample}bit, {_microphone.WaveFormat.Channels}声道, " +
+            $"{_microphone.WaveFormat.Encoding}");
+
+        _microphone.DataAvailable += (_, args) =>
+        {
+            _microphoneWriter?.Write(args.Buffer, 0, args.BytesRecorded);
+        };
+
+        _microphone.RecordingStopped += async (_, __) =>
+        {
+            try { _microphoneWriter?.Dispose(); } catch { }
+            _microphoneWriter = null;
+            try { _microphone?.Dispose(); } catch { }
+            _microphone = null;
+            await AppendLineAsync($"[Host] 麦克风录音已停止，原始文件：{_microphoneTempFile}");
+        };
+
+        _microphone.StartRecording();
+        _isMicrophone = true;
+        BtnMicrophone.Content = "🛑 停止麦克风转录";
+        await AppendLineAsync("[Host] 开始录制麦克风音频...");
+    }
+
+    private async Task StopMicrophoneAndTranscribeAsync()
+    {
+        if (_microphone != null)
+        {
+            _microphone.StopRecording();
+        }
+        _isMicrophone = false;
+        BtnMicrophone.Content = "🎤 麦克风转录";
+
+        var rawPath = _microphoneTempFile;
+        if (string.IsNullOrEmpty(rawPath) || !File.Exists(rawPath))
+        {
+            await AppendLineAsync("[Host] 未找到录制的文件，取消转录。");
+            return;
+        }
+
+        // 等待文件完全写入
+        await Task.Delay(500);
+
+        // 获取麦克风转录的模式选择
+        string mode = CmbMicrophoneMode.SelectedIndex switch
+        {
+            0 => "speech",  // 对话/会议
+            1 => "music",   // 音乐/歌曲
+            2 => "mixed",   // 混合模式
+            _ => "speech"   // 默认对话
+        };
+
+        // 获取麦克风转录的语言选择
+        string language = CmbMicrophoneLanguage.SelectedIndex switch
+        {
+            0 => "auto",  // 自动
+            1 => "zh",    // 中文
+            2 => "en",    // 英语
+            3 => "ja",    // 日语
+            4 => "ko",    // 韩语
+            5 => "es",    // 西班牙语
+            6 => "fr",    // 法语
+            7 => "de",    // 德语
+            _ => "auto"   // 默认自动
+        };
+
+        // ★★★ 判断是否需要降噪
+        bool needDenoise = ChkMicrophoneDenoise.IsChecked == true;
+
+        // 对于 Speech/Mixed 模式，默认启用降噪（除非用户手动取消）
+        // 对于 Music 模式，默认不启用（除非用户手动勾选）
+        if (mode == "speech" || mode == "mixed")
+        {
+            needDenoise = ChkMicrophoneDenoise.IsChecked != false; // 默认 true
+        }
+
+        string processedPath = rawPath;
+
+        // ★★★ FFmpeg 降噪处理
+        if (needDenoise)
+        {
+            processedPath = Path.Combine(Path.GetTempPath(), $"microphone_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
+            await AppendLineAsync($"[Host] 正在应用 FFmpeg 降噪处理...");
+
+            try
+            {
+                await FFMpegArguments
+                    .FromFileInput(rawPath)
+                    .OutputToFile(processedPath, true, options => options
+                        .WithAudioCodec("pcm_s16le")
+                        .WithAudioSamplingRate(16000)
+                        .WithCustomArgument("-ac 1")
+                        // ★★★ 麦克风降噪滤镜链（会议/对话优化）
+                        .WithCustomArgument("-af \"" +
+                            "highpass=f=80," +                    // 1. 去除低频噪声（风扇、空调）
+                            "lowpass=f=8000," +                   // 2. 去除高频噪声
+                            "afftdn=nr=20:nf=-40:tn=1," +         // 3. FFT 降噪（去除平稳噪声）
+                            "anlmdn=s=0.00001:p=0.002:r=0.002," + // 4. 非线性降噪（去除突发噪声）
+                            "equalizer=f=2000:t=q:w=1:g=3," +     // 5. 提升人声频段
+                            "compand=attacks=0.1:decays=0.3:points=-60/-60|-30/-20|-20/-10|0/-5," +  // 6. 动态压缩
+                            "loudnorm=I=-16:TP=-1.5:LRA=11" +     // 7. 响度标准化
+                        "\"")
+                    )
+                    .ProcessAsynchronously();
+
+                await AppendLineAsync($"[Host] 降噪处理完成：{processedPath}");
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[Host] FFmpeg 降噪失败，使用原始文件: {ex.Message}");
+                processedPath = rawPath; // 降噪失败，使用原始文件
+            }
+        }
+        else
+        {
+            await AppendLineAsync($"[Host] 跳过降噪，使用原始录音");
+        }
+
+        // 发送转录命令
+        await EnsurePipeAsync();
+
+        var cmd = new TranscribeFileCommand { path = processedPath, mode = mode, language = language };
+        var json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.TranscribeFileCommand) + "\n";
+        var buf = Encoding.UTF8.GetBytes(json);
+        await _pipe!.WriteAsync(buf, 0, buf.Length);
+        await _pipe.FlushAsync();
+        await AppendLineAsync($"[Host] 已发送麦克风录音转录命令（模式: {mode}，语言: {language}，降噪: {needDenoise}）：{processedPath}");
+
+        _transcribeTcs?.TrySetCanceled();
+        _transcribeTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
 

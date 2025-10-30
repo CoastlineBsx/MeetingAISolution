@@ -8,10 +8,10 @@ struct WhisperSegment {
     double start_time;  // 秒
     double end_time;    // 秒
 
-    // ★ Whisper 官方特征（用于幻觉检测）
-    float no_speech_prob = 0.0f;   // 无语音概率（0.0-1.0），>0.8 可能无语音
-    float avg_logprob = 0.0f;      // 平均对数概率，<-1.0 表示模型不确定
-    float compression_ratio = 0.0f; // 压缩率，>2.4 表示文本重复
+    // ★ Whisper 后处理质量指标（工业界标准命名）
+    float no_speech_probability = 0.0f;     // 无语音概率（0.0-1.0），>0.9 可能无语音
+    float average_log_probability = 0.0f;   // 平均对数概率，<-1.8 表示模型不确定
+    float text_compression_ratio = 0.0f;    // 文本压缩率，>5.5 表示重复/幻觉
 };
 
 // 转录文件的主函数（内部会确保模型只加载一次）
