@@ -129,6 +129,27 @@
                     <ComboBoxItem Content="🇫🇷 法语"/>
                     <ComboBoxItem Content="🇩🇪 德语"/>
                 </ComboBox>
+
+                <!-- 综合模式（beta2）转录组 -->
+                <Button x:Name="BtnMeetingBeta2" Content="📞 综合转录Beta2" Click="BtnMeetingBeta2_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbMeetingBeta2Device" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMeetingBeta2Device_SelectionChanged">
+                    <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMeetingBeta2Mode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🎤 对话/会议"/>
+                    <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                    <ComboBoxItem Content="🎭 混合模式"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMeetingBeta2Language" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🌐 自动"/>
+                    <ComboBoxItem Content="🇨🇳 中文"/>
+                    <ComboBoxItem Content="🇺🇸 英语"/>
+                    <ComboBoxItem Content="🇯🇵 日语"/>
+                    <ComboBoxItem Content="🇰🇷 韩语"/>
+                    <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                    <ComboBoxItem Content="🇫🇷 法语"/>
+                    <ComboBoxItem Content="🇩🇪 德语"/>
+                </ComboBox>
             </StackPanel>
         </StackPanel>
 

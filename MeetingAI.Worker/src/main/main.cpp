@@ -418,7 +418,7 @@ int wmain() {
                 }
 
                 if (meetingai::proto::isStreamChunk(buffer)) {
-                    // 处理音频块
+                    // 处理音频块（v1 单流）
                     std::string audioData = meetingai::proto::extractData(buffer);
                     std::vector<WhisperSegment> segments;
 
@@ -441,6 +441,63 @@ int wmain() {
                     std::wcout << L"[Worker] 处理 stop_stream 命令\n";
                     StopStream();
                     std::string resp = "{\"type\":\"stream_stopped\"}\n";
+                    DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- v2 多流：start_stream2 / stream_chunk2 / stop_stream2 ----
+                if (meetingai::proto::isStartStream2(buffer)) {
+                    std::wcout << L"[Worker] 处理 start_stream2 命令\n";
+                    std::call_once(g_model_once2, [&] {
+                        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
+                        if (!InitWhisperOnce(modelPathOnce)) {
+                            std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
+                            DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                        }
+                    });
+                    std::string streamId = meetingai::proto::extractStreamId(buffer);
+                    std::string source   = meetingai::proto::extractSource(buffer);
+                    std::string mode     = meetingai::proto::extractMode(buffer);
+                    std::string lang     = meetingai::proto::extractLanguage(buffer);
+                    bool ok = StartStream2(streamId, source, mode, lang);
+                    if (ok) {
+                        std::string resp = std::string("{\"type\":\"stream_started2\",\"stream_id\":\"") + streamId +
+                            "\",\"source\":\"" + source + "\",\"mode\":\"" + mode + "\",\"language\":\"" + lang + "\"}\n";
+                        DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
+                    } else {
+                        std::string err = std::string("{\"type\":\"error\",\"message\":\"start_stream2 失败\",\"stream_id\":\"") + streamId + "\"}\n";
+                        DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                    }
+                    buffer.clear();
+                    continue;
+                }
+                if (meetingai::proto::isStreamChunk2(buffer)) {
+                    std::string streamId = meetingai::proto::extractStreamId(buffer);
+                    std::string audioData = meetingai::proto::extractData(buffer);
+                    int sr = meetingai::proto::extractSampleRate(buffer);
+                    long long ts = meetingai::proto::extractTimestampMs(buffer);
+                    std::vector<WhisperSegment> segments;
+                    bool ok = ProcessStreamChunk2(streamId, audioData, segments, sr, ts);
+                    if (ok) {
+                        std::string source = GetStreamSource2(streamId);
+                        for (const auto& seg : segments) {
+                            std::string resp = std::string("{\"type\":\"stream_segment2\",\"stream_id\":\"") + streamId + "\",\"source\":\"" + source +
+                                "\",\"text\":\"" + meetingai::proto::jsonEscape(seg.text) + "\",\"t0_ms\":" + std::to_string((int)(seg.start_time*1000)) +
+                                ",\"t1_ms\":" + std::to_string((int)(seg.end_time*1000)) + "}\n";
+                            DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
+                        }
+                    } else {
+                        std::string err = std::string("{\"type\":\"error\",\"message\":\"stream_chunk2 失败\",\"stream_id\":\"") + streamId + "\"}\n";
+                        DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                    }
+                    buffer.clear();
+                    continue;
+                }
+                if (meetingai::proto::isStopStream2(buffer)) {
+                    std::string streamId = meetingai::proto::extractStreamId(buffer);
+                    StopStream2(streamId);
+                    std::string resp = std::string("{\"type\":\"stream_stopped2\",\"stream_id\":\"") + streamId + "\"}\n";
                     DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
                     buffer.clear();
                     continue;

@@ -164,4 +164,48 @@ namespace meetingai::proto {
         }
     }
 
+    // ==================== v2: 多流 ====================
+    bool isStartStream2(const std::string& s) {
+        auto t = trim(s);
+        return t.find("\"type\"") != std::string::npos && t.find("\"start_stream2\"") != std::string::npos;
+    }
+    bool isStreamChunk2(const std::string& s) {
+        auto t = trim(s);
+        return t.find("\"type\"") != std::string::npos && t.find("\"stream_chunk2\"") != std::string::npos;
+    }
+    bool isStopStream2(const std::string& s) {
+        auto t = trim(s);
+        return t.find("\"type\"") != std::string::npos && t.find("\"stop_stream2\"") != std::string::npos;
+    }
+
+    static std::string extractStringField(const std::string& json, const char* key, const char* defv = "") {
+        std::string k = std::string("\"") + key + "\"";
+        size_t pos = json.find(k);
+        if (pos == std::string::npos) return defv;
+        size_t colon = json.find(":", pos);
+        if (colon == std::string::npos) return defv;
+        size_t start = json.find("\"", colon);
+        if (start == std::string::npos) return defv;
+        start++;
+        size_t end = json.find("\"", start);
+        if (end == std::string::npos) return defv;
+        return json.substr(start, end - start);
+    }
+
+    std::string extractStreamId(const std::string& json) { return extractStringField(json, "stream_id"); }
+    std::string extractSource(const std::string& json) { return extractStringField(json, "source", "unknown"); }
+
+    long long extractTimestampMs(const std::string& json) {
+        size_t pos = json.find("\"timestamp_ms\"");
+        if (pos == std::string::npos) return -1;
+        size_t colon = json.find(":", pos);
+        if (colon == std::string::npos) return -1;
+        size_t start = colon + 1;
+        while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) start++;
+        size_t end = start;
+        while (end < json.size() && json[end] >= '0' && json[end] <= '9') end++;
+        if (end == start) return -1;
+        try { return std::stoll(json.substr(start, end - start)); } catch (...) { return -1; }
+    }
+
 } // namespace meetingai::proto

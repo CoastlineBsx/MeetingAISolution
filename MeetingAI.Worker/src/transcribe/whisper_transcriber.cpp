@@ -1648,3 +1648,144 @@ bool ProcessStreamChunk(const std::string& audioDataBase64, std::vector<WhisperS
 
     return true;
 }
+
+// ==================== v2 多流实现 ====================
+
+struct StreamCtx2 {
+    whisper_state* state = nullptr;
+    std::vector<float> buffer;
+    int64_t last_ts = 0;          // 10ms 单位
+    std::string mode = "speech";
+    std::string language = "auto";
+    std::string source = "unknown"; // near/far
+};
+
+static std::mutex g_stream2_mutex;
+static std::unordered_map<std::string, StreamCtx2> g_streams2;
+
+static void linear_resample(const std::vector<float>& in, int in_sr, std::vector<float>& out, int out_sr) {
+    if (in.empty()) { out.clear(); return; }
+    if (in_sr == out_sr) { out = in; return; }
+    double ratio = (double)out_sr / (double)in_sr;
+    size_t out_n = (size_t)std::floor(in.size() * ratio);
+    out.resize(out_n);
+    for (size_t i = 0; i < out_n; ++i) {
+        double src_idx = (double)i / ratio;
+        size_t i0 = (size_t)std::floor(src_idx);
+        size_t i1 = (i0 + 1 < in.size()) ? (i0 + 1) : i0;
+        double frac = src_idx - (double)i0;
+        out[i] = (float)((1.0 - frac) * in[i0] + frac * in[i1]);
+    }
+}
+
+bool StartStream2(const std::string& streamId, const std::string& source, const std::string& sceneMode, const std::string& language) {
+    std::lock_guard<std::mutex> lk(g_stream2_mutex);
+    if (g_whisper_ctx == nullptr) return false;
+    if (streamId.empty()) return false;
+    if (g_streams2.find(streamId) != g_streams2.end()) return false; // 已存在
+
+    whisper_state* st = whisper_init_state(g_whisper_ctx);
+    if (!st) return false;
+
+    StreamCtx2 ctx;
+    ctx.state = st;
+    ctx.buffer.reserve(MAX_STREAM_BUFFER_SIZE);
+    ctx.last_ts = 0;
+    ctx.mode = sceneMode.empty() ? std::string("speech") : sceneMode;
+    ctx.language = language.empty() ? std::string("auto") : language;
+    ctx.source = source.empty() ? std::string("unknown") : source;
+
+    g_streams2.emplace(streamId, std::move(ctx));
+    std::cout << "[Stream2] started id=" << streamId << ", source=" << source << ", mode=" << sceneMode << ", lang=" << language << std::endl;
+    return true;
+}
+
+static void apply_params_for_mode(const std::string& mode, const std::string& lang, whisper_full_params& params) {
+    // 基于 v1 的参数策略
+    if (mode == "music") {
+        params.max_tokens = 48;
+        params.entropy_thold = 2.8f;
+        params.no_speech_thold = 0.85f;
+    } else if (mode == "mixed") {
+        params.max_tokens = 40;
+        params.entropy_thold = 2.7f;
+        params.no_speech_thold = 0.5f;
+    } else {
+        params.max_tokens = 64;
+        params.entropy_thold = 2.2f;
+        params.no_speech_thold = 0.7f;
+    }
+    if (!lang.empty() && lang != "auto") params.language = lang.c_str(); else params.language = nullptr;
+    params.translate = false;
+    params.print_realtime = false;
+    params.print_progress = false;
+    params.print_timestamps = true;
+    params.single_segment = false;
+}
+
+bool ProcessStreamChunk2(const std::string& streamId, const std::string& audioDataBase64, std::vector<WhisperSegment>& segments, int sampleRate, long long /*timestampMs*/) {
+    std::lock_guard<std::mutex> lk(g_stream2_mutex);
+    auto it = g_streams2.find(streamId);
+    if (it == g_streams2.end()) return false;
+    auto& ctx = it->second;
+
+    // Base64 解码 -> float32
+    auto decoded = base64_decode(audioDataBase64);
+    if (decoded.empty() || (decoded.size() % sizeof(float) != 0)) return false;
+    const float* pf = reinterpret_cast<const float*>(decoded.data());
+    size_t n = decoded.size() / sizeof(float);
+
+    std::vector<float> inbuf(pf, pf + n);
+    std::vector<float> mono16k;
+    if (sampleRate != 16000) {
+        linear_resample(inbuf, sampleRate, mono16k, 16000);
+    } else {
+        mono16k = std::move(inbuf);
+    }
+
+    // 追加
+    ctx.buffer.insert(ctx.buffer.end(), mono16k.begin(), mono16k.end());
+    if (ctx.buffer.size() > MAX_STREAM_BUFFER_SIZE) {
+        size_t excess = ctx.buffer.size() - MAX_STREAM_BUFFER_SIZE;
+        ctx.buffer.erase(ctx.buffer.begin(), ctx.buffer.begin() + excess);
+    }
+
+    if (ctx.buffer.size() < 16000) { segments.clear(); return true; }
+
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    apply_params_for_mode(ctx.mode, ctx.language, params);
+
+    int rc = whisper_full_with_state(g_whisper_ctx, ctx.state, params, ctx.buffer.data(), (int)ctx.buffer.size());
+    if (rc != 0) return false;
+
+    segments.clear();
+    int nseg = whisper_full_n_segments_from_state(ctx.state);
+    for (int i = 0; i < nseg; ++i) {
+        int64_t t0 = whisper_full_get_segment_t0_from_state(ctx.state, i);
+        int64_t t1 = whisper_full_get_segment_t1_from_state(ctx.state, i);
+        if (t0 > ctx.last_ts) {
+            WhisperSegment seg;
+            seg.text = whisper_full_get_segment_text_from_state(ctx.state, i);
+            seg.start_time = t0 * 0.01;
+            seg.end_time = t1 * 0.01;
+            segments.push_back(seg);
+            if (t1 > ctx.last_ts) ctx.last_ts = t1;
+        }
+    }
+    return true;
+}
+
+void StopStream2(const std::string& streamId) {
+    std::lock_guard<std::mutex> lk(g_stream2_mutex);
+    auto it = g_streams2.find(streamId);
+    if (it == g_streams2.end()) return;
+    if (it->second.state) whisper_free_state(it->second.state);
+    g_streams2.erase(it);
+}
+
+std::string GetStreamSource2(const std::string& streamId) {
+    std::lock_guard<std::mutex> lk(g_stream2_mutex);
+    auto it = g_streams2.find(streamId);
+    if (it == g_streams2.end()) return "unknown";
+    return it->second.source;
+}

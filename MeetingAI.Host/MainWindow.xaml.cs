@@ -72,6 +72,16 @@ public sealed partial class MainWindow : Window
     private bool _isMeetingBeta;
     private string? _selectedMeetingBetaMicrophoneId;
 
+    //  23222f22a Beta2
+    private WasapiCapture? _meetingBeta2Microphone;
+    private WasapiLoopbackCapture? _meetingBeta2Loopback;
+    private WaveFileWriter? _meetingBeta2MicrophoneWriter;
+    private WaveFileWriter? _meetingBeta2LoopbackWriter;
+    private string? _meetingBeta2MicrophoneTempFile;
+    private string? _meetingBeta2LoopbackTempFile;
+    private bool _isMeetingBeta2;
+    private string? _selectedMeetingBeta2MicrophoneId;
+
     private const string PipeName = "MeetingAI_Pipe";
 
     public MainWindow()
@@ -410,6 +420,7 @@ public sealed partial class MainWindow : Window
             BtnMicrophone.IsEnabled = true;
             BtnMeeting.IsEnabled = true;
             BtnMeetingBeta.IsEnabled = true;
+            BtnMeetingBeta2.IsEnabled = true;
             BtnStop.IsEnabled = true;
             BtnStart.IsEnabled = false;
             LblStatus.Text = "Worker 已启动";
@@ -750,6 +761,7 @@ public sealed partial class MainWindow : Window
                     Tag = device.ID
                 };
                 CmbMeetingBetaDevice.Items.Add(item);
+                CmbMeetingBeta2Device.Items.Add(new ComboBoxItem { Content = device.FriendlyName, Tag = device.ID });
             }
 
             _ = AppendLineAsync($"[Host] 已枚举 {devices.Count} 个麦克风设备");
@@ -1526,6 +1538,110 @@ public sealed partial class MainWindow : Window
     }
 
     // 为 WAV 文件前面插入静音（方案A专用）
+    // ===== Beta2 UI handlers =====
+    private void CmbMeetingBeta2Device_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbMeetingBeta2Device.SelectedItem is ComboBoxItem item && item.Tag is string deviceId)
+            _selectedMeetingBeta2MicrophoneId = deviceId;
+        else
+            _selectedMeetingBeta2MicrophoneId = null;
+    }
+
+    private async void BtnMeetingBeta2_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!_isMeetingBeta2)
+                await StartMeetingBeta2Async();
+            else
+                await StopMeetingBeta2AndTranscribeAsync();
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Host] [Beta2] 22f22f23022a23422f22f23022f22c22f230: {ex.Message}");
+        }
+    }
+
+    private async Task StartMeetingBeta2Async()
+    {
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        _meetingBeta2MicrophoneTempFile = Path.Combine(Path.GetTempPath(), $"meeting_beta2_mic_{timestamp}.wav");
+        _meetingBeta2LoopbackTempFile = Path.Combine(Path.GetTempPath(), $"meeting_beta2_speaker_{timestamp}.wav");
+
+        // speaker loopback
+        _meetingBeta2Loopback = new WasapiLoopbackCapture();
+        _meetingBeta2LoopbackWriter = new WaveFileWriter(_meetingBeta2LoopbackTempFile, _meetingBeta2Loopback.WaveFormat);
+        await AppendLineAsync($"[Host] [Beta2] 22a23222f22c22f22b 22f235236: {_meetingBeta2Loopback.WaveFormat.SampleRate}Hz, {_meetingBeta2Loopback.WaveFormat.BitsPerSample}bit, {_meetingBeta2Loopback.WaveFormat.Channels}");
+        _meetingBeta2Loopback.DataAvailable += (_, args) => { _meetingBeta2LoopbackWriter?.Write(args.Buffer, 0, args.BytesRecorded); };
+        _meetingBeta2Loopback.RecordingStopped += async (_, __) => { try { _meetingBeta2LoopbackWriter?.Dispose(); } catch { } _meetingBeta2LoopbackWriter = null; await AppendLineAsync("[Host] [Beta2] 22a23222f22c22f22b 22f22c22f23522f"); };
+
+        // microphone
+        if (_selectedMeetingBeta2MicrophoneId == null || _selectedMeetingBeta2MicrophoneId == "default")
+        {
+            _meetingBeta2Microphone = new WasapiCapture();
+            await AppendLineAsync("[Host] [Beta2] 22a22c23122f22f22a22f23022a22c");
+        }
+        else
+        {
+            var enumerator = new MMDeviceEnumerator();
+            var device = enumerator.GetDevice(_selectedMeetingBeta2MicrophoneId);
+            _meetingBeta2Microphone = new WasapiCapture(device);
+            await AppendLineAsync($"[Host] [Beta2] 22a22c23122f22f: {device.FriendlyName}");
+        }
+        _meetingBeta2MicrophoneWriter = new WaveFileWriter(_meetingBeta2MicrophoneTempFile, _meetingBeta2Microphone.WaveFormat);
+        await AppendLineAsync($"[Host] [Beta2] 22a22c23122f22f 22f235236: {_meetingBeta2Microphone.WaveFormat.SampleRate}Hz, {_meetingBeta2Microphone.WaveFormat.BitsPerSample}bit, {_meetingBeta2Microphone.WaveFormat.Channels}");
+        _meetingBeta2Microphone.DataAvailable += (_, args) => { _meetingBeta2MicrophoneWriter?.Write(args.Buffer, 0, args.BytesRecorded); };
+        _meetingBeta2Microphone.RecordingStopped += async (_, __) => { try { _meetingBeta2MicrophoneWriter?.Dispose(); } catch { } _meetingBeta2MicrophoneWriter = null; await AppendLineAsync("[Host] [Beta2] 22a22c23122f22f 22f22c22f23522f"); };
+
+        _meetingBeta2Loopback.StartRecording();
+        _meetingBeta2Microphone.StartRecording();
+        _isMeetingBeta2 = true;
+        BtnMeetingBeta2.Content = "6d1 23122f22c23122f22f22a23422f22fBeta2";
+        await AppendLineAsync("[Host] [Beta2] 23222f22a23422f22f (23122f22f22f230A) 22f22b22f22a");
+    }
+
+    private async Task StopMeetingBeta2AndTranscribeAsync()
+    {
+        if (_meetingBeta2Loopback != null) _meetingBeta2Loopback.StopRecording();
+        if (_meetingBeta2Microphone != null) _meetingBeta2Microphone.StopRecording();
+        _isMeetingBeta2 = false;
+        BtnMeetingBeta2.Content = "4de 23122f23622a23422f22f23022eBeta2";
+        await Task.Delay(500);
+
+        if (string.IsNullOrEmpty(_meetingBeta2MicrophoneTempFile) || !File.Exists(_meetingBeta2MicrophoneTempFile)) { await AppendLineAsync("[Host] [Beta2] 26c1f22f22f22a22e 22e22f22c "); return; }
+        if (string.IsNullOrEmpty(_meetingBeta2LoopbackTempFile) || !File.Exists(_meetingBeta2LoopbackTempFile)) { await AppendLineAsync("[Host] [Beta2] 22a23222f22c22f22b 22e22f22c "); return; }
+
+        await AppendLineAsync($"[Host] [Beta2] 26c1f: {_meetingBeta2MicrophoneTempFile}");
+        await AppendLineAsync($"[Host] [Beta2] 22a23222f22c22f22b: {_meetingBeta2LoopbackTempFile}");
+
+        // optional prepend silence like Beta
+        TimeSpan micDur2, spkDur2;
+        using (var mr = new AudioFileReader(_meetingBeta2MicrophoneTempFile)) { micDur2 = mr.TotalTime; }
+        using (var sr = new AudioFileReader(_meetingBeta2LoopbackTempFile)) { spkDur2 = sr.TotalTime; }
+        double diff = micDur2.TotalSeconds - spkDur2.TotalSeconds;
+        if (diff > 0.1)
+        {
+            await AppendLineAsync($"[Host] [Beta2] 22a23222f22c22f22b 22f22c22f 227 {diff:F2}s, 22f22b23023022f ");
+            await PrependSilenceToWavFileAsync(_meetingBeta2LoopbackTempFile, diff);
+        }
+
+        var mixed = await MixAudioFilesAsync(_meetingBeta2MicrophoneTempFile, _meetingBeta2LoopbackTempFile);
+        if (string.IsNullOrEmpty(mixed) || !File.Exists(mixed)) { await AppendLineAsync("[Host] [Beta2] 22f22b22a22f22f "); return; }
+
+        string mode = CmbMeetingBeta2Mode.SelectedIndex switch { 0 => "speech", 1 => "music", 2 => "mixed", _ => "speech" };
+        string language = CmbMeetingBeta2Language.SelectedIndex switch { 0 => "auto", 1 => "zh", 2 => "en", 3 => "ja", 4 => "ko", 5 => "es", 6 => "fr", 7 => "de", _ => "auto" };
+
+        await EnsurePipeAsync();
+        var cmd = new TranscribeFileCommand { path = mixed!, mode = mode, language = language };
+        var json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.TranscribeFileCommand) + "\n";
+        var buf = Encoding.UTF8.GetBytes(json);
+        await _pipe!.WriteAsync(buf, 0, buf.Length);
+        await _pipe.FlushAsync();
+        await AppendLineAsync($"[Host] [Beta2] 23022f22f22f 22f22e23022f (mode={mode}, lang={language}): {mixed}");
+        _transcribeTcs?.TrySetCanceled();
+        _transcribeTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
     private async Task PrependSilenceToWavFileAsync(string wavFilePath, double silenceDuration)
     {
         await Task.Run(() =>
