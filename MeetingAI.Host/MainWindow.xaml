@@ -151,6 +151,29 @@
                     <ComboBoxItem Content="🇩🇪 德语"/>
                 </ComboBox>
             </StackPanel>
+            <!-- 第四行：流式转录（双流） -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="BtnStreaming" Content="🚀 流式转录" Click="BtnStreaming_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbStreamingDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbStreamingDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbStreamingMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🎤 对话/会议"/>
+                    <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                    <ComboBoxItem Content="🎭 混合模式"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbStreamingLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🌐 自动"/>
+                    <ComboBoxItem Content="🇨🇳 中文"/>
+                    <ComboBoxItem Content="🇺🇸 英语"/>
+                    <ComboBoxItem Content="🇯🇵 日语"/>
+                    <ComboBoxItem Content="🇰🇷 韩语"/>
+                    <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                    <ComboBoxItem Content="🇫🇷 法语"/>
+                    <ComboBoxItem Content="🇩🇪 德语"/>
+                </ComboBox>
+            </StackPanel>
+
         </StackPanel>
 
         <!-- 中间输出 -->
