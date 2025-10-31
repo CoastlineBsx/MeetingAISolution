@@ -249,6 +249,63 @@ static void OnNewSegment(whisper_context* /*ctx*/, whisper_state* state, int n_n
 static struct whisper_context* g_whisper_ctx = nullptr;
 static std::once_flag g_model_once; // 只加载一次
 
+// ==================== 流式转录全局状态 ====================
+static whisper_state* g_stream_state = nullptr;       // 流式转录的 state（长期持有）
+static std::vector<float> g_stream_buffer;            // 滑动窗口缓冲区（5 秒 = 80000 采样点）
+static int64_t g_last_sent_timestamp = 0;             // 最后发送的时间戳（10ms 单位）
+static std::string g_stream_mode = "speech";          // 流式转录模式
+static std::string g_stream_language = "auto";        // 流式转录语言
+static std::mutex g_stream_mutex;                     // 保护流式转录状态的互斥锁
+static const size_t MAX_STREAM_BUFFER_SIZE = 80000;   // 5 秒（16000 Hz * 5）
+
+// Base64 解码表
+static const std::string base64_chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789+/";
+
+static inline bool is_base64(unsigned char c) {
+    return (isalnum(c) || (c == '+') || (c == '/'));
+}
+
+// Base64 解码函数
+static std::vector<unsigned char> base64_decode(const std::string& encoded_string) {
+    size_t in_len = encoded_string.size();
+    size_t i = 0;
+    size_t j = 0;
+    int in_ = 0;
+    unsigned char char_array_4[4], char_array_3[3];
+    std::vector<unsigned char> ret;
+
+    while (in_len-- && (encoded_string[in_] != '=') && is_base64(encoded_string[in_])) {
+        char_array_4[i++] = encoded_string[in_]; in_++;
+        if (i == 4) {
+            for (i = 0; i < 4; i++)
+                char_array_4[i] = static_cast<unsigned char>(base64_chars.find(char_array_4[i]));
+
+            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+            char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+
+            for (i = 0; (i < 3); i++)
+                ret.push_back(char_array_3[i]);
+            i = 0;
+        }
+    }
+
+    if (i) {
+        for (j = 0; j < i; j++)
+            char_array_4[j] = static_cast<unsigned char>(base64_chars.find(char_array_4[j]));
+
+        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+
+        for (j = 0; (j < i - 1); j++) ret.push_back(char_array_3[j]);
+    }
+
+    return ret;
+}
+
 // WAV 加载并转为 16kHz 单声道（Whisper 标准格式）
 static bool LoadWavFile(const std::string& filename, std::vector<float>& audio_data) {
     std::ifstream file(filename, std::ios::binary);
@@ -1404,5 +1461,190 @@ bool TranscribeAudioFile(
     std::cout << "[Whisper][Perf] total=" << ms_total << " ms" << std::endl;
 
     std::cout << "[Whisper] 转录完成，共 " << segments.size() << " 个片段" << std::endl;
+    return true;
+}
+
+// ==================== 流式转录实现 ====================
+
+bool StartStream(const std::string& sceneMode, const std::string& language) {
+    std::lock_guard<std::mutex> lock(g_stream_mutex);
+
+    // 检查模型是否已加载
+    if (g_whisper_ctx == nullptr) {
+        std::cerr << "[Stream] 错误：Whisper 模型未加载" << std::endl;
+        return false;
+    }
+
+    // 检查是否已在流式转录中
+    if (g_stream_state != nullptr) {
+        std::cerr << "[Stream] 错误：已有流式转录在进行中" << std::endl;
+        return false;
+    }
+
+    // 创建流式 state
+    g_stream_state = whisper_init_state(g_whisper_ctx);
+    if (g_stream_state == nullptr) {
+        std::cerr << "[Stream] 错误：创建流式 state 失败" << std::endl;
+        return false;
+    }
+
+    // 初始化缓冲区
+    g_stream_buffer.clear();
+    g_stream_buffer.reserve(MAX_STREAM_BUFFER_SIZE);
+    g_last_sent_timestamp = 0;
+
+    // 保存配置
+    g_stream_mode = sceneMode;
+    g_stream_language = language;
+
+    std::cout << "[Stream] 流式转录已启动（模式: " << sceneMode
+              << ", 语言: " << language << "）" << std::endl;
+
+    return true;
+}
+
+void StopStream() {
+    std::lock_guard<std::mutex> lock(g_stream_mutex);
+
+    if (g_stream_state != nullptr) {
+        whisper_free_state(g_stream_state);
+        g_stream_state = nullptr;
+        std::cout << "[Stream] 流式转录已停止" << std::endl;
+    }
+
+    g_stream_buffer.clear();
+    g_last_sent_timestamp = 0;
+}
+
+bool ProcessStreamChunk(const std::string& audioDataBase64, std::vector<WhisperSegment>& segments) {
+    std::lock_guard<std::mutex> lock(g_stream_mutex);
+
+    // 检查流式转录是否已启动
+    if (g_stream_state == nullptr) {
+        std::cerr << "[Stream] 错误：流式转录未启动" << std::endl;
+        return false;
+    }
+
+    // Base64 解码
+    auto decoded = base64_decode(audioDataBase64);
+    if (decoded.empty()) {
+        std::cerr << "[Stream] 错误：Base64 解码失败" << std::endl;
+        return false;
+    }
+
+    // 转换为 float32 数组（假设输入是 float32 PCM）
+    if (decoded.size() % sizeof(float) != 0) {
+        std::cerr << "[Stream] 错误：音频数据大小不是 float32 的倍数" << std::endl;
+        return false;
+    }
+
+    size_t float_count = decoded.size() / sizeof(float);
+    const float* audio_float = reinterpret_cast<const float*>(decoded.data());
+
+    // 追加到滑动窗口缓冲区
+    for (size_t i = 0; i < float_count; ++i) {
+        g_stream_buffer.push_back(audio_float[i]);
+    }
+
+    // 保持缓冲区最大 5 秒
+    if (g_stream_buffer.size() > MAX_STREAM_BUFFER_SIZE) {
+        size_t excess = g_stream_buffer.size() - MAX_STREAM_BUFFER_SIZE;
+        g_stream_buffer.erase(g_stream_buffer.begin(), g_stream_buffer.begin() + excess);
+    }
+
+    std::cout << "[Stream] 缓冲区大小: " << g_stream_buffer.size()
+              << " 样本 (" << (g_stream_buffer.size() / 16000.0) << " 秒)" << std::endl;
+
+    // 如果缓冲区太小（< 1 秒），不转录
+    if (g_stream_buffer.size() < 16000) {
+        std::cout << "[Stream] 缓冲区过小，跳过转录" << std::endl;
+        return true;
+    }
+
+    // 配置 Whisper 参数（与批量转录类似，但针对流式优化）
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+
+    // 根据场景模式调整参数
+    AudioScene scene = AudioScene::SPEECH;
+    if (g_stream_mode == "music") {
+        scene = AudioScene::MUSIC;
+        params.max_tokens = 48;
+        params.entropy_thold = 2.8f;
+        params.no_speech_thold = 0.85f;
+    }
+    else if (g_stream_mode == "mixed") {
+        scene = AudioScene::MIXED;
+        params.max_tokens = 40;
+        params.entropy_thold = 2.7f;
+        params.no_speech_thold = 0.5f;
+    }
+    else {
+        // speech
+        params.max_tokens = 64;
+        params.entropy_thold = 2.2f;
+        params.no_speech_thold = 0.7f;
+    }
+
+    // 语言设置
+    if (g_stream_language != "auto" && !g_stream_language.empty()) {
+        params.language = g_stream_language.c_str();
+    }
+    else {
+        params.language = nullptr;
+    }
+
+    params.translate = false;
+    params.print_realtime = false;
+    params.print_progress = false;
+    params.print_timestamps = true;
+    params.single_segment = false;
+
+    // 转录整个缓冲区
+    int rc = whisper_full_with_state(
+        g_whisper_ctx,
+        g_stream_state,
+        params,
+        g_stream_buffer.data(),
+        static_cast<int>(g_stream_buffer.size())
+    );
+
+    if (rc != 0) {
+        std::cerr << "[Stream] 转录失败，返回码: " << rc << std::endl;
+        return false;
+    }
+
+    // 提取新的段落（只返回比 g_last_sent_timestamp 更新的）
+    const int n_segments = whisper_full_n_segments_from_state(g_stream_state);
+    segments.clear();
+
+    for (int i = 0; i < n_segments; ++i) {
+        int64_t t0 = whisper_full_get_segment_t0_from_state(g_stream_state, i);
+        int64_t t1 = whisper_full_get_segment_t1_from_state(g_stream_state, i);
+        const char* text = whisper_full_get_segment_text_from_state(g_stream_state, i);
+
+        // 只返回新的段落
+        if (t0 > g_last_sent_timestamp) {
+            WhisperSegment seg;
+            seg.text = text;
+            seg.start_time = t0 * 0.01;  // 10ms 单位转秒
+            seg.end_time = t1 * 0.01;
+
+            // 流式转录不过滤质量（信任模型实时输出）
+            seg.no_speech_probability = 0.0f;
+            seg.average_log_probability = 0.0f;
+            seg.text_compression_ratio = 0.0f;
+
+            segments.push_back(seg);
+
+            // 更新时间戳（使用 max 避免回退）
+            if (t1 > g_last_sent_timestamp) {
+                g_last_sent_timestamp = t1;
+            }
+
+            std::cout << "[Stream] 新段落: [" << seg.start_time << "s - "
+                      << seg.end_time << "s] " << seg.text << std::endl;
+        }
+    }
+
     return true;
 }

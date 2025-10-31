@@ -7,4 +7,7 @@ namespace MeetingAI.Host.Contracts;
 [JsonSerializable(typeof(PingMessage))]
 [JsonSerializable(typeof(TranscribeFileCommand))]
 [JsonSerializable(typeof(QuitMessage))]
+[JsonSerializable(typeof(StartStreamCommand))]
+[JsonSerializable(typeof(StreamChunkCommand))]
+[JsonSerializable(typeof(StopStreamCommand))]
 internal partial class AppJsonContext : JsonSerializerContext { }

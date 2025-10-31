@@ -31,3 +31,24 @@ void CleanupWhisper();
 
 // ★ 新增：仅加载一次（多次调用也只会首次真正加载）
 bool InitWhisperOnce(const std::string& modelPath);
+
+// ==================== 流式转录接口 ====================
+
+// 开始流式转录（创建并持有全局 stream_state）
+// 返回值：true=成功，false=失败（例如模型未加载或已在流式中）
+bool StartStream(
+    const std::string& sceneMode = "speech",  // speech/music/mixed/auto
+    const std::string& language = "auto"       // auto/zh/en/ja/ko/es/fr/de...
+);
+
+// 处理音频块（追加到滑动窗口缓冲区并转录）
+// audioData: Base64 编码的 float32 PCM 数据（16kHz, 单声道）
+// segments: 输出本次新识别的段落（只返回新的段落）
+// 返回值：true=成功，false=失败
+bool ProcessStreamChunk(
+    const std::string& audioDataBase64,
+    std::vector<WhisperSegment>& segments
+);
+
+// 停止流式转录（释放 stream_state 和缓冲区）
+void StopStream();

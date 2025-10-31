@@ -389,6 +389,63 @@ int wmain() {
                     continue;
                 }
 
+                // ---- 新增：流式转录命令处理 ----
+                if (meetingai::proto::isStartStream(buffer)) {
+                    std::wcout << L"[Worker] 处理 start_stream 命令\n";
+
+                    // 确保模型已加载
+                    std::call_once(g_model_once2, [&] {
+                        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
+                        if (!InitWhisperOnce(modelPathOnce)) {
+                            std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
+                            DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                        }
+                    });
+
+                    std::string mode = meetingai::proto::extractMode(buffer);
+                    std::string lang = meetingai::proto::extractLanguage(buffer);
+
+                    bool success = StartStream(mode, lang);
+                    if (success) {
+                        std::string resp = "{\"type\":\"stream_started\",\"mode\":\"" + mode + "\",\"language\":\"" + lang + "\"}\n";
+                        DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
+                    } else {
+                        std::string err = "{\"type\":\"error\",\"message\":\"启动流式转录失败\"}\n";
+                        DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                    }
+                    buffer.clear();
+                    continue;
+                }
+
+                if (meetingai::proto::isStreamChunk(buffer)) {
+                    // 处理音频块
+                    std::string audioData = meetingai::proto::extractData(buffer);
+                    std::vector<WhisperSegment> segments;
+
+                    bool success = ProcessStreamChunk(audioData, segments);
+                    if (success) {
+                        // 发送新识别的段落
+                        for (const auto& seg : segments) {
+                            std::string resp = std::string("{\"type\":\"stream_segment\",\"text\":\"") +
+                                meetingai::proto::jsonEscape(seg.text) +
+                                "\",\"t0_ms\":" + std::to_string((int)(seg.start_time * 1000)) +
+                                ",\"t1_ms\":" + std::to_string((int)(seg.end_time * 1000)) + "}\n";
+                            DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
+                        }
+                    }
+                    buffer.clear();
+                    continue;
+                }
+
+                if (meetingai::proto::isStopStream(buffer)) {
+                    std::wcout << L"[Worker] 处理 stop_stream 命令\n";
+                    StopStream();
+                    std::string resp = "{\"type\":\"stream_stopped\"}\n";
+                    DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
+                    buffer.clear();
+                    continue;
+                }
+
                 // 正常回显
                 std::string resp = "{\"type\":\"pong\",\"echo\":\"" + buffer + "\"}\n";
                 DWORD written = 0;

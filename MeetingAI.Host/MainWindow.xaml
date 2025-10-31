@@ -14,71 +14,122 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- 顶部按钮区 -->
-        <StackPanel Orientation="Horizontal" Grid.ColumnSpan="2" Spacing="8">
-            <Button x:Name="BtnStart" Content="启动 Worker" Click="BtnStart_Click"/>
-            <Button x:Name="BtnPing"  Content="发送测试消息" Click="BtnPing_Click" IsEnabled="False"/>
+        <!-- 顶部按钮区 - 3行布局 -->
+        <StackPanel Grid.ColumnSpan="2" Spacing="8">
+            <!-- 第一行：基础控制 -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="BtnStart" Content="启动 Worker" Click="BtnStart_Click"/>
+                <Button x:Name="BtnPing"  Content="发送测试消息" Click="BtnPing_Click" IsEnabled="False"/>
 
-            <!-- 测试转录组 -->
-            <Button x:Name="BtnTranscribe" Content="测试转录" Click="BtnTranscribe_Click" IsEnabled="False"/>
-            <ComboBox x:Name="CmbTranscribeMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
-                <ComboBoxItem Content="🎤 对话/会议"/>
-                <ComboBoxItem Content="🎵 音乐/歌曲"/>
-                <ComboBoxItem Content="🎭 混合模式"/>
-            </ComboBox>
-            <ComboBox x:Name="CmbTranscribeLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
-                <ComboBoxItem Content="🌐 自动"/>
-                <ComboBoxItem Content="🇨🇳 中文"/>
-                <ComboBoxItem Content="🇺🇸 英语"/>
-                <ComboBoxItem Content="🇯🇵 日语"/>
-                <ComboBoxItem Content="🇰🇷 韩语"/>
-                <ComboBoxItem Content="🇪🇸 西班牙语"/>
-                <ComboBoxItem Content="🇫🇷 法语"/>
-                <ComboBoxItem Content="🇩🇪 德语"/>
-            </ComboBox>
+                <!-- 测试转录组 -->
+                <Button x:Name="BtnTranscribe" Content="测试转录" Click="BtnTranscribe_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbTranscribeMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🎤 对话/会议"/>
+                    <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                    <ComboBoxItem Content="🎭 混合模式"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbTranscribeLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🌐 自动"/>
+                    <ComboBoxItem Content="🇨🇳 中文"/>
+                    <ComboBoxItem Content="🇺🇸 英语"/>
+                    <ComboBoxItem Content="🇯🇵 日语"/>
+                    <ComboBoxItem Content="🇰🇷 韩语"/>
+                    <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                    <ComboBoxItem Content="🇫🇷 法语"/>
+                    <ComboBoxItem Content="🇩🇪 德语"/>
+                </ComboBox>
 
-            <!-- 扬声器转录组 -->
-            <Button x:Name="BtnLoopback" Content="扬声器转录" Click="BtnLoopback_Click" IsEnabled="False"/>
-            <ComboBox x:Name="CmbLoopbackMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
-                <ComboBoxItem Content="🎤 对话/会议"/>
-                <ComboBoxItem Content="🎵 音乐/歌曲"/>
-                <ComboBoxItem Content="🎭 混合模式"/>
-            </ComboBox>
-            <ComboBox x:Name="CmbLoopbackLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
-                <ComboBoxItem Content="🌐 自动"/>
-                <ComboBoxItem Content="🇨🇳 中文"/>
-                <ComboBoxItem Content="🇺🇸 英语"/>
-                <ComboBoxItem Content="🇯🇵 日语"/>
-                <ComboBoxItem Content="🇰🇷 韩语"/>
-                <ComboBoxItem Content="🇪🇸 西班牙语"/>
-                <ComboBoxItem Content="🇫🇷 法语"/>
-                <ComboBoxItem Content="🇩🇪 德语"/>
-            </ComboBox>
+                <Button x:Name="BtnStop"  Content="停止 Worker" Click="BtnStop_Click" IsEnabled="False"/>
+                <TextBlock x:Name="LblStatus" Margin="12,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
 
-            <!-- 麦克风转录组 -->
-            <Button x:Name="BtnMicrophone" Content="🎤 麦克风转录" Click="BtnMicrophone_Click" IsEnabled="False"/>
-            <ComboBox x:Name="CmbMicrophoneDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMicrophoneDevice_SelectionChanged">
-                <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
-            </ComboBox>
-            <ComboBox x:Name="CmbMicrophoneMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
-                <ComboBoxItem Content="🎤 对话/会议"/>
-                <ComboBoxItem Content="🎵 音乐/歌曲"/>
-                <ComboBoxItem Content="🎭 混合模式"/>
-            </ComboBox>
-            <ComboBox x:Name="CmbMicrophoneLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
-                <ComboBoxItem Content="🌐 自动"/>
-                <ComboBoxItem Content="🇨🇳 中文"/>
-                <ComboBoxItem Content="🇺🇸 英语"/>
-                <ComboBoxItem Content="🇯🇵 日语"/>
-                <ComboBoxItem Content="🇰🇷 韩语"/>
-                <ComboBoxItem Content="🇪🇸 西班牙语"/>
-                <ComboBoxItem Content="🇫🇷 法语"/>
-                <ComboBoxItem Content="🇩🇪 德语"/>
-            </ComboBox>
-            <CheckBox x:Name="ChkMicrophoneDenoise" Content="降噪" IsChecked="True" VerticalAlignment="Center"/>
+            <!-- 第二行：音频捕获功能 -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <!-- 扬声器转录组 -->
+                <Button x:Name="BtnLoopback" Content="🔊 扬声器转录" Click="BtnLoopback_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbLoopbackMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🎤 对话/会议"/>
+                    <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                    <ComboBoxItem Content="🎭 混合模式"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbLoopbackLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🌐 自动"/>
+                    <ComboBoxItem Content="🇨🇳 中文"/>
+                    <ComboBoxItem Content="🇺🇸 英语"/>
+                    <ComboBoxItem Content="🇯🇵 日语"/>
+                    <ComboBoxItem Content="🇰🇷 韩语"/>
+                    <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                    <ComboBoxItem Content="🇫🇷 法语"/>
+                    <ComboBoxItem Content="🇩🇪 德语"/>
+                </ComboBox>
 
-            <Button x:Name="BtnStop"  Content="停止 Worker" Click="BtnStop_Click" IsEnabled="False"/>
-            <TextBlock x:Name="LblStatus" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                <!-- 麦克风转录组 -->
+                <Button x:Name="BtnMicrophone" Content="🎤 麦克风转录" Click="BtnMicrophone_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbMicrophoneDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMicrophoneDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMicrophoneMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🎤 对话/会议"/>
+                    <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                    <ComboBoxItem Content="🎭 混合模式"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMicrophoneLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🌐 自动"/>
+                    <ComboBoxItem Content="🇨🇳 中文"/>
+                    <ComboBoxItem Content="🇺🇸 英语"/>
+                    <ComboBoxItem Content="🇯🇵 日语"/>
+                    <ComboBoxItem Content="🇰🇷 韩语"/>
+                    <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                    <ComboBoxItem Content="🇫🇷 法语"/>
+                    <ComboBoxItem Content="🇩🇪 德语"/>
+                </ComboBox>
+                <CheckBox x:Name="ChkMicrophoneDenoise" Content="降噪" IsChecked="True" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- 第三行：综合模式转录功能 -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <!-- 综合模式转录组（方案B：定时器同步）-->
+                <Button x:Name="BtnMeeting" Content="📞 综合转录" Click="BtnMeeting_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbMeetingDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMeetingDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMeetingMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🎤 对话/会议"/>
+                    <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                    <ComboBoxItem Content="🎭 混合模式"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMeetingLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🌐 自动"/>
+                    <ComboBoxItem Content="🇨🇳 中文"/>
+                    <ComboBoxItem Content="🇺🇸 英语"/>
+                    <ComboBoxItem Content="🇯🇵 日语"/>
+                    <ComboBoxItem Content="🇰🇷 韩语"/>
+                    <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                    <ComboBoxItem Content="🇫🇷 法语"/>
+                    <ComboBoxItem Content="🇩🇪 德语"/>
+                </ComboBox>
+
+                <!-- 综合模式（beta）转录组（方案A：事后对齐）-->
+                <Button x:Name="BtnMeetingBeta" Content="📞 综合转录Beta" Click="BtnMeetingBeta_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbMeetingBetaDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMeetingBetaDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMeetingBetaMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🎤 对话/会议"/>
+                    <ComboBoxItem Content="🎵 音乐/歌曲"/>
+                    <ComboBoxItem Content="🎭 混合模式"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbMeetingBetaLanguage" SelectedIndex="0" MinWidth="100" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🌐 自动"/>
+                    <ComboBoxItem Content="🇨🇳 中文"/>
+                    <ComboBoxItem Content="🇺🇸 英语"/>
+                    <ComboBoxItem Content="🇯🇵 日语"/>
+                    <ComboBoxItem Content="🇰🇷 韩语"/>
+                    <ComboBoxItem Content="🇪🇸 西班牙语"/>
+                    <ComboBoxItem Content="🇫🇷 法语"/>
+                    <ComboBoxItem Content="🇩🇪 德语"/>
+                </ComboBox>
+            </StackPanel>
         </StackPanel>
 
         <!-- 中间输出 -->
