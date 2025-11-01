@@ -1750,7 +1750,7 @@ bool ProcessStreamChunk2(const std::string& streamId, const std::string& audioDa
         ctx.buffer.erase(ctx.buffer.begin(), ctx.buffer.begin() + excess);
     }
 
-    if (ctx.buffer.size() < 16000) { segments.clear(); return true; }
+    if (ctx.buffer.size() < 8000) { segments.clear(); return true; }  // 0.5秒开始转录（从1秒降低到0.5秒）
 
     whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     apply_params_for_mode(ctx.mode, ctx.language, params);

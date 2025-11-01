@@ -1074,18 +1074,14 @@ public sealed partial class MainWindow : Window
         await AppendLineAsync($"[Host] 扬声器录制格式: {_meetingLoopback.WaveFormat.SampleRate}Hz, " +
             $"{_meetingLoopback.WaveFormat.BitsPerSample}bit, {_meetingLoopback.WaveFormat.Channels}声道");
 
-        _meetingLoopback.DataAvailable += async (_, args) =>
+        _meetingLoopback.DataAvailable += (_, args) =>
         {
             lock (_meetingSyncLock)
             {
                 _meetingLoopbackWriter?.Write(args.Buffer, 0, args.BytesRecorded);
                 _meetingLoopbackTotalBytes += args.BytesRecorded;
                 _meetingLoopbackLastDataTime = DateTime.Now;
-                if (!_meetingLoopbackHasData)
-                {
-                    _meetingLoopbackHasData = true; // 标记已收到真实数据
-                    _ = AppendLineAsync($"[Host] [DEBUG] ✓ 扬声器首次收到数据：{args.BytesRecorded} 字节");
-                }
+                _meetingLoopbackHasData = true; // 标记已收到真实数据
             }
         };
 
@@ -1115,15 +1111,9 @@ public sealed partial class MainWindow : Window
         await AppendLineAsync($"[Host] 麦克风录制格式: {_meetingMicrophone.WaveFormat.SampleRate}Hz, " +
             $"{_meetingMicrophone.WaveFormat.BitsPerSample}bit, {_meetingMicrophone.WaveFormat.Channels}声道");
 
-        var _meetingMicrophoneHasData = false;
         _meetingMicrophone.DataAvailable += (_, args) =>
         {
             _meetingMicrophoneWriter?.Write(args.Buffer, 0, args.BytesRecorded);
-            if (!_meetingMicrophoneHasData)
-            {
-                _meetingMicrophoneHasData = true;
-                _ = AppendLineAsync($"[Host] [DEBUG] ✓ 麦克风首次收到数据：{args.BytesRecorded} 字节");
-            }
         };
 
         _meetingMicrophone.RecordingStopped += async (_, __) =>
@@ -1176,17 +1166,15 @@ public sealed partial class MainWindow : Window
         {
             try
             {
-                // ⭐ 改进策略：平衡对齐和保留真实音频
-                var now = DateTime.Now;
-
-                // 如果扬声器从未收到过任何数据，不填充
+                // 方案3：只有当扬声器收到过真实数据后，才进行同步填充
                 if (!_meetingLoopbackHasData)
                 {
+                    // 扬声器尚未收到任何数据，不填充静音（避免在没有系统声音时填充大量静音）
                     return;
                 }
 
+                var now = DateTime.Now;
                 var format = _meetingLoopback.WaveFormat;
-                var timeSinceLastData = (now - _meetingLoopbackLastDataTime).TotalSeconds;
 
                 // 计算从开始到现在经过的时间（秒）
                 double elapsedSeconds = (now - _meetingStartTime).TotalSeconds;
@@ -1197,21 +1185,8 @@ public sealed partial class MainWindow : Window
                 // 计算需要填充的字节数
                 long missingBytes = expectedBytes - _meetingLoopbackTotalBytes;
 
-                // ⭐ 智能填充策略：
-                // 1. 如果扬声器正在持续录音（最近0.5秒内有数据），只填充小的间隙
-                // 2. 如果扬声器已经停止录音（超过0.5秒没数据），填充更大的间隙
-                long threshold;
-                if (timeSinceLastData < 0.5)
-                {
-                    // 正在录音：只填充超过200ms的间隙（保留真实音频）
-                    threshold = format.SampleRate * format.BlockAlign / 5; // 200ms
-                }
-                else
-                {
-                    // 已停止录音：填充超过100ms的间隙（保持对齐）
-                    threshold = format.SampleRate * format.BlockAlign / 10; // 100ms
-                }
-
+                // 如果缺少超过 100ms 的数据，填充静音
+                long threshold = format.SampleRate * format.BlockAlign / 10; // 100ms
                 if (missingBytes > threshold)
                 {
                     // 创建静音缓冲区
@@ -1225,10 +1200,12 @@ public sealed partial class MainWindow : Window
                     _meetingLoopbackTotalBytes += missingBytes;
                     _meetingSyncFillCount++;
 
-                    // ⭐ 每次填充都输出日志，便于诊断
-                    double fillDuration = (double)missingBytes / (format.SampleRate * format.BlockAlign);
-                    double timeSinceLastDataNow = (DateTime.Now - _meetingLoopbackLastDataTime).TotalSeconds;
-                    _ = AppendLineAsync($"[Host] [DEBUG] 定时器填充: {fillDuration:F2}秒静音（第{_meetingSyncFillCount}次，距上次数据{timeSinceLastDataNow:F2}秒）");
+                    // 诊断日志（每填充10次输出一次，避免刷屏）
+                    if (_meetingSyncFillCount % 10 == 1)
+                    {
+                        double fillDuration = (double)missingBytes / (format.SampleRate * format.BlockAlign);
+                        _ = AppendLineAsync($"[Host] [方案B] 定时器填充: {fillDuration:F2}秒静音（第{_meetingSyncFillCount}次）");
+                    }
                 }
             }
             catch
@@ -1279,17 +1256,6 @@ public sealed partial class MainWindow : Window
 
         await AppendLineAsync($"[Host] 麦克风文件: {_meetingMicrophoneTempFile}");
         await AppendLineAsync($"[Host] 扬声器文件: {_meetingLoopbackTempFile}");
-
-        // [DEBUG] 检查文件大小
-        var micFileInfo = new FileInfo(_meetingMicrophoneTempFile);
-        var spkFileInfo = new FileInfo(_meetingLoopbackTempFile);
-        await AppendLineAsync($"[Host] [DEBUG] 麦克风文件大小: {micFileInfo.Length / 1024.0:F2} KB");
-        await AppendLineAsync($"[Host] [DEBUG] 扬声器文件大小: {spkFileInfo.Length / 1024.0:F2} KB");
-
-        if (spkFileInfo.Length < 1024)
-        {
-            await AppendLineAsync($"[Host] [DEBUG] ⚠️ 警告：扬声器文件过小（< 1KB），可能没有录到声音！");
-        }
 
         // 方案B：定时器已经确保两个文件等长，直接混音
         await AppendLineAsync("[Host] [方案B] 检查录制文件时长...");
@@ -1400,31 +1366,8 @@ public sealed partial class MainWindow : Window
 
                 await AppendLineAsync("[Host] 混音权重: 麦克风 70%, 扬声器 50%");
 
-                // [DEBUG] 检查扬声器音频是否有内容
-                await AppendLineAsync("[Host] [DEBUG] 正在检查扬声器音频内容...");
-                float[] spkTestSamples = new float[4800]; // 0.1秒
-                int spkTestRead = speakerVolume.Read(spkTestSamples, 0, 4800);
-                float spkTestMax = 0f;
-                for (int i = 0; i < spkTestRead; i++)
-                {
-                    if (Math.Abs(spkTestSamples[i]) > spkTestMax)
-                        spkTestMax = Math.Abs(spkTestSamples[i]);
-                }
-                await AppendLineAsync($"[Host] [DEBUG] 扬声器前0.1秒最大振幅: {spkTestMax:F4}");
-                if (spkTestMax < 0.001f)
-                {
-                    await AppendLineAsync("[Host] [DEBUG] ⚠️ 警告：扬声器音频振幅过小，可能是静音或没录到声音！");
-                }
-
-                // 重置扬声器reader位置，重新创建provider
-                speakerReader.Position = 0;
-                speakerResampler.Dispose();
-                var speakerResampler2 = new MediaFoundationResampler(speakerReader, commonFormat);
-                var speakerProvider2 = speakerResampler2.ToSampleProvider();
-                var speakerVolume2 = new VolumeSampleProvider(speakerProvider2) { Volume = 0.5f };
-
                 // 直接混音（无需偏移，因为文件已等长）
-                var mixer = new MixingSampleProvider(new[] { micVolume, speakerVolume2 });
+                var mixer = new MixingSampleProvider(new[] { micVolume, speakerVolume });
 
                 // 输出为 16kHz, 16-bit, 单声道（Whisper 标准格式）
                 var outFormat = new WaveFormat(16000, 16, 1);

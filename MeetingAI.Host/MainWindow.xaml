@@ -47,6 +47,9 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <!-- 扬声器转录组 -->
                 <Button x:Name="BtnLoopback" Content="🔊 扬声器转录" Click="BtnLoopback_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbLoopbackDevice" SelectedIndex="0" MinWidth="180" VerticalAlignment="Center" SelectionChanged="CmbLoopbackDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认扬声器]" Tag="default"/>
+                </ComboBox>
                 <ComboBox x:Name="CmbLoopbackMode" SelectedIndex="0" MinWidth="120" VerticalAlignment="Center">
                     <ComboBoxItem Content="🎤 对话/会议"/>
                     <ComboBoxItem Content="🎵 音乐/歌曲"/>
@@ -83,13 +86,16 @@
                     <ComboBoxItem Content="🇫🇷 法语"/>
                     <ComboBoxItem Content="🇩🇪 德语"/>
                 </ComboBox>
-                <CheckBox x:Name="ChkMicrophoneDenoise" Content="降噪" IsChecked="True" VerticalAlignment="Center"/>
+
             </StackPanel>
 
             <!-- 第三行：综合模式转录功能 -->
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <!-- 综合模式转录组（方案B：定时器同步）-->
                 <Button x:Name="BtnMeeting" Content="📞 综合转录" Click="BtnMeeting_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbMeetingSpeakerDevice" SelectedIndex="0" MinWidth="180" VerticalAlignment="Center" SelectionChanged="CmbMeetingSpeakerDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认扬声器]" Tag="default"/>
+                </ComboBox>
                 <ComboBox x:Name="CmbMeetingDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMeetingDevice_SelectionChanged">
                     <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
                 </ComboBox>
@@ -111,6 +117,9 @@
 
                 <!-- 综合模式（beta）转录组（方案A：事后对齐）-->
                 <Button x:Name="BtnMeetingBeta" Content="📞 综合转录Beta" Click="BtnMeetingBeta_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbMeetingBetaSpeakerDevice" SelectedIndex="0" MinWidth="180" VerticalAlignment="Center" SelectionChanged="CmbMeetingBetaSpeakerDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认扬声器]" Tag="default"/>
+                </ComboBox>
                 <ComboBox x:Name="CmbMeetingBetaDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMeetingBetaDevice_SelectionChanged">
                     <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
                 </ComboBox>
@@ -129,9 +138,15 @@
                     <ComboBoxItem Content="🇫🇷 法语"/>
                     <ComboBoxItem Content="🇩🇪 德语"/>
                 </ComboBox>
+            </StackPanel>
 
+            <!-- 第四行：综合转录Beta2 + 流式转录 -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
                 <!-- 综合模式（beta2）转录组 -->
                 <Button x:Name="BtnMeetingBeta2" Content="📞 综合转录Beta2" Click="BtnMeetingBeta2_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbMeetingBeta2SpeakerDevice" SelectedIndex="0" MinWidth="180" VerticalAlignment="Center" SelectionChanged="CmbMeetingBeta2SpeakerDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认扬声器]" Tag="default"/>
+                </ComboBox>
                 <ComboBox x:Name="CmbMeetingBeta2Device" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbMeetingBeta2Device_SelectionChanged">
                     <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
                 </ComboBox>
@@ -150,10 +165,12 @@
                     <ComboBoxItem Content="🇫🇷 法语"/>
                     <ComboBoxItem Content="🇩🇪 德语"/>
                 </ComboBox>
-            </StackPanel>
-            <!-- 第四行：流式转录（双流） -->
-            <StackPanel Orientation="Horizontal" Spacing="8">
+
+                <!-- 流式转录（双流）-->
                 <Button x:Name="BtnStreaming" Content="🚀 流式转录" Click="BtnStreaming_Click" IsEnabled="False"/>
+                <ComboBox x:Name="CmbStreamingSpeakerDevice" SelectedIndex="0" MinWidth="180" VerticalAlignment="Center" SelectionChanged="CmbStreamingSpeakerDevice_SelectionChanged">
+                    <ComboBoxItem Content="[默认扬声器]" Tag="default"/>
+                </ComboBox>
                 <ComboBox x:Name="CmbStreamingDevice" SelectedIndex="0" MinWidth="150" VerticalAlignment="Center" SelectionChanged="CmbStreamingDevice_SelectionChanged">
                     <ComboBoxItem Content="[默认麦克风]" Tag="default"/>
                 </ComboBox>
@@ -173,10 +190,8 @@
                     <ComboBoxItem Content="🇩🇪 德语"/>
                 </ComboBox>
             </StackPanel>
-
         </StackPanel>
-
-        <!-- 中间输出 -->
+<!-- 中间输出 -->
         <TextBox x:Name="OutputBox" Grid.Row="1" Grid.ColumnSpan="2"
                  TextWrapping="Wrap" AcceptsReturn="True" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
 
