@@ -36,8 +36,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
                 CmbMeetingSpeakerDevice.Items.Add(new ComboBoxItem { Content = rd.FriendlyName, Tag = rd.ID });
                 CmbMeetingBetaSpeakerDevice.Items.Add(new ComboBoxItem { Content = rd.FriendlyName, Tag = rd.ID });
                 CmbMeetingBeta2SpeakerDevice.Items.Add(new ComboBoxItem { Content = rd.FriendlyName, Tag = rd.ID });
-                CmbStreamingSpeakerDevice.Items.Add(new ComboBoxItem { Content = rd.FriendlyName, Tag = rd.ID });
-                CmbMeetingBeta3SpeakerDevice.Items.Add(new ComboBoxItem { Content = rd.FriendlyName, Tag = rd.ID });
             }
 
             while (CmbMeetingDevice.Items.Count > 1)
@@ -61,9 +59,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
             foreach (var device in devices)
             {
                 CmbMeetingBetaDevice.Items.Add(new ComboBoxItem { Content = device.FriendlyName, Tag = device.ID });
-                CmbStreamingDevice.Items.Add(new ComboBoxItem { Content = device.FriendlyName, Tag = device.ID });
                 CmbMeetingBeta2Device.Items.Add(new ComboBoxItem { Content = device.FriendlyName, Tag = device.ID });
-                CmbMeetingBeta3Device.Items.Add(new ComboBoxItem { Content = device.FriendlyName, Tag = device.ID });
             }
 
             _ = AppendLineAsync($"[Host] 已枚举 {devices.Count} 个麦克风设备");
@@ -94,10 +90,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
     {
         if (CmbMeetingBeta2SpeakerDevice.SelectedItem is ComboBoxItem item && item.Tag is string id) _selectedMeetingBeta2SpeakerId = id; else _selectedMeetingBeta2SpeakerId = null;
     }
-    private void CmbStreamingSpeakerDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CmbStreamingSpeakerDevice.SelectedItem is ComboBoxItem item && item.Tag is string id) _selectedStreamingSpeakerId = id; else _selectedStreamingSpeakerId = null;
-    }
 
     private void CmbMeetingDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -121,27 +113,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
             _selectedMeetingBeta2MicrophoneId = deviceId;
         else
             _selectedMeetingBeta2MicrophoneId = null;
-    }
-
-    private void CmbStreamingDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CmbStreamingDevice.SelectedItem is ComboBoxItem item && item.Tag is string id) _selectedStreamingMicId = id; else _selectedStreamingMicId = null;
-    }
-
-    private void CmbMeetingBeta3Device_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CmbMeetingBeta3Device.SelectedItem is ComboBoxItem item && item.Tag is string tag)
-        {
-            _selectedBeta3MicrophoneId = tag == "default" ? null : tag;
-        }
-    }
-
-    private void CmbMeetingBeta3SpeakerDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CmbMeetingBeta3SpeakerDevice.SelectedItem is ComboBoxItem item && item.Tag is string tag)
-        {
-            _selectedBeta3SpeakerId = tag == "default" ? null : tag;
-        }
     }
 }
 

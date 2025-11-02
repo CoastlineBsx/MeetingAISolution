@@ -14,7 +14,15 @@
       "Bash(nul)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"C:\\VisualStudio\\MeetingAISolution\\MeetingAISolution.sln\" /p:Configuration=Debug /p:Platform=x64)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" MeetingAISolution.sln /p:Configuration=Debug /p:Platform=x64)",
-      "Bash(cmd /c \"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\":*)"
+      "Bash(cmd /c \"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\":*)",
+      "Bash(del MainWindow.Beta3.cs MainWindow.Streaming.cs Pcm32BitToSampleProvider.cs AudioResampler.cs StreamStabilizer.cs CaptionMerger.cs AudioCaptureQpc.cs)",
+      "Bash(cmd /c del MainWindow.Beta3.cs MainWindow.Streaming.cs Pcm32BitToSampleProvider.cs AudioResampler.cs StreamStabilizer.cs CaptionMerger.cs AudioCaptureQpc.cs)",
+      "Bash(del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\MainWindow.Beta3.cs\")",
+      "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\MainWindow.Beta3.cs\")",
+      "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\MainWindow.Streaming.cs\")",
+      "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\AudioCaptureQpc.cs\")",
+      "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\StreamStabilizer.cs\")",
+      "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\CaptionMerger.cs\")"
     ],
     "deny": [],
     "ask": []

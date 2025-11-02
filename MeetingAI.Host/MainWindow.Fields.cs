@@ -81,38 +81,6 @@ public sealed partial class MainWindow : Window
     private bool _isMeetingBeta2;
     private string? _selectedMeetingBeta2MicrophoneId;
 
-    // Streaming (双流 near/far)
-    private WasapiCapture? _streamMic;
-    private WasapiLoopbackCapture? _streamLoop;
-    private BufferedWaveProvider? _streamMicBuffer;
-    private BufferedWaveProvider? _streamLoopBuffer;
-    private CancellationTokenSource? _streamCts;
-    private Task? _streamMicSendTask;
-    private Task? _streamLoopSendTask;
-    private string? _selectedStreamingMicId;
-    private bool _isStreaming;
-
-    // ==================== Beta3: AEC 双流实时字幕 ====================
-    private AudioCaptureQpc? _beta3Microphone;
-    private AudioCaptureQpc? _beta3Speaker;
-    private AudioResampler? _beta3MicResampler;
-    private AudioResampler? _beta3SpeakerResampler;
-    private StreamStabilizer? _beta3Stabilizer;
-    private CaptionMerger? _beta3Merger;
-    private CancellationTokenSource? _beta3Cts;
-    private Task? _beta3MicSendTask;
-    private Task? _beta3SpeakerSendTask;
-    private long _beta3BaseQpc; // 统一时钟基准
-    private bool _beta3BaseQpcInitialized;
-    private bool _isBeta3Running;
-    private string? _selectedBeta3MicrophoneId;
-    private string? _selectedBeta3SpeakerId;
-
-    // Debug: 保存音频文件
-    private WaveFileWriter? _beta3DebugMicWriter;
-    private WaveFileWriter? _beta3DebugSpeakerWriter;
-    private int _beta3MicDataCount = 0;
-    private int _beta3SpeakerDataCount = 0;
 
     private const string PipeName = "MeetingAI_Pipe";
 }

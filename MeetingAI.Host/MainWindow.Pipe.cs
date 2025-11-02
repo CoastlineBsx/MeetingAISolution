@@ -124,9 +124,7 @@ public sealed partial class MainWindow : Window
             BtnMicrophone.IsEnabled = true;
             BtnMeeting.IsEnabled = true;
             BtnMeetingBeta.IsEnabled = true;
-            BtnStreaming.IsEnabled = true;
             BtnMeetingBeta2.IsEnabled = true;
-            BtnMeetingBeta3.IsEnabled = true;
             BtnStop.IsEnabled = true;
             BtnStart.IsEnabled = false;
             LblStatus.Text = "Worker 已启动";
@@ -197,16 +195,7 @@ public sealed partial class MainWindow : Window
                         double t1 = root.TryGetProperty("t1_ms", out var t1e) ? t1e.GetDouble() / 1000.0 : 0.0;
                         string text = root.TryGetProperty("text", out var te) ? (te.GetString() ?? "") : "";
 
-                        if (streamId.StartsWith("beta3_") && _beta3Stabilizer != null)
-                        {
-                            long qpcStart = (long)(t0 * AudioCaptureQpc.GetQpcFrequency()) + _beta3BaseQpc;
-                            long qpcEnd = (long)(t1 * AudioCaptureQpc.GetQpcFrequency()) + _beta3BaseQpc;
-                            _beta3Stabilizer.OnSegmentReceived(streamId, src, text, (long)(t0 * 1000), (long)(t1 * 1000), qpcStart, qpcEnd);
-                        }
-                        else
-                        {
-                            await AppendLineAsync($"[Stream {src}] [{t0:F2}-{t1:F2}s] {text}");
-                        }
+                        await AppendLineAsync($"[Stream {src}] [{t0:F2}-{t1:F2}s] {text}");
                     }
                     catch { }
                     continue;
