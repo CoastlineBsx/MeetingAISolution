@@ -59,7 +59,7 @@ public sealed partial class MainWindow : Window
     private bool _meetingLoopbackHasData; // 标志：扬声器是否收到过真实数据
     private DateTime _meetingLoopbackLastActiveTime; // VAD：最近一次检测到有声的时间
     private bool _meetingLoopbackFirstVoiceLogged;   // VAD：是否已记录首段有声日志
-    private float _meetingVadPeakThreshold = 0.002f; // VAD 阈值（0..1 浮点峰值）
+    private float _meetingVadPeakThreshold = 0.001f; // VAD 阈值
 
     // 综合转录Beta（方案A：事后对齐）相关
     private WasapiCapture? _meetingBetaMicrophone;
