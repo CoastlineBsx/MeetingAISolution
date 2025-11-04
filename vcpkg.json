@@ -1,5 +1,7 @@
 {
   "name": "meetingai",
   "version-string": "0.1.0",
-  "dependencies": []
+  "dependencies": [
+    "nlohmann-json"
+  ]
 }

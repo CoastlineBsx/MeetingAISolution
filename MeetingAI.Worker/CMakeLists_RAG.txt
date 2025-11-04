@@ -1,0 +1,101 @@
+cmake_minimum_required(VERSION 3.20)
+project(MeetingAI.Worker)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ==================== 依赖查找 ====================
+
+# OpenVINO
+find_package(OpenVINO REQUIRED)
+message(STATUS "OpenVINO found: ${OpenVINO_VERSION}")
+
+# sentencepiece
+find_library(SENTENCEPIECE_LIB sentencepiece REQUIRED)
+find_path(SENTENCEPIECE_INCLUDE sentencepiece_processor.h REQUIRED)
+message(STATUS "sentencepiece found: ${SENTENCEPIECE_LIB}")
+
+# nlohmann/json (可选，用于 JSON 解析)
+# 可以用 vcpkg 安装: vcpkg install nlohmann-json
+find_package(nlohmann_json CONFIG)
+if(nlohmann_json_FOUND)
+    message(STATUS "nlohmann/json found")
+else()
+    message(WARNING "nlohmann/json not found, using manual JSON parsing")
+endif()
+
+# ==================== 包含目录 ====================
+
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${SENTENCEPIECE_INCLUDE}
+)
+
+# ==================== 源文件 ====================
+
+set(GRANITE_SOURCES
+    src/granite/granite_tokenizer.cpp
+    src/granite/granite_engine.cpp
+)
+
+set(EMBEDDING_SOURCES
+    src/embedding/embedding_engine.cpp
+)
+
+set(MAIN_SOURCES
+    src/main/main.cpp
+    # 添加你现有的其他源文件
+    # src/transcriber.cpp
+    # src/database.cpp
+    # etc.
+)
+
+# ==================== 可执行文件 ====================
+
+add_executable(MeetingAI.Worker
+    ${MAIN_SOURCES}
+    ${GRANITE_SOURCES}
+    ${EMBEDDING_SOURCES}
+)
+
+# ==================== 链接库 ====================
+
+target_link_libraries(MeetingAI.Worker PRIVATE
+    openvino::runtime
+    ${SENTENCEPIECE_LIB}
+)
+
+if(nlohmann_json_FOUND)
+    target_link_libraries(MeetingAI.Worker PRIVATE nlohmann_json::nlohmann_json)
+endif()
+
+# ==================== 编译选项 ====================
+
+if(MSVC)
+    target_compile_options(MeetingAI.Worker PRIVATE /W4)
+else()
+    target_compile_options(MeetingAI.Worker PRIVATE -Wall -Wextra -pedantic)
+endif()
+
+# ==================== 输出目录 ====================
+
+set_target_properties(MeetingAI.Worker PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+# ==================== 安装 ====================
+
+install(TARGETS MeetingAI.Worker
+    RUNTIME DESTINATION bin
+)
+
+# 复制模型文件（可选）
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/models/
+    DESTINATION bin/models
+    OPTIONAL
+)
+
+message(STATUS "CMake configuration completed")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Output directory: ${CMAKE_BINARY_DIR}/bin")

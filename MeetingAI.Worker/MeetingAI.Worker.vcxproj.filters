@@ -85,6 +85,57 @@
     <Filter Include="src\main">
       <UniqueIdentifier>{a3a67a1f-ccde-4630-94a0-f171139fd939}</UniqueIdentifier>
     </Filter>
+    <Filter Include="third_party\openvino_genai">
+      <UniqueIdentifier>{f7d67545-875b-417e-9ae4-47565d69bf9d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\bin">
+      <UniqueIdentifier>{7928b7ed-5f04-4b07-ba92-61db45576762}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\lib">
+      <UniqueIdentifier>{fa5bfe7a-09c3-4edd-b6c6-16316bce6715}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\include">
+      <UniqueIdentifier>{8de1c105-2142-4674-8f60-582fcba79f26}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\plugins">
+      <UniqueIdentifier>{560512df-e8f4-466f-9060-7d781d4ea525}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="models\granite-3.3-2b-npu">
+      <UniqueIdentifier>{3492df1a-2bed-42ed-9af6-7f5f288a5287}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\bin\intel64">
+      <UniqueIdentifier>{012fee45-4e5a-4a40-aaef-cec9243282a1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\bin\intel64\Debug">
+      <UniqueIdentifier>{8f64c278-321f-4b44-a99a-44ce69dd2f2f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\bin\intel64\Release">
+      <UniqueIdentifier>{fe597e09-f86a-4d50-84a9-e9a3ee5af40e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\lib\intel64">
+      <UniqueIdentifier>{57dbea04-078f-4067-87cd-f06419662a13}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\lib\intel64\Debug">
+      <UniqueIdentifier>{416dfc73-cf61-49e2-a799-d29d74ff9097}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\openvino_genai\lib\intel64\Release">
+      <UniqueIdentifier>{bc085b44-5edb-4553-a5b9-b51b067568c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\granite">
+      <UniqueIdentifier>{dd07cf8d-5ef0-4776-8013-e974ea108c48}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\embedding">
+      <UniqueIdentifier>{3505b64d-e993-4c2b-9cb3-bee9d03df001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\granite">
+      <UniqueIdentifier>{b548f99e-d68d-4885-818e-cbbc29f83faa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\embedding">
+      <UniqueIdentifier>{3777f1e8-861e-47ea-81f6-39ed6dc57a3a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="models\bge-m3-npu">
+      <UniqueIdentifier>{d6cbdc94-2174-414d-a559-9a5e800bc137}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\util\paths.cpp">
@@ -126,6 +177,15 @@
     <ClCompile Include="third_party\libfvad\src\vad\vad_filterbank.c" />
     <ClCompile Include="third_party\libfvad\src\vad\vad_gmm.c" />
     <ClCompile Include="third_party\libfvad\src\vad\vad_sp.c" />
+    <ClCompile Include="src\granite\granite_genai.cpp">
+      <Filter>src\granite</Filter>
+    </ClCompile>
+    <ClCompile Include="src\embedding\embedding_genai.cpp">
+      <Filter>src\embedding</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main\main_genai_example.cpp">
+      <Filter>src\main</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\meetingai\util\paths.h">
@@ -171,6 +231,15 @@
       <Filter>include\meetingai\transcribe</Filter>
     </ClInclude>
     <ClInclude Include="third_party\libfvad\include\fvad.h" />
+    <ClInclude Include="include\meetingai\granite\granite_genai.hpp">
+      <Filter>include\meetingai\granite</Filter>
+    </ClInclude>
+    <ClInclude Include="include\meetingai\embedding\embedding_genai.hpp">
+      <Filter>include\meetingai\embedding</Filter>
+    </ClInclude>
+    <ClInclude Include="include\meetingai\embedding\embedding_python_service.hpp">
+      <Filter>include\meetingai\embedding</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="models\ggml-large-v3-q5_0.bin">
@@ -178,6 +247,152 @@
     </None>
     <None Include="models\ggml-large-v3.bin">
       <Filter>models</Filter>
+    </None>
+    <None Include="models\granite-3.3-2b-npu\config.json">
+      <Filter>models\granite-3.3-2b-npu</Filter>
+    </None>
+    <None Include="models\granite-3.3-2b-npu\tokenizer.json">
+      <Filter>models\granite-3.3-2b-npu</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\cache.json">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\icudt70.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\icuuc70d.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_auto_batch_plugind.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_auto_plugind.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_cd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_genai_cd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_genaid.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_hetero_plugind.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_intel_cpu_plugind.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_intel_gpu_plugind.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_intel_npu_plugind.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_ir_frontendd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_onnx_frontendd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_paddle_frontendd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_pytorch_frontendd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_tensorflow_frontendd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_tensorflow_lite_frontendd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvino_tokenizersd.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\openvinod.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\cache.json">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\icudt70.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\icuuc70.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_auto_batch_plugin.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_auto_plugin.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_c.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_genai.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_genai_c.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_hetero_plugin.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_intel_cpu_plugin.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_intel_gpu_plugin.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_intel_npu_plugin.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_ir_frontend.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_onnx_frontend.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_paddle_frontend.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_pytorch_frontend.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_tensorflow_frontend.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_tensorflow_lite_frontend.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_tokenizers.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="packages.config" />
+    <None Include="packages.lock.json" />
+    <None Include="third_party\openvino_genai\bin\intel64\Debug\tbb12_debug.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
+    </None>
+    <None Include="third_party\openvino_genai\bin\intel64\Release\tbb12.dll">
+      <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
+    </None>
+    <None Include="models\granite-3.3-2b-npu\openvino_model.bin">
+      <Filter>models\granite-3.3-2b-npu</Filter>
+    </None>
+    <None Include="models\bge-m3-npu\config.json">
+      <Filter>models\bge-m3-npu</Filter>
+    </None>
+    <None Include="models\bge-m3-npu\openvino_model.bin">
+      <Filter>models\bge-m3-npu</Filter>
+    </None>
+    <None Include="models\bge-m3-npu\tokenizer.json">
+      <Filter>models\bge-m3-npu</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -205,5 +420,74 @@
     <Library Include="third_party\whisper\lib\x64\Release\whisper.lib">
       <Filter>third_party\whisper\lib\x64\Release</Filter>
     </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_cd.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_genai_cd.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_genaid.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_onnx_frontendd.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_paddle_frontendd.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_pytorch_frontendd.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_tensorflow_frontendd.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_tensorflow_lite_frontendd.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvinod.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_c.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_genai.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_genai_c.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_onnx_frontend.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_paddle_frontend.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_pytorch_frontend.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_tensorflow_frontend.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+    <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_tensorflow_lite_frontend.lib">
+      <Filter>third_party\openvino_genai\lib\intel64\Release</Filter>
+    </Library>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="CMakeLists.txt" />
+    <Text Include="CMakeLists_GenAI.txt" />
+    <Text Include="CMakeLists_INTEGRATED.txt" />
+    <Text Include="CMakeLists_RAG.txt" />
+    <Text Include="CMakeListsBackUp.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Xml Include="models\granite-3.3-2b-npu\openvino_model.xml">
+      <Filter>models\granite-3.3-2b-npu</Filter>
+    </Xml>
+    <Xml Include="models\bge-m3-npu\openvino_model.xml">
+      <Filter>models\bge-m3-npu</Filter>
+    </Xml>
   </ItemGroup>
 </Project>

@@ -1,0 +1,86 @@
+cmake_minimum_required(VERSION 3.20)
+project(MeetingAI.Worker)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ==================== 依赖查找 ====================
+
+# OpenVINO
+find_package(OpenVINO REQUIRED COMPONENTS Runtime GenAI)
+message(STATUS "OpenVINO found: ${OpenVINO_VERSION}")
+
+# OpenVINO GenAI
+find_package(OpenVINOGenAI REQUIRED)
+message(STATUS "OpenVINO GenAI found")
+
+# nlohmann/json (可选)
+find_package(nlohmann_json CONFIG)
+if(nlohmann_json_FOUND)
+    message(STATUS "nlohmann/json found")
+else()
+    message(WARNING "nlohmann/json not found")
+endif()
+
+# ==================== 包含目录 ====================
+
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# ==================== 源文件 ====================
+
+set(GRANITE_SOURCES
+    src/granite/granite_genai.cpp
+)
+
+set(EMBEDDING_SOURCES
+    src/embedding/embedding_genai.cpp
+)
+
+set(MAIN_SOURCES
+    src/main/main.cpp
+    # 或使用示例: src/main/main_genai_example.cpp
+)
+
+# ==================== 可执行文件 ====================
+
+add_executable(MeetingAI.Worker
+    ${MAIN_SOURCES}
+    ${GRANITE_SOURCES}
+    ${EMBEDDING_SOURCES}
+)
+
+# ==================== 链接库 ====================
+
+target_link_libraries(MeetingAI.Worker PRIVATE
+    openvino::runtime
+    openvino::genai
+)
+
+if(nlohmann_json_FOUND)
+    target_link_libraries(MeetingAI.Worker PRIVATE nlohmann_json::nlohmann_json)
+endif()
+
+# ==================== 编译选项 ====================
+
+if(MSVC)
+    target_compile_options(MeetingAI.Worker PRIVATE /W4 /utf-8)
+else()
+    target_compile_options(MeetingAI.Worker PRIVATE -Wall -Wextra -pedantic)
+endif()
+
+# ==================== 输出目录 ====================
+
+set_target_properties(MeetingAI.Worker PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+# ==================== 安装 ====================
+
+install(TARGETS MeetingAI.Worker
+    RUNTIME DESTINATION bin
+)
+
+message(STATUS "MeetingAI Worker GenAI configuration complete")

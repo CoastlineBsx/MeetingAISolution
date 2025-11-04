@@ -55,6 +55,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="NAudio" />
     <PackageReference Include="FFMpegCore" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 
   <!-- 让“打包和发布”菜单可用（保持原样） -->

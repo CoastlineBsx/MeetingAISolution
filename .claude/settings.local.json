@@ -22,7 +22,10 @@
       "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\MainWindow.Streaming.cs\")",
       "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\AudioCaptureQpc.cs\")",
       "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\StreamStabilizer.cs\")",
-      "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\CaptionMerger.cs\")"
+      "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\CaptionMerger.cs\")",
+      "Bash(python:*)",
+      "Bash(fc:*)",
+      "WebFetch(domain:docs.openvino.ai)"
     ],
     "deny": [],
     "ask": []

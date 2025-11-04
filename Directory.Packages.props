@@ -8,5 +8,6 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="1.7.250606001" />
     <PackageVersion Include="NAudio" Version="2.2.1" />
     <PackageVersion Include="FFMpegCore" Version="5.1.0" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.0" />
   </ItemGroup>
 </Project>

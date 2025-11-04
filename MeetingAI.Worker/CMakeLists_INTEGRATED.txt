@@ -1,0 +1,117 @@
+cmake_minimum_required(VERSION 3.20)
+project(MeetingAIWorker LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ============ 源文件 ============
+add_executable(MeetingAIWorker
+    # 现有源文件
+    src/ipc/pipe_security.cpp
+    src/main/main.cpp
+    src/pch.cpp
+    src/proto/command_parser.cpp
+    src/storage/sqlite_store.cpp
+    src/transcribe/whisper_transcriber.cpp
+    src/util/logging.cpp
+    src/util/paths.cpp
+    third_party/sqlite/src/sqlite3.c
+    
+    # RAG 新增源文件
+    src/granite/granite_genai.cpp
+    src/embedding/embedding_genai.cpp
+)
+
+# ============ 包含目录 ============
+target_include_directories(MeetingAIWorker PRIVATE
+    # 现有包含目录
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/util
+    ${CMAKE_SOURCE_DIR}/include/meetingai
+    ${CMAKE_SOURCE_DIR}/include/meetingai/app
+    ${CMAKE_SOURCE_DIR}/include/meetingai/ipc
+    ${CMAKE_SOURCE_DIR}/include/meetingai/transcribe
+    ${CMAKE_SOURCE_DIR}/include/meetingai/storage
+    ${CMAKE_SOURCE_DIR}/include/meetingai/proto
+    ${CMAKE_SOURCE_DIR}/include/meetingai/util
+    ${CMAKE_SOURCE_DIR}/third_party/sqlite/include
+    ${CMAKE_SOURCE_DIR}/third_party/whisper/include
+    
+    # RAG 新增包含目录
+    ${CMAKE_SOURCE_DIR}/third_party/openvino_genai/include
+)
+
+# ============ 预处理器定义 ============
+target_compile_definitions(MeetingAIWorker PRIVATE
+    SQLITE_OMIT_LOAD_EXTENSION
+    SQLITE_THREADSAFE=1
+    SQLITE_ENABLE_FTS5
+    SQLITE_ENABLE_JSON1
+    SQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+    $<$<CONFIG:Debug>:_DEBUG>
+    $<$<CONFIG:Release>:NDEBUG>
+)
+
+# ============ 预编译头 ============
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+    target_precompile_headers(MeetingAIWorker PRIVATE src/pch.h)
+endif()
+
+# ============ Whisper 库路径 ============
+set(WHISPER_LIB_DIR_DEBUG ${CMAKE_SOURCE_DIR}/third_party/whisper/lib/x64/Debug)
+set(WHISPER_LIB_DIR_RELEASE ${CMAKE_SOURCE_DIR}/third_party/whisper/lib/x64/Release)
+
+# ============ OpenVINO GenAI 库路径 ============
+set(OV_GENAI_LIB_DIR_DEBUG ${CMAKE_SOURCE_DIR}/third_party/openvino_genai/lib/intel64/Debug)
+set(OV_GENAI_LIB_DIR_RELEASE ${CMAKE_SOURCE_DIR}/third_party/openvino_genai/lib/intel64/Release)
+
+# ============ 链接库 ============
+target_link_libraries(MeetingAIWorker PRIVATE
+    # Whisper 库
+    debug ${WHISPER_LIB_DIR_DEBUG}/whisper.lib
+    debug ${WHISPER_LIB_DIR_DEBUG}/ggml.lib
+    debug ${WHISPER_LIB_DIR_DEBUG}/ggml-base.lib
+    debug ${WHISPER_LIB_DIR_DEBUG}/ggml-cpu.lib
+    optimized ${WHISPER_LIB_DIR_RELEASE}/whisper.lib
+    optimized ${WHISPER_LIB_DIR_RELEASE}/ggml.lib
+    optimized ${WHISPER_LIB_DIR_RELEASE}/ggml-base.lib
+    optimized ${WHISPER_LIB_DIR_RELEASE}/ggml-cpu.lib
+    
+    # OpenVINO GenAI 库
+    debug ${OV_GENAI_LIB_DIR_DEBUG}/openvino_genaid.lib
+    debug ${OV_GENAI_LIB_DIR_DEBUG}/openvinod.lib
+    optimized ${OV_GENAI_LIB_DIR_RELEASE}/openvino_genai.lib
+    optimized ${OV_GENAI_LIB_DIR_RELEASE}/openvino.lib
+)
+
+# ============ 输出设置 ============
+set_target_properties(MeetingAIWorker PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin/Debug
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin/Release
+)
+
+# ============ 复制 DLL 到输出目录 ============
+# 复制 OpenVINO GenAI DLL (Debug)
+add_custom_command(TARGET MeetingAIWorker POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/third_party/openvino_genai/bin/intel64/Debug/openvino_genaid.dll"
+    "$<TARGET_FILE_DIR:MeetingAIWorker>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/third_party/openvino_genai/bin/intel64/Debug/openvinod.dll"
+    "$<TARGET_FILE_DIR:MeetingAIWorker>"
+    COMMENT "Copying OpenVINO GenAI Debug DLLs"
+)
+
+# 复制 OpenVINO GenAI DLL (Release)
+add_custom_command(TARGET MeetingAIWorker POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/third_party/openvino_genai/bin/intel64/Release/openvino_genai.dll"
+    "$<TARGET_FILE_DIR:MeetingAIWorker>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/third_party/openvino_genai/bin/intel64/Release/openvino.dll"
+    "$<TARGET_FILE_DIR:MeetingAIWorker>"
+    COMMENT "Copying OpenVINO GenAI Release DLLs"
+)
+
+message(STATUS "CMake configuration complete for MeetingAIWorker with RAG support")
