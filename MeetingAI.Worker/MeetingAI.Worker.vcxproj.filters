@@ -130,6 +130,12 @@
     <Filter Include="include\meetingai\embedding">
       <UniqueIdentifier>{3777f1e8-861e-47ea-81f6-39ed6dc57a3a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\rag">
+      <UniqueIdentifier>{f7a3b8e2-4d19-4f58-9c71-1e8a7b3d5c6f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\rag">
+      <UniqueIdentifier>{a2c9d4e3-5b2a-4e67-8d92-3f1c5b7e9a4d}</UniqueIdentifier>
+    </Filter>
     <Filter Include="models\bge-m3-npu">
       <UniqueIdentifier>{d6cbdc94-2174-414d-a559-9a5e800bc137}</UniqueIdentifier>
     </Filter>
@@ -179,6 +185,9 @@
     </ClCompile>
     <ClCompile Include="src\embedding\embedding_genai.cpp">
       <Filter>src\embedding</Filter>
+    </ClCompile>
+    <ClCompile Include="src\rag\text_chunker.cpp">
+      <Filter>src\rag</Filter>
     </ClCompile>
     <ClCompile Include="src\main\main_genai_example.cpp">
       <Filter>src\main</Filter>
@@ -236,6 +245,9 @@
     </ClInclude>
     <ClInclude Include="include\meetingai\embedding\embedding_python_service.hpp">
       <Filter>include\meetingai\embedding</Filter>
+    </ClInclude>
+    <ClInclude Include="include\meetingai\rag\text_chunker.hpp">
+      <Filter>include\meetingai\rag</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -171,14 +171,14 @@
     <ClCompile Include="src\granite\granite_genai.cpp" />
     <ClCompile Include="src\ipc\pipe_security.cpp" />
     <ClCompile Include="src\main\main.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ShowIncludes Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ShowIncludes>
       <ShowIncludes Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ShowIncludes>
     </ClCompile>
     <ClCompile Include="src\main\main_genai_example.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -189,6 +189,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="src\proto\command_parser.cpp" />
+    <ClCompile Include="src\rag\text_chunker.cpp" />
     <ClCompile Include="src\storage\sqlite_store.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
@@ -258,6 +259,7 @@
     <ClInclude Include="include\meetingai\granite\granite_genai.hpp" />
     <ClInclude Include="include\meetingai\ipc\pipe_security.h" />
     <ClInclude Include="include\meetingai\proto\command_parser.h" />
+    <ClInclude Include="include\meetingai\rag\text_chunker.hpp" />
     <ClInclude Include="include\meetingai\storage\database.hpp" />
     <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
     <ClInclude Include="include\meetingai\util\logging.h" />

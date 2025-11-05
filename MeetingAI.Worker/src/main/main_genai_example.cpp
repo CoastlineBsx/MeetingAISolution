@@ -3,6 +3,8 @@
 #include "pch.h"
 #include "granite/granite_genai.hpp"
 #include "embedding/embedding_genai.hpp"
+#include "rag/text_chunker.hpp"
+#include "database.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <windows.h>
@@ -81,9 +83,10 @@ void InitializeGraniteGenAI(const std::string& device = "CPU") {
 
 void InitializeEmbeddingGenAI(const std::string& device = "CPU") {
     try {
+        const std::string default_model_dir =
+            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/bge-m3-npu";
         const std::string model_dir =
-            GetEnvOrDefault("MEETINGAI_EMBEDDING_MODEL",
-                "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/bge-m3-npu");
+            GetEnvOrDefault("MEETINGAI_EMBEDDING_MODEL", default_model_dir.c_str());
         g_embedding = std::make_unique<meetingai::embedding::EmbeddingGenAI>(model_dir, device);
         std::wcout << L"[Main] Embedding GenAI ✅ Initialized: " << device.c_str() << L"\n";
     }
@@ -94,8 +97,8 @@ void InitializeEmbeddingGenAI(const std::string& device = "CPU") {
 
 // ========== 管道命令处理 ==========
 void HandlePipeCommands(HANDLE hPipe) {
-    InitializeGraniteGenAI("CPU");
-    InitializeEmbeddingGenAI("CPU");
+    InitializeGraniteGenAI("GPU");
+    InitializeEmbeddingGenAI("GPU");
 
     char buffer[4096];
     DWORD bytesRead;
@@ -194,6 +197,47 @@ void HandlePipeCommands(HANDLE hPipe) {
                 }
                 oss << "]}\n";
                 write_json(oss.str());
+            }
+
+            // -------- RAG 查询 --------
+            else if (type == "rag_query") {
+                if (!g_embedding || !g_granite) {
+                    write_json("{\"type\":\"error\",\"message\":\"Models not initialized\"}\n");
+                    continue;
+                }
+
+                std::string query = json.value("query", "");
+                int top_k = json.value("top_k", 3);
+                int max_tokens = json.value("max_tokens", g_max_tokens);
+                float temp = json.value("temperature", g_temperature);
+
+                // 1. 生成 query embedding
+                auto qvec = g_embedding->encode(query);
+
+                // 2. 检索相关文档
+                auto chunks = RetrieveTopK(qvec, top_k);
+
+                if (chunks.empty()) {
+                    write_json("{\"type\":\"error\",\"message\":\"No documents found in database\"}\n");
+                    continue;
+                }
+
+                // 3. 构建 RAG Prompt
+                std::ostringstream prompt;
+                prompt << "参考以下文档内容回答问题：\n\n";
+                for (size_t i = 0; i < chunks.size(); i++) {
+                    prompt << "[文档片段 " << (i + 1) << "]\n" << chunks[i].text << "\n\n";
+                }
+                prompt << "问题：" << query << "\n\n请基于上述文档内容回答：";
+
+                // 4. 流式生成
+                g_granite->generateStream(prompt.str(), [&](const std::string& tok) {
+                    std::string chunk = "{\"type\":\"token\",\"text\":\"" + jsonEscape(tok) + "\"}\n";
+                    write_json(chunk);
+                    FlushFileBuffers(hPipe);
+                    }, max_tokens, temp);
+
+                write_json("{\"type\":\"done\"}\n");
             }
             else {
                 write_json("{\"type\":\"error\",\"message\":\"Unknown command type\"}\n");
@@ -328,6 +372,155 @@ void RunChatMode() {
 
 // ========== main ==========
 int main(int argc, char** argv) {
+    // ===== 测试 Granite =====
+    if (argc > 1 && std::string(argv[1]) == "--test-granite") {
+        SetConsoleOutputCP(CP_UTF8);
+        std::cout << "[Test] Initializing Granite model...\n";
+
+        InitializeGraniteGenAI("GPU");
+        if (!g_granite) {
+            std::cout << "❌ Granite initialization failed!\n";
+            return 1;
+        }
+
+        std::cout << "[Test] Generating text...\n";
+        std::string prompt = "What is OpenVINO?";
+        std::string response;
+
+        g_granite->generateStream(prompt, [&response](const std::string& token) {
+            std::cout << token << std::flush;
+            response += token;
+        }, 100, 0.7f);
+
+        std::cout << "\n\n✅ Generation complete, length: " << response.size() << "\n";
+        return 0;
+    }
+
+    // ===== 测试 Embedding =====
+    if (argc > 1 && std::string(argv[1]) == "--test-embedding") {
+        SetConsoleOutputCP(CP_UTF8);
+        std::cout << "[Test] Initializing Embedding model...\n";
+
+        InitializeEmbeddingGenAI("GPU");
+        if (!g_embedding) {
+            std::cout << "❌ Embedding initialization failed!\n";
+            return 1;
+        }
+
+        std::cout << "[Test] Encoding text...\n";
+        auto vec = g_embedding->encode("测试文本：OpenVINO GenAI is awesome!");
+
+        std::cout << "✅ Embedding size: " << vec.size() << "\n";
+        std::cout << "First 10 values: ";
+        for (int i = 0; i < 10 && i < vec.size(); i++) {
+            std::cout << vec[i] << " ";
+        }
+        std::cout << "\n";
+        return 0;
+    }
+
+    // ===== 测试 RAG 入库 =====
+    if (argc > 1 && std::string(argv[1]) == "--test-ingest") {
+        SetConsoleOutputCP(CP_UTF8);
+        std::cout << "[Test] RAG Document Ingestion Test\n";
+
+        if (!InitDatabaseOnce()) {
+            std::cout << "❌ Database init failed!\n";
+            return 1;
+        }
+
+        InitializeEmbeddingGenAI("CPU");
+        if (!g_embedding) {
+            std::cout << "❌ Embedding init failed!\n";
+            return 1;
+        }
+
+        // 测试文档
+        std::string test_doc =
+            "OpenVINO 是 Intel 开发的深度学习推理优化工具包。"
+            "它支持多种硬件加速，包括 CPU、GPU、NPU 等。"
+            "Granite 是 IBM 推出的开源大语言模型系列。"
+            "Granite 3.3 2B 模型支持 128K 上下文长度。"
+            "BGE-M3 是优秀的多语言嵌入模型，支持中英文检索。";
+
+        std::cout << "[Test] Chunking text...\n";
+        auto chunks = meetingai::rag::chunkText(test_doc, 100);  // 每块最多100字
+        std::cout << "✅ Created " << chunks.size() << " chunks\n";
+
+        std::cout << "[Test] Generating embeddings...\n";
+        std::vector<std::string> chunk_texts;
+        std::vector<std::vector<float>> embeddings;
+
+        for (const auto& chunk : chunks) {
+            chunk_texts.push_back(chunk.text);
+            auto emb = g_embedding->encode(chunk.text);
+            embeddings.push_back(emb);
+            std::cout << "  Chunk " << chunk_texts.size() << ": " << chunk.text.substr(0, 50) << "...\n";
+        }
+
+        std::cout << "[Test] Inserting into database...\n";
+        int doc_id = InsertDocument("测试文档", "txt", "test.txt", chunk_texts, embeddings);
+
+        if (doc_id > 0) {
+            std::cout << "✅ Document inserted with id=" << doc_id << "\n";
+        } else {
+            std::cout << "❌ Insert failed!\n";
+        }
+
+        return 0;
+    }
+
+    // ===== 测试 RAG 查询 =====
+    if (argc > 1 && std::string(argv[1]) == "--test-rag") {
+        SetConsoleOutputCP(CP_UTF8);
+        std::cout << "[Test] RAG Query Test\n";
+
+        if (!InitDatabaseOnce()) {
+            std::cout << "❌ Database init failed!\n";
+            return 1;
+        }
+
+        InitializeEmbeddingGenAI("CPU");
+        InitializeGraniteGenAI("CPU");
+
+        if (!g_embedding || !g_granite) {
+            std::cout << "❌ Model init failed!\n";
+            return 1;
+        }
+
+        std::string query = "Granite 模型的上下文长度是多少？";
+        std::cout << "[Test] Query: " << query << "\n\n";
+
+        // 1. 生成 query embedding
+        auto qvec = g_embedding->encode(query);
+        std::cout << "[Test] Query embedding size: " << qvec.size() << "\n";
+
+        // 2. 检索
+        auto chunks = RetrieveTopK(qvec, 3);
+        std::cout << "[Test] Retrieved " << chunks.size() << " chunks:\n";
+        for (const auto& c : chunks) {
+            std::cout << "  [相似度=" << c.similarity << "] " << c.text.substr(0, 60) << "...\n";
+        }
+
+        // 3. 构建 Prompt
+        std::ostringstream prompt;
+        prompt << "参考以下文档内容回答问题：\n\n";
+        for (size_t i = 0; i < chunks.size(); i++) {
+            prompt << "[文档片段 " << (i + 1) << "]\n" << chunks[i].text << "\n\n";
+        }
+        prompt << "问题：" << query << "\n\n请基于上述文档内容回答：";
+
+        std::cout << "\n[Test] Generating answer...\n";
+        std::cout << "Answer: ";
+
+        g_granite->generateStream(prompt.str(), [](const std::string& tok) {
+            std::cout << tok << std::flush;
+            }, 512, 0.7f);
+
+        std::cout << "\n\n✅ RAG test complete!\n";
+        return 0;
+    }
+
     bool chatMode = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];

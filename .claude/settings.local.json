@@ -31,7 +31,11 @@
       "Bash(cmd /c:*)",
       "Bash(powershell -Command \"& ''C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe'' MeetingAISolution.sln /p:Configuration=Debug /p:Platform=x64 /t:MeetingAI_Host\")",
       "Bash(timeout /t 5 /nobreak)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(timeout /t 2 /nobreak)",
+      "Bash(.MeetingAI.Worker.exe --test-ingest)",
+      "Bash(C:VisualStudioMeetingAISolutionx64DebugMeetingAI.Worker.exe --test-ingest)"
     ],
     "deny": [],
     "ask": []

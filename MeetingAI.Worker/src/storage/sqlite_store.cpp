@@ -4,6 +4,43 @@
 #include "sqlite3.h"
 #include <iostream>
 #include <string>
+#include <cmath>
+
+// ===== 余弦相似度计算函数 =====
+static void cosine_similarity_func(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
+    if (argc != 2) {
+        sqlite3_result_error(ctx, "cosine_similarity requires 2 BLOB arguments", -1);
+        return;
+    }
+
+    const void* blob1 = sqlite3_value_blob(argv[0]);
+    const void* blob2 = sqlite3_value_blob(argv[1]);
+    int size1 = sqlite3_value_bytes(argv[0]);
+    int size2 = sqlite3_value_bytes(argv[1]);
+
+    if (!blob1 || !blob2 || size1 != size2 || size1 != 1024 * sizeof(float)) {
+        sqlite3_result_null(ctx);
+        return;
+    }
+
+    const float* v1 = (const float*)blob1;
+    const float* v2 = (const float*)blob2;
+
+    float dot = 0.0f, norm1 = 0.0f, norm2 = 0.0f;
+    for (int i = 0; i < 1024; i++) {
+        dot += v1[i] * v2[i];
+        norm1 += v1[i] * v1[i];
+        norm2 += v2[i] * v2[i];
+    }
+
+    if (norm1 == 0.0f || norm2 == 0.0f) {
+        sqlite3_result_null(ctx);
+        return;
+    }
+
+    float cosine = dot / (sqrtf(norm1) * sqrtf(norm2));
+    sqlite3_result_double(ctx, cosine);
+}
 
 static void DumpDbPath(sqlite3* db) {
     sqlite3_stmt* st = nullptr;
@@ -60,6 +97,15 @@ bool InitDatabaseOnce() {
     ExecSQL(db, "PRAGMA foreign_keys=ON;");
     if (!ExecSQL(db, "PRAGMA journal_mode=WAL;")) { sqlite3_close(db); return false; }
     if (!ExecSQL(db, "PRAGMA synchronous=NORMAL;")) { sqlite3_close(db); return false; }
+
+    // 注册余弦相似度函数
+    if (sqlite3_create_function(db, "cosine_similarity", 2, SQLITE_UTF8, nullptr,
+                                 cosine_similarity_func, nullptr, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB] Failed to register cosine_similarity function\n";
+        sqlite3_close(db);
+        return false;
+    }
+    std::cerr << "[DB] ✅ cosine_similarity function registered\n";
 
     // 创建 transcripts 表，存转录（保持你的原样）
     const char* create_sql =
@@ -158,6 +204,26 @@ END;
 CREATE TRIGGER IF NOT EXISTS trg_rev_ad AFTER DELETE ON revision BEGIN
   INSERT INTO fts_revision(fts_revision, rowid, text_final) VALUES ('delete', old.id, old.text_final);
 END;
+
+CREATE TABLE IF NOT EXISTS documents (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  source_type TEXT,
+  file_path TEXT,
+  upload_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  content_preview TEXT
+);
+
+CREATE TABLE IF NOT EXISTS document_chunks (
+  id INTEGER PRIMARY KEY,
+  doc_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  chunk_index INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  embedding BLOB NOT NULL,
+  token_count INTEGER,
+  UNIQUE(doc_id, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS idx_chunk_doc ON document_chunks(doc_id);
 
 COMMIT;
 )SQL";
@@ -297,4 +363,122 @@ bool InsertTranscript(const std::string& speaker,
     sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
     sqlite3_close(db);
     return true;
+}
+
+// ===== RAG 文档入库 =====
+int InsertDocument(const std::string& title,
+                   const std::string& source_type,
+                   const std::string& file_path,
+                   const std::vector<std::string>& chunk_texts,
+                   const std::vector<std::vector<float>>& embeddings) {
+    if (chunk_texts.size() != embeddings.size()) {
+        std::cerr << "[DB] chunk_texts.size() != embeddings.size()\n";
+        return -1;
+    }
+
+    sqlite3* db = nullptr;
+    const std::string db8 = meetingai::util::getDatabasePath();
+    if (sqlite3_open(db8.c_str(), &db) != SQLITE_OK) {
+        std::cerr << "[DB] open failed: " << sqlite3_errmsg(db) << "\n";
+        return -1;
+    }
+
+    sqlite3_busy_timeout(db, 5000);
+    sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
+
+    // 1. 插入文档
+    const char* sql1 = "INSERT INTO documents(title, source_type, file_path, content_preview) VALUES(?,?,?,?);";
+    sqlite3_stmt* st1 = nullptr;
+    sqlite3_prepare_v2(db, sql1, -1, &st1, nullptr);
+    sqlite3_bind_text(st1, 1, title.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st1, 2, source_type.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st1, 3, file_path.c_str(), -1, SQLITE_TRANSIENT);
+
+    std::string preview = chunk_texts[0].substr(0, std::min((size_t)200, chunk_texts[0].size()));
+    sqlite3_bind_text(st1, 4, preview.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(st1) != SQLITE_DONE) {
+        std::cerr << "[DB] insert document failed: " << sqlite3_errmsg(db) << "\n";
+        sqlite3_finalize(st1);
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_finalize(st1);
+    int doc_id = (int)sqlite3_last_insert_rowid(db);
+
+    // 2. 插入分块
+    const char* sql2 = "INSERT INTO document_chunks(doc_id, chunk_index, text, embedding, token_count) VALUES(?,?,?,?,?);";
+    for (size_t i = 0; i < chunk_texts.size(); i++) {
+        sqlite3_stmt* st2 = nullptr;
+        sqlite3_prepare_v2(db, sql2, -1, &st2, nullptr);
+        sqlite3_bind_int(st2, 1, doc_id);
+        sqlite3_bind_int(st2, 2, (int)i);
+        sqlite3_bind_text(st2, 3, chunk_texts[i].c_str(), -1, SQLITE_TRANSIENT);
+
+        // 转 embedding 为 BLOB
+        const std::vector<float>& emb = embeddings[i];
+        sqlite3_bind_blob(st2, 4, emb.data(), (int)(emb.size() * sizeof(float)), SQLITE_TRANSIENT);
+        sqlite3_bind_int(st2, 5, (int)chunk_texts[i].size());  // 粗略估计
+
+        if (sqlite3_step(st2) != SQLITE_DONE) {
+            std::cerr << "[DB] insert chunk failed: " << sqlite3_errmsg(db) << "\n";
+            sqlite3_finalize(st2);
+            sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            sqlite3_close(db);
+            return -1;
+        }
+        sqlite3_finalize(st2);
+    }
+
+    sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+
+    std::cerr << "[DB] ✅ Inserted document id=" << doc_id << " with " << chunk_texts.size() << " chunks\n";
+    return doc_id;
+}
+
+// ===== RAG 检索 Top-K =====
+std::vector<RetrievalResult> RetrieveTopK(const std::vector<float>& query_embedding, int top_k) {
+    std::vector<RetrievalResult> results;
+
+    sqlite3* db = nullptr;
+    const std::string db8 = meetingai::util::getDatabasePath();
+    if (sqlite3_open(db8.c_str(), &db) != SQLITE_OK) {
+        std::cerr << "[DB] open failed\n";
+        return results;
+    }
+
+    sqlite3_busy_timeout(db, 5000);
+
+    // 注册余弦相似度函数（每次连接都要注册）
+    sqlite3_create_function(db, "cosine_similarity", 2, SQLITE_UTF8, nullptr,
+                            cosine_similarity_func, nullptr, nullptr);
+
+    const char* sql =
+        "SELECT id, text, cosine_similarity(embedding, ?) as score "
+        "FROM document_chunks "
+        "ORDER BY score DESC LIMIT ?;";
+
+    sqlite3_stmt* st = nullptr;
+    sqlite3_prepare_v2(db, sql, -1, &st, nullptr);
+
+    // 绑定 query_embedding BLOB
+    sqlite3_bind_blob(st, 1, query_embedding.data(),
+                      (int)(query_embedding.size() * sizeof(float)), SQLITE_TRANSIENT);
+    sqlite3_bind_int(st, 2, top_k);
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        RetrievalResult r;
+        r.chunk_id = sqlite3_column_int(st, 0);
+        const char* txt = (const char*)sqlite3_column_text(st, 1);
+        r.text = txt ? txt : "";
+        r.similarity = (float)sqlite3_column_double(st, 2);
+        results.push_back(r);
+    }
+
+    sqlite3_finalize(st);
+    sqlite3_close(db);
+
+    return results;
 }
