@@ -35,7 +35,8 @@
       "Bash(powershell -Command:*)",
       "Bash(timeout /t 2 /nobreak)",
       "Bash(.MeetingAI.Worker.exe --test-ingest)",
-      "Bash(C:VisualStudioMeetingAISolutionx64DebugMeetingAI.Worker.exe --test-ingest)"
+      "Bash(C:VisualStudioMeetingAISolutionx64DebugMeetingAI.Worker.exe --test-ingest)",
+      "Bash(C:VisualStudioMeetingAISolutionx64ReleaseMeetingAI.Worker.exe --test-rag)"
     ],
     "deny": [],
     "ask": []

@@ -7,6 +7,7 @@
 #include "database.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <iomanip>
 #include <windows.h>
 #include <cstdlib>
 #include <sstream>
@@ -25,6 +26,27 @@ static int          g_max_tokens = 256;
 static float        g_temperature = 0.7f;
 
 // ========== 工具函数 ==========
+
+// UTF-8 安全的字符串截断函数（避免切断多字节字符）
+std::string utf8_substr(const std::string& str, size_t max_bytes) {
+    if (str.size() <= max_bytes) {
+        return str;
+    }
+
+    // 从 max_bytes 位置向前查找，找到一个不是 UTF-8 continuation byte 的位置
+    size_t safe_pos = max_bytes;
+    while (safe_pos > 0 && (static_cast<unsigned char>(str[safe_pos]) & 0xC0) == 0x80) {
+        // 0x80 = 10000000, 0xC0 = 11000000
+        // UTF-8 continuation bytes 的格式是 10xxxxxx
+        safe_pos--;
+    }
+
+    // UTF-8 字符最多 4 字节，如果回退超过 3 字节，继续用 safe_pos（保险起见）
+    // 不恢复到 max_bytes，因为那样会切断字符
+
+    return str.substr(0, safe_pos);
+}
+
 std::string GetEnvOrDefault(const char* key, const char* fallback) {
     char* buf = nullptr;
     size_t len = 0;
@@ -444,7 +466,7 @@ int main(int argc, char** argv) {
             "BGE-M3 是优秀的多语言嵌入模型，支持中英文检索。";
 
         std::cout << "[Test] Chunking text...\n";
-        auto chunks = meetingai::rag::chunkText(test_doc, 100);  // 每块最多100字
+        auto chunks = meetingai::rag::chunkText(test_doc, 400);  // 每块 200-400 字符（滑动窗口）
         std::cout << "✅ Created " << chunks.size() << " chunks\n";
 
         std::cout << "[Test] Generating embeddings...\n";
@@ -455,7 +477,7 @@ int main(int argc, char** argv) {
             chunk_texts.push_back(chunk.text);
             auto emb = g_embedding->encode(chunk.text);
             embeddings.push_back(emb);
-            std::cout << "  Chunk " << chunk_texts.size() << ": " << chunk.text.substr(0, 50) << "...\n";
+            std::cout << "  Chunk " << chunk_texts.size() << ": " << utf8_substr(chunk.text, 50) << "...\n";
         }
 
         std::cout << "[Test] Inserting into database...\n";
@@ -499,16 +521,26 @@ int main(int argc, char** argv) {
         auto chunks = RetrieveTopK(qvec, 3);
         std::cout << "[Test] Retrieved " << chunks.size() << " chunks:\n";
         for (const auto& c : chunks) {
-            std::cout << "  [相似度=" << c.similarity << "] " << c.text.substr(0, 60) << "...\n";
+            std::cout << "  [相似度=" << c.similarity << "] " << utf8_substr(c.text, 60) << "...\n";
         }
 
-        // 3. 构建 Prompt
+        // 3. 构建 Prompt（优化版本）
         std::ostringstream prompt;
-        prompt << "参考以下文档内容回答问题：\n\n";
+        prompt << "你是一个精确的问答助手。请仔细阅读以下文档片段，并严格基于这些内容回答问题。\n\n";
+        prompt << "【文档片段】\n";
         for (size_t i = 0; i < chunks.size(); i++) {
-            prompt << "[文档片段 " << (i + 1) << "]\n" << chunks[i].text << "\n\n";
+            prompt << "\n片段 " << (i + 1) << "（相似度: "
+                   << std::fixed << std::setprecision(3) << chunks[i].similarity << "）：\n";
+            prompt << chunks[i].text << "\n";
         }
-        prompt << "问题：" << query << "\n\n请基于上述文档内容回答：";
+        prompt << "\n【问题】\n" << query << "\n\n";
+        prompt << "【回答要求】\n";
+        prompt << "1. 仔细阅读所有文档片段，特别是相似度较高的片段\n";
+        prompt << "2. 如果文档中有明确答案，请直接引用并清晰回答\n";
+        prompt << "3. 如果文档中没有相关信息，请明确说明\"根据提供的文档无法回答此问题\"\n";
+        prompt << "4. 不要编造文档中没有的内容\n";
+        prompt << "5. 回答要简洁准确\n\n";
+        prompt << "【你的回答】：";
 
         std::cout << "\n[Test] Generating answer...\n";
         std::cout << "Answer: ";
