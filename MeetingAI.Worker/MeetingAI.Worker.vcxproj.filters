@@ -97,9 +97,6 @@
     <Filter Include="third_party\openvino_genai\include">
       <UniqueIdentifier>{8de1c105-2142-4674-8f60-582fcba79f26}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third_party\openvino_genai\plugins">
-      <UniqueIdentifier>{560512df-e8f4-466f-9060-7d781d4ea525}</UniqueIdentifier>
-    </Filter>
     <Filter Include="models\granite-3.3-2b-npu">
       <UniqueIdentifier>{3492df1a-2bed-42ed-9af6-7f5f288a5287}</UniqueIdentifier>
     </Filter>
@@ -248,12 +245,6 @@
     <None Include="models\ggml-large-v3.bin">
       <Filter>models</Filter>
     </None>
-    <None Include="models\granite-3.3-2b-npu\config.json">
-      <Filter>models\granite-3.3-2b-npu</Filter>
-    </None>
-    <None Include="models\granite-3.3-2b-npu\tokenizer.json">
-      <Filter>models\granite-3.3-2b-npu</Filter>
-    </None>
     <None Include="third_party\openvino_genai\bin\intel64\Debug\cache.json">
       <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
     </None>
@@ -382,9 +373,6 @@
     <None Include="third_party\openvino_genai\bin\intel64\Release\tbb12.dll">
       <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
     </None>
-    <None Include="models\granite-3.3-2b-npu\openvino_model.bin">
-      <Filter>models\granite-3.3-2b-npu</Filter>
-    </None>
     <None Include="models\bge-m3-npu\config.json">
       <Filter>models\bge-m3-npu</Filter>
     </None>
@@ -483,9 +471,6 @@
     <Text Include="CMakeListsBackUp.txt" />
   </ItemGroup>
   <ItemGroup>
-    <Xml Include="models\granite-3.3-2b-npu\openvino_model.xml">
-      <Filter>models\granite-3.3-2b-npu</Filter>
-    </Xml>
     <Xml Include="models\bge-m3-npu\openvino_model.xml">
       <Filter>models\bge-m3-npu</Filter>
     </Xml>
