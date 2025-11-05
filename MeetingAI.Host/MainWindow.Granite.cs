@@ -24,9 +24,37 @@ public sealed partial class MainWindow : Window
     // 当前流式输出的消息
     private ChatMessage? _currentStreamingMessage = null;
 
+    // 滚动节流计数器（每N个token滚动一次）
+    private int _scrollThrottleCounter = 0;
+
+    // 缓存的 ScrollViewer（用于直接滚动到底部）
+    private ScrollViewer? _chatScrollViewer = null;
+
     private void InitializeGranite()
     {
         ChatHistoryList.ItemsSource = _chatHistory;
+
+        // 等待 ListView 加载完成后获取内部 ScrollViewer
+        ChatHistoryList.Loaded += (s, e) =>
+        {
+            _chatScrollViewer = FindScrollViewer(ChatHistoryList);
+        };
+    }
+
+    // 递归查找 ScrollViewer
+    private ScrollViewer? FindScrollViewer(DependencyObject obj)
+    {
+        for (int i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(obj); i++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(obj, i);
+            if (child is ScrollViewer sv)
+                return sv;
+
+            var result = FindScrollViewer(child);
+            if (result != null)
+                return result;
+        }
+        return null;
     }
 
     // ========== 获取系统提示词 ==========
@@ -187,6 +215,9 @@ public sealed partial class MainWindow : Window
             };
             _chatHistory.Add(_currentStreamingMessage);
 
+            // 重置滚动计数器
+            _scrollThrottleCounter = 0;
+
             // 自动滚动到底部
             if (ChatHistoryList.Items.Count > 0)
             {
@@ -260,10 +291,12 @@ public sealed partial class MainWindow : Window
             // 直接修改 Content 属性，INotifyPropertyChanged 会自动通知 UI 更新
             _currentStreamingMessage.Content += token;
 
-            // 自动滚动到底部
-            if (ChatHistoryList.Items.Count > 0)
+            // 滚动节流：每5个token滚动一次，减少性能消耗
+            _scrollThrottleCounter++;
+            if (_scrollThrottleCounter >= 5)
             {
-                ChatHistoryList.ScrollIntoView(ChatHistoryList.Items[^1]);
+                _scrollThrottleCounter = 0;
+                ScrollToBottom();
             }
         });
 
@@ -280,7 +313,23 @@ public sealed partial class MainWindow : Window
                 _currentStreamingMessage.IsStreaming = false;
                 _currentStreamingMessage = null;
             }
+
+            // 重置滚动计数器，并确保最后一次滚动到底部
+            _scrollThrottleCounter = 0;
+            ScrollToBottom();
         });
+    }
+
+    // ========== 滚动到底部 ==========
+    private void ScrollToBottom()
+    {
+        if (_chatScrollViewer != null)
+        {
+            // 使用 ChangeView 直接滚动到最底部
+            // 参数：horizontal offset, vertical offset, zoom factor
+            // null = 保持当前值，double.MaxValue = 滚动到最大值（底部）
+            _chatScrollViewer.ChangeView(null, _chatScrollViewer.ScrollableHeight, null, disableAnimation: true);
+        }
     }
 
     // ========== 复制消息内容 ==========
