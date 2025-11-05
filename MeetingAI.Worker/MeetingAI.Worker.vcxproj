@@ -113,15 +113,17 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions);SQLITE_THREADSAFE=1;SQLITE_ENABLE_FTS5;SQLITE_ENABLE_JSON1;SQLITE_DEFAULT_WAL_SYNCHRONOUS=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions);SQLITE_THREADSAFE=1;SQLITE_ENABLE_FTS5;SQLITE_ENABLE_JSON1;SQLITE_DEFAULT_WAL_SYNCHRONOUS=1;NOMINMAX</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <CompileAs>
+      </CompileAs>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -140,16 +142,18 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions);SQLITE_THREADSAFE=1;SQLITE_ENABLE_FTS5;SQLITE_ENABLE_JSON1;SQLITE_DEFAULT_WAL_SYNCHRONOUS=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;SQLITE_OMIT_LOAD_EXTENSION;%(PreprocessorDefinitions);SQLITE_THREADSAFE=1;SQLITE_ENABLE_FTS5;SQLITE_ENABLE_JSON1;SQLITE_DEFAULT_WAL_SYNCHRONOUS=1;NOMINMAX</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <OpenMPSupport>true</OpenMPSupport>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <CompileAs>
+      </CompileAs>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -169,13 +173,20 @@
     <ClCompile Include="src\main\main.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+      <ShowIncludes Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ShowIncludes>
+      <ShowIncludes Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ShowIncludes>
     </ClCompile>
-    <ClCompile Include="src\main\main_genai_example.cpp" />
+    <ClCompile Include="src\main\main_genai_example.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="src\proto\command_parser.cpp" />
     <ClCompile Include="src\storage\sqlite_store.cpp">
@@ -251,7 +262,10 @@
     <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
     <ClInclude Include="include\meetingai\util\logging.h" />
     <ClInclude Include="include\meetingai\util\paths.h" />
-    <ClInclude Include="src\pch.h" />
+    <ClInclude Include="src\pch.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="third_party\sqlite\include\sqlite3.h" />
     <ClInclude Include="third_party\whisper\include\ggml-alloc.h" />
     <ClInclude Include="third_party\whisper\include\ggml-backend.h" />

@@ -1,0 +1,296 @@
+using System;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using MeetingAI.Host.Contracts;
+using MeetingAI.Host.Contracts.Messages;
+using MeetingAI.Host.Models;
+using Windows.System;
+
+namespace MeetingAI.Host;
+
+public sealed partial class MainWindow : Window
+{
+    // 对话历史
+    private ObservableCollection<ChatMessage> _chatHistory = new();
+
+    // 当前模式：single 或 multi
+    private string _graniteMode = "single";
+
+    // 当前流式输出的消息
+    private ChatMessage? _currentStreamingMessage = null;
+
+    private void InitializeGranite()
+    {
+        ChatHistoryList.ItemsSource = _chatHistory;
+    }
+
+    // ========== 获取系统提示词 ==========
+    private string GetSystemPrompt()
+    {
+        if (RbSimple.IsChecked == true)
+        {
+            return "Use simple, easy-to-understand language. Avoid jargon. Explain like teaching a beginner.";
+        }
+        else if (RbProfessional.IsChecked == true)
+        {
+            return "Use technical terminology and professional language. Assume expert-level knowledge. Be concise and precise.";
+        }
+        else // Normal mode
+        {
+            return "Provide clear, accurate answers. Use appropriate technical terms with explanations when needed.";
+        }
+    }
+
+    // ========== 模式切换 ==========
+    private async void BtnGraniteSingle_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await EnsurePipeAsync();
+
+            // 如果当前是多轮模式，先结束会话
+            if (_graniteMode == "multi")
+            {
+                var finishCmd = JsonSerializer.Serialize(
+                    new GraniteFinishChatCommand(),
+                    AppJsonContext.Default.GraniteFinishChatCommand
+                ) + "\n";
+                await SendJsonAsync(finishCmd);
+            }
+
+            _graniteMode = "single";
+            LblGraniteMode.Text = "[单轮模式] 每次独立回答";
+            BtnGraniteSingle.IsEnabled = false;
+            BtnGraniteMulti.IsEnabled = true;
+
+            await AppendLineAsync("[Granite] 已切换到单轮模式");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Granite] 切换模式失败：{ex.Message}");
+        }
+    }
+
+    private async void BtnGraniteMulti_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await EnsurePipeAsync();
+
+            // 启动多轮会话
+            var startCmd = JsonSerializer.Serialize(
+                new GraniteStartChatCommand
+                {
+                    system_message = GetSystemPrompt()
+                },
+                AppJsonContext.Default.GraniteStartChatCommand
+            ) + "\n";
+
+            await SendJsonAsync(startCmd);
+
+            _graniteMode = "multi";
+            LblGraniteMode.Text = "[多轮模式] 保留上下文";
+            BtnGraniteSingle.IsEnabled = true;
+            BtnGraniteMulti.IsEnabled = false;
+
+            await AppendLineAsync("[Granite] 已切换到多轮模式，会话已开始");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Granite] 切换模式失败：{ex.Message}");
+        }
+    }
+
+    // ========== 清空历史 ==========
+    private async void BtnGraniteClear_Click(object sender, RoutedEventArgs e)
+    {
+        _chatHistory.Clear();
+
+        // 如果是多轮模式，需要重启会话
+        if (_graniteMode == "multi")
+        {
+            try
+            {
+                var finishCmd = JsonSerializer.Serialize(
+                    new GraniteFinishChatCommand(),
+                    AppJsonContext.Default.GraniteFinishChatCommand
+                ) + "\n";
+                await SendJsonAsync(finishCmd);
+
+                var startCmd = JsonSerializer.Serialize(
+                    new GraniteStartChatCommand
+                    {
+                        system_message = GetSystemPrompt()
+                    },
+                    AppJsonContext.Default.GraniteStartChatCommand
+                ) + "\n";
+                await SendJsonAsync(startCmd);
+
+                await AppendLineAsync("[Granite] 多轮会话已重置");
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[Granite] 重置会话失败：{ex.Message}");
+            }
+        }
+    }
+
+    // ========== 发送消息 ==========
+    private async void BtnGraniteSend_Click(object sender, RoutedEventArgs e)
+    {
+        await SendGraniteMessageAsync();
+    }
+
+    private void TxtGraniteInput_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        // Ctrl+Enter 发送
+        if (e.Key == VirtualKey.Enter)
+        {
+            var ctrl = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control);
+
+            if (ctrl.HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+            {
+                e.Handled = true;
+                _ = SendGraniteMessageAsync();
+            }
+        }
+    }
+
+    private async Task SendGraniteMessageAsync()
+    {
+        try
+        {
+            var userInput = TxtGraniteInput.Text.Trim();
+            if (string.IsNullOrEmpty(userInput)) return;
+
+            await EnsurePipeAsync();
+
+            // 添加用户消息到历史
+            var userMessage = new ChatMessage
+            {
+                Role = "user",
+                Content = userInput
+            };
+            _chatHistory.Add(userMessage);
+
+            // 创建 AI 消息占位符（用于流式追加）
+            _currentStreamingMessage = new ChatMessage
+            {
+                Role = "assistant",
+                Content = "",
+                IsStreaming = true
+            };
+            _chatHistory.Add(_currentStreamingMessage);
+
+            // 自动滚动到底部
+            if (ChatHistoryList.Items.Count > 0)
+            {
+                ChatHistoryList.ScrollIntoView(ChatHistoryList.Items[^1]);
+            }
+
+            // 清空输入框
+            TxtGraniteInput.Text = "";
+
+            // 获取参数（提取数字部分）
+            string maxTokensStr = ((ComboBoxItem)CmbMaxTokens.SelectedItem).Content.ToString()!;
+            string temperatureStr = ((ComboBoxItem)CmbTemperature.SelectedItem).Content.ToString()!;
+
+            // 提取数字：取第一个空格之前的部分
+            int maxTokens = int.Parse(maxTokensStr.Split(' ')[0]);
+            float temperature = float.Parse(temperatureStr.Split(' ')[0]);
+
+            // 根据模式发送命令
+            string json;
+            if (_graniteMode == "single")
+            {
+                // 单轮模式：使用Granite的chat template格式
+                string fullPrompt =
+                    $"<|start_of_role|>system<|end_of_role|>{GetSystemPrompt()}<|end_of_text|>" +
+                    $"<|start_of_role|>user<|end_of_role|>{userInput}<|end_of_text|>" +
+                    $"<|start_of_role|>assistant<|end_of_role|>";
+
+                var cmd = new GraniteGenerateStreamCommand
+                {
+                    prompt = fullPrompt,
+                    max_tokens = maxTokens,
+                    temperature = temperature
+                };
+                json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.GraniteGenerateStreamCommand) + "\n";
+            }
+            else
+            {
+                var cmd = new GraniteChatStreamCommand
+                {
+                    prompt = userInput,
+                    max_tokens = maxTokens,
+                    temperature = temperature
+                };
+                json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.GraniteChatStreamCommand) + "\n";
+            }
+
+            await SendJsonAsync(json);
+            await AppendLineAsync($"[Granite] 已发送 ({_graniteMode})：{userInput}");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Granite] 发送失败：{ex.Message}");
+            if (_currentStreamingMessage != null)
+            {
+                _currentStreamingMessage.Content = $"❌ 错误：{ex.Message}";
+                _currentStreamingMessage.IsStreaming = false;
+                _currentStreamingMessage = null;
+            }
+        }
+    }
+
+    // ========== 处理流式响应 ==========
+    private Task HandleGraniteStreamToken(string token)
+    {
+        if (_currentStreamingMessage == null)
+            return Task.CompletedTask;
+
+        // 投递到 UI 线程
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            // 直接修改 Content 属性，INotifyPropertyChanged 会自动通知 UI 更新
+            _currentStreamingMessage.Content += token;
+
+            // 自动滚动到底部
+            if (ChatHistoryList.Items.Count > 0)
+            {
+                ChatHistoryList.ScrollIntoView(ChatHistoryList.Items[^1]);
+            }
+        });
+
+        return Task.CompletedTask;
+    }
+
+    private void HandleGraniteStreamDone()
+    {
+        // 必须在 UI 线程执行，因为会触发 PropertyChanged
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_currentStreamingMessage != null)
+            {
+                _currentStreamingMessage.IsStreaming = false;
+                _currentStreamingMessage = null;
+            }
+        });
+    }
+
+    // ========== 复制消息内容 ==========
+    private void CopyMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuFlyoutItem item && item.DataContext is ChatMessage message)
+        {
+            var dataPackage = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            dataPackage.SetText(message.Content);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dataPackage);
+        }
+    }
+}

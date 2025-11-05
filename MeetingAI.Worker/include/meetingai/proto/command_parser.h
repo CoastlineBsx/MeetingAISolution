@@ -51,4 +51,17 @@ namespace meetingai::proto {
 	std::string extractSource(const std::string& json); // 默认 "unknown"
 	long long extractTimestampMs(const std::string& json); // 默认 -1（可选）
 
+	// ==================== Granite GenAI 相关 ====================
+	// 从 {"prompt":"..."} 提取 prompt；失败返回空
+	std::string extractPrompt(const std::string& json);
+
+	// 从 {"max_tokens":256} 提取 max_tokens；失败返回默认值
+	int extractMaxTokens(const std::string& json, int defaultValue = 256);
+
+	// 从 {"temperature":0.7} 提取 temperature；失败返回默认值
+	float extractTemperature(const std::string& json, float defaultValue = 0.7f);
+
+	// 从 {"system_message":"..."} 提取 system_message；失败返回默认值
+	std::string extractSystemMessage(const std::string& json, const std::string& defaultValue = "");
+
 } // namespace meetingai::proto

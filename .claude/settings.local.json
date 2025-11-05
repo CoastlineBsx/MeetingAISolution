@@ -25,7 +25,13 @@
       "Bash(cmd /c del \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Host\\CaptionMerger.cs\")",
       "Bash(python:*)",
       "Bash(fc:*)",
-      "WebFetch(domain:docs.openvino.ai)"
+      "WebFetch(domain:docs.openvino.ai)",
+      "Bash(powershell -Command \"(Get-Content ''C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Worker\\src\\proto\\command_parser.cpp'' | Measure-Object -Line).Lines\")",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" MeetingAISolution.sln /p:Configuration=Debug /p:Platform=x64 /t:MeetingAI_Worker)",
+      "Bash(cmd /c:*)",
+      "Bash(powershell -Command \"& ''C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe'' MeetingAISolution.sln /p:Configuration=Debug /p:Platform=x64 /t:MeetingAI_Host\")",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(ping:*)"
     ],
     "deny": [],
     "ask": []

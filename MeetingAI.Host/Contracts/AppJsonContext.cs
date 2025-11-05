@@ -10,4 +10,8 @@ namespace MeetingAI.Host.Contracts;
 [JsonSerializable(typeof(StartStreamCommand))]
 [JsonSerializable(typeof(StreamChunkCommand))]
 [JsonSerializable(typeof(StopStreamCommand))]
+[JsonSerializable(typeof(GraniteGenerateStreamCommand))]
+[JsonSerializable(typeof(GraniteChatStreamCommand))]
+[JsonSerializable(typeof(GraniteStartChatCommand))]
+[JsonSerializable(typeof(GraniteFinishChatCommand))]
 internal partial class AppJsonContext : JsonSerializerContext { }

@@ -127,6 +127,13 @@ public sealed partial class MainWindow : Window
             BtnMeetingBeta2.IsEnabled = true;
             BtnStop.IsEnabled = true;
             BtnStart.IsEnabled = false;
+
+            // 启用 Granite 对话功能
+            BtnGraniteSingle.IsEnabled = true;
+            BtnGraniteMulti.IsEnabled = false; // 默认单轮模式
+            BtnGraniteClear.IsEnabled = true;
+            BtnGraniteSend.IsEnabled = true;
+
             LblStatus.Text = "Worker 已启动";
             await AppendLineAsync("[Host] Worker 启动完成");
         }
@@ -183,6 +190,42 @@ public sealed partial class MainWindow : Window
 
                 await AppendLineAsync($"[Pipe] {line}");
 
+                // ========== Granite 消息处理 ==========
+                if (line.Contains("\"type\":\"token\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+                        string token = root.TryGetProperty("text", out var t) ? (t.GetString() ?? "") : "";
+                        await HandleGraniteStreamToken(token);
+                    }
+                    catch { }
+                    continue;
+                }
+
+                if (line.Contains("\"type\":\"done\""))
+                {
+                    try
+                    {
+                        HandleGraniteStreamDone();
+                        await AppendLineAsync("[Granite] 生成完成");
+                    }
+                    catch (Exception ex)
+                    {
+                        await AppendLineAsync($"[Granite] 处理 done 消息异常：{ex.Message}");
+                    }
+                    continue;
+                }
+
+                if (line.Contains("\"type\":\"granite_chat_status\"") ||
+                    line.Contains("\"type\":\"granite_ready\""))
+                {
+                    // 处理 Granite 状态消息
+                    continue;
+                }
+
+                // ========== Whisper 转录消息处理 ==========
                 if (line.Contains("\"type\":\"stream_segment2\""))
                 {
                     try

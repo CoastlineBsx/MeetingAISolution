@@ -19,6 +19,9 @@ public sealed partial class MainWindow : Window
 
         // 枚举麦克风设备
         EnumerateMicrophoneDevices();
+
+        // 初始化 Granite 对话
+        InitializeGranite();
     }
 
     private Task AppendLineAsync(string text)

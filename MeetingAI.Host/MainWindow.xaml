@@ -166,10 +166,216 @@
                     <ComboBoxItem Content="🇩🇪 德语"/>
                 </ComboBox>
             </StackPanel>
+
+            <!-- 第五行：Granite AI 对话控制 -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="💬 AI 对话：" VerticalAlignment="Center" FontWeight="Bold"/>
+                <Button x:Name="BtnGraniteSingle" Content="🔄 单轮模式"
+                        Click="BtnGraniteSingle_Click" IsEnabled="False"/>
+                <Button x:Name="BtnGraniteMulti" Content="💬 多轮模式"
+                        Click="BtnGraniteMulti_Click" IsEnabled="False"/>
+                <Button x:Name="BtnGraniteClear" Content="🗑️ 清空历史"
+                        Click="BtnGraniteClear_Click" IsEnabled="False"/>
+                <TextBlock x:Name="LblGraniteMode" Text="[未启动]"
+                           VerticalAlignment="Center" Foreground="Gray"/>
+            </StackPanel>
         </StackPanel>
-<!-- 中间输出 -->
-        <TextBox x:Name="OutputBox" Grid.Row="1" Grid.ColumnSpan="2"
-                 TextWrapping="Wrap" AcceptsReturn="True" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+
+        <!-- 中间输出：左右分栏 -->
+        <Grid Grid.Row="1" Grid.ColumnSpan="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧：转录输出 -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="📝 转录输出" FontWeight="Bold" Margin="0,0,0,4"/>
+                <TextBox x:Name="OutputBox" Grid.Row="1"
+                         TextWrapping="Wrap" AcceptsReturn="True"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         IsReadOnly="True"/>
+            </Grid>
+
+            <!-- 分隔线 -->
+            <Border Grid.Column="1" Background="Gray" Opacity="0.3"/>
+
+            <!-- 右侧：Granite 对话区 -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="100"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="💬 AI 对话" FontWeight="Bold" Margin="0,0,0,4"/>
+
+                <!-- 对话历史（美化版） -->
+                <ListView x:Name="ChatHistoryList" Grid.Row="1"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="4"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="ContextFlyout">
+                                <Setter.Value>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Text="复制" Icon="Copy" Click="CopyMessage_Click"/>
+                                    </MenuFlyout>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="4,2">
+                                <!-- 用户消息（右对齐，深蓝色气泡） -->
+                                <Border Visibility="{Binding IsUserVisible}"
+                                        Background="#1976D2"
+                                        CornerRadius="12"
+                                        Padding="12,8"
+                                        HorizontalAlignment="Right"
+                                        MaxWidth="400">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="White"
+                                                   IsTextSelectionEnabled="True"/>
+                                        <TextBlock Text="{Binding DisplayTime}"
+                                                   FontSize="10"
+                                                   Foreground="#BBDEFB"
+                                                   HorizontalAlignment="Right"
+                                                   Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- AI 消息（左对齐，深灰色气泡） -->
+                                <Border Visibility="{Binding IsAssistantVisible}"
+                                        Background="#455A64"
+                                        CornerRadius="12"
+                                        Padding="12,8"
+                                        HorizontalAlignment="Left"
+                                        MaxWidth="400">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="White"
+                                                   IsTextSelectionEnabled="True"/>
+                                        <TextBlock Text="{Binding DisplayTime}"
+                                                   FontSize="10"
+                                                   Foreground="#B0BEC5"
+                                                   Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <!-- 模式选择 -->
+                <StackPanel Grid.Row="2" Margin="0,8,0,4">
+                    <TextBlock Text="回答模式" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <RadioButton x:Name="RbSimple" Content="简单" GroupName="AnswerMode">
+                            <ToolTipService.ToolTip>
+                                <ToolTip Content="用通俗易懂的语言，像给外行人解释一样"/>
+                            </ToolTipService.ToolTip>
+                        </RadioButton>
+                        <RadioButton x:Name="RbNormal" Content="普通" GroupName="AnswerMode" IsChecked="True">
+                            <ToolTipService.ToolTip>
+                                <ToolTip Content="用清晰准确的语言，正常理性的表达"/>
+                            </ToolTipService.ToolTip>
+                        </RadioButton>
+                        <RadioButton x:Name="RbProfessional" Content="专业" GroupName="AnswerMode">
+                            <ToolTipService.ToolTip>
+                                <ToolTip Content="使用专业术语，假设用户有相关领域知识"/>
+                            </ToolTipService.ToolTip>
+                        </RadioButton>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 参数控制 -->
+                <Grid Grid.Row="3" Margin="0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Text="创造性:" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbTemperature" Grid.Column="1"
+                              SelectedIndex="1" Margin="4,0">
+                        <ToolTipService.ToolTip>
+                            <ToolTip>
+                                <StackPanel MaxWidth="250">
+                                    <TextBlock FontWeight="Bold" Text="创造性（Temperature）"/>
+                                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0">
+                                        • 0.1-0.3：精确、一致（事实查询）
+                                        • 0.5-0.7：平衡、自然（日常对话）
+                                        • 0.8-1.0：创意、多样（创作内容）
+                                    </TextBlock>
+                                </StackPanel>
+                            </ToolTip>
+                        </ToolTipService.ToolTip>
+                        <ComboBoxItem Content="0.1 精确"/>
+                        <ComboBoxItem Content="0.3 保守"/>
+                        <ComboBoxItem Content="0.7 平衡"/>
+                        <ComboBoxItem Content="0.9 创意"/>
+                    </ComboBox>
+
+                    <TextBlock Grid.Column="2" Text="长度:"
+                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <ComboBox x:Name="CmbMaxTokens" Grid.Column="3"
+                              SelectedIndex="3" Margin="4,0">
+                        <ToolTipService.ToolTip>
+                            <ToolTip>
+                                <StackPanel MaxWidth="250">
+                                    <TextBlock FontWeight="Bold" Text="回答长度（Max Tokens）"/>
+                                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0">
+                                        • 128: ~60字 (超简短)
+                                        • 512: ~250字 (简短)
+                                        • 1024: ~500字 (正常)
+                                        • 2048: ~1000字 (详细，推荐)
+                                        • 4096: ~2000字 (很详细)
+                                    </TextBlock>
+                                </StackPanel>
+                            </ToolTip>
+                        </ToolTipService.ToolTip>
+                        <ComboBoxItem Content="128 超简短"/>
+                        <ComboBoxItem Content="512 简短"/>
+                        <ComboBoxItem Content="1024 正常"/>
+                        <ComboBoxItem Content="2048 详细"/>
+                        <ComboBoxItem Content="4096 很详细"/>
+                    </ComboBox>
+                </Grid>
+
+                <!-- 输入框 -->
+                <TextBox x:Name="TxtGraniteInput" Grid.Row="4"
+                         PlaceholderText="输入问题（Ctrl+Enter 发送）..."
+                         TextWrapping="Wrap" AcceptsReturn="True"
+                         PreviewKeyDown="TxtGraniteInput_PreviewKeyDown"/>
+
+                <!-- 发送按钮 -->
+                <Button x:Name="BtnGraniteSend" Grid.Row="5"
+                        Content="📤 发送 (Ctrl+Enter)"
+                        Click="BtnGraniteSend_Click"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,4,0,0"
+                        IsEnabled="False"/>
+            </Grid>
+        </Grid>
 
         <!-- 底部状态 -->
         <TextBlock Grid.Row="2" Grid.ColumnSpan="2"

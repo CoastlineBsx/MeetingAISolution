@@ -1,25 +1,69 @@
-#include "pch.h"
+//#include "pch.h"
+//#include <windows.h>
+//#include <sddl.h>
+//#include <iostream>
+//#include <string>
+//#include "database.hpp"
+//#include "paths.h"
+//#include "sqlite3.h"
+//#include <filesystem>
+//#include "transcriber.hpp" // 新增：包含 whisper 封装
+//#include "granite/granite_genai.hpp" // ★ 新增：Granite GenAI
+//#include <shlobj.h>      // SHGetFolderPathW
+//#include <codecvt>       // 宽/窄字符串转码（仅用于 Win -> UTF-8）
+//#include <thread>
+//#include <mutex>   // ★ 新增
+//#include "paths.h"
+//#include "command_parser.h"
+//#include "logging.h"
+//#include "pipe_security.h"
+
+
 #include <windows.h>
 #include <sddl.h>
 #include <iostream>
 #include <string>
+#include <memory>      // ← 新增：unique_ptr
+#include <functional>  // ← 新增：function
+#include <mutex>
+#include <thread>
+#include <filesystem>
+#include <shlobj.h>
+#include <codecvt>
+
+// 然后包含项目头文件
 #include "database.hpp"
 #include "paths.h"
-#include "sqlite3.h" 
-#include <filesystem> 
-#include "transcriber.hpp" // 新增：包含 whisper 封装
-#include <shlobj.h>      // SHGetFolderPathW
-#include <codecvt>       // 宽/窄字符串转码（仅用于 Win -> UTF-8）
-#include <thread>
-#include <mutex>   // ★ 新增
-#include "paths.h"
+#include "sqlite3.h"
+#include "transcriber.hpp"
+#include "granite/granite_genai.hpp"  // ← OpenVINO 头文件
 #include "command_parser.h"
 #include "logging.h"
 #include "pipe_security.h"
 
 
+static std::once_flag g_model_once2; // ★ 新增：Worker 级只加载一次模型（Whisper）
+static std::once_flag g_granite_once; // ★ 新增：Granite 模型只加载一次
 
-static std::once_flag g_model_once2; // ★ 新增：Worker 级只加载一次模型
+// ========== Granite GenAI 全局实例 ==========
+static std::unique_ptr<meetingai::granite::GraniteGenAI> g_granite;
+static std::string g_system_prompt = "你是一个专业、简洁的中文助手。请用简体中文回答问题，注重逻辑性和条理性。";
+static int g_max_tokens = 256;
+static float g_temperature = 0.7f;
+
+// ========== 工具函数：获取环境变量 ==========
+static std::string GetEnvOrDefault(const char* key, const char* fallback) {
+    char* buf = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&buf, &len, key) == 0 && buf != nullptr) {
+        std::string value(buf);
+        free(buf);
+        if (!value.empty()) {
+            return value;
+        }
+    }
+    return std::string(fallback);
+}
 
 //
 //static std::string json_escape(const std::string& s) {
@@ -113,6 +157,112 @@ HANDLE g_pipe_for_callback = NULL;
 //
 //    return out;
 //}
+
+// ========== Granite GenAI 初始化 ==========
+static void InitializeGraniteGenAI(HANDLE hPipe, const std::string& device = "CPU") {
+    std::wcout << L"[Worker] 初始化 Granite GenAI...\n";
+    try {
+        const std::string model_dir = GetEnvOrDefault(
+            "MEETINGAI_GRANITE_MODEL",
+            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/granite-3.3-2b-npu"
+        );
+
+        g_granite = std::make_unique<meetingai::granite::GraniteGenAI>(model_dir, device);
+        std::wcout << L"[Worker] Granite GenAI ✅ 初始化成功: " << device.c_str() << L"\n";
+
+        // 通知 Host 模型已就绪
+        const char* ready = "{\"type\":\"granite_ready\",\"device\":\"CPU\"}\n";
+        DWORD written;
+        WriteFile(hPipe, ready, (DWORD)strlen(ready), &written, nullptr);
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Worker] Granite GenAI ❌ 初始化失败: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"Granite 初始化失败: ") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
+
+// ========== Granite GenAI 命令处理 ==========
+static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
+    try {
+        // 确保模型已加载（懒加载）
+        std::call_once(g_granite_once, [&] {
+            InitializeGraniteGenAI(hPipe, "CPU");
+        });
+
+        if (!g_granite) {
+            std::string err = "{\"type\":\"error\",\"message\":\"Granite 未初始化\"}\n";
+            DWORD written;
+            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            return;
+        }
+
+        auto write_json = [&](const std::string& payload) {
+            DWORD written;
+            WriteFile(hPipe, payload.data(), (DWORD)payload.size(), &written, nullptr);
+            FlushFileBuffers(hPipe);
+        };
+
+        // 解析命令类型
+        size_t typePos = command.find("\"type\"");
+        if (typePos == std::string::npos) return;
+
+        // -------- 单轮流式生成 --------
+        if (command.find("\"granite_generate_stream\"") != std::string::npos) {
+            std::string prompt = meetingai::proto::extractPrompt(command);
+            int maxTokens = meetingai::proto::extractMaxTokens(command, g_max_tokens);
+            float temp = meetingai::proto::extractTemperature(command, g_temperature);
+
+            std::wcout << L"[Granite] 单轮生成: " << prompt.c_str() << L"\n";
+
+            g_granite->generateStream(prompt, [&](const std::string& token) {
+                std::string chunk = "{\"type\":\"token\",\"text\":\"" +
+                    meetingai::proto::jsonEscape(token) + "\"}\n";
+                write_json(chunk);
+            }, maxTokens, temp);
+
+            write_json("{\"type\":\"done\"}\n");
+        }
+        // -------- 多轮：开始会话 --------
+        else if (command.find("\"granite_start_chat\"") != std::string::npos) {
+            std::string sysMsg = meetingai::proto::extractSystemMessage(command, g_system_prompt);
+            g_granite->startChat(sysMsg);
+            write_json("{\"type\":\"granite_chat_status\",\"status\":\"started\"}\n");
+            std::wcout << L"[Granite] 多轮会话已开始\n";
+        }
+        // -------- 多轮：流式对话 --------
+        else if (command.find("\"granite_chat_stream\"") != std::string::npos) {
+            std::string prompt = meetingai::proto::extractPrompt(command);
+            int maxTokens = meetingai::proto::extractMaxTokens(command, g_max_tokens);
+            float temp = meetingai::proto::extractTemperature(command, g_temperature);
+
+            std::wcout << L"[Granite] 多轮对话: " << prompt.c_str() << L"\n";
+
+            g_granite->chatStream(prompt, [&](const std::string& token) {
+                std::string chunk = "{\"type\":\"token\",\"text\":\"" +
+                    meetingai::proto::jsonEscape(token) + "\"}\n";
+                write_json(chunk);
+            }, maxTokens, temp);
+
+            write_json("{\"type\":\"done\"}\n");
+        }
+        // -------- 多轮：结束会话 --------
+        else if (command.find("\"granite_finish_chat\"") != std::string::npos) {
+            g_granite->finishChat();
+            write_json("{\"type\":\"granite_chat_status\",\"status\":\"finished\"}\n");
+            std::wcout << L"[Granite] 多轮会话已结束\n";
+        }
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Granite] 处理命令异常: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
 
 // 新增：处理转录命令
 static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
@@ -381,7 +531,14 @@ int wmain() {
                     DWORD w = 0; WriteFile(hPipe, bye.data(), (DWORD)bye.size(), &w, nullptr);
                     break;
                 }
-                
+
+                // ---- 新增：Granite 命令处理 ----
+                if (buffer.find("\"granite_") != std::string::npos) {
+                    handleGraniteCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
+
                 // ---- 新增：转录命令处理 ----
                 if (meetingai::proto::isTranscribe(buffer)) {
                     handleTranscribeCommand(hPipe, buffer);
