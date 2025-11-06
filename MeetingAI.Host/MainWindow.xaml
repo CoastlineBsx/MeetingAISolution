@@ -40,6 +40,7 @@
                 </ComboBox>
 
                 <Button x:Name="BtnStop"  Content="停止 Worker" Click="BtnStop_Click" IsEnabled="False"/>
+                <Button x:Name="BtnTestEmbedding" Content="🧪 测试Embedding" Click="BtnTestEmbedding_Click" IsEnabled="False"/>
                 <TextBlock x:Name="LblStatus" Margin="12,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
 
@@ -178,6 +179,24 @@
                         Click="BtnGraniteClear_Click" IsEnabled="False"/>
                 <TextBlock x:Name="LblGraniteMode" Text="[未启动]"
                            VerticalAlignment="Center" Foreground="Gray"/>
+
+                <!-- RAG 模式切换 -->
+                <Border BorderBrush="#666666" BorderThickness="1" CornerRadius="4"
+                        Padding="8,4" Background="#2D2D2D">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="📚" VerticalAlignment="Center" Foreground="White"/>
+                        <ToggleSwitch x:Name="ToggleRAGMode"
+                                      OnContent="RAG模式" OffContent="普通模式"
+                                      Toggled="ToggleRAGMode_Toggled"
+                                      IsEnabled="False"/>
+                        <Button x:Name="BtnRAGInit" Content="🔧 初始化RAG"
+                                Click="BtnRAGInit_Click" IsEnabled="False"
+                                Padding="6,4" FontSize="12"/>
+                        <Button x:Name="BtnRAGTest" Content="🧪 添加测试文档"
+                                Click="BtnRAGTest_Click" IsEnabled="False"
+                                Padding="6,4" FontSize="12"/>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </StackPanel>
 
@@ -272,6 +291,43 @@
                                                    TextWrapping="Wrap"
                                                    Foreground="White"
                                                    IsTextSelectionEnabled="True"/>
+
+                                        <!-- RAG 引用列表 -->
+                                        <ItemsControl ItemsSource="{Binding Citations}"
+                                                      Visibility="{Binding HasCitations}"
+                                                      Margin="0,8,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#37474F"
+                                                            CornerRadius="6"
+                                                            Padding="8,4"
+                                                            Margin="0,2">
+                                                        <StackPanel>
+                                                            <TextBlock Foreground="#FFD54F"
+                                                                       FontSize="11"
+                                                                       FontWeight="SemiBold">
+                                                                <Run Text="📎 "/>
+                                                                <Run Text="{Binding SourceDisplay}"/>
+                                                            </TextBlock>
+                                                            <TextBlock Text="{Binding ChunkText}"
+                                                                       TextWrapping="Wrap"
+                                                                       Foreground="#CFD8DC"
+                                                                       FontSize="10"
+                                                                       Margin="0,2,0,0"
+                                                                       MaxLines="2"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Foreground="#90A4AE"
+                                                                       FontSize="9"
+                                                                       Margin="0,2,0,0">
+                                                                <Run Text="相似度: "/>
+                                                                <Run Text="{Binding SimilarityDisplay}"/>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
                                         <TextBlock Text="{Binding DisplayTime}"
                                                    FontSize="10"
                                                    Foreground="#B0BEC5"

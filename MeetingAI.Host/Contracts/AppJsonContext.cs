@@ -14,4 +14,7 @@ namespace MeetingAI.Host.Contracts;
 [JsonSerializable(typeof(GraniteChatStreamCommand))]
 [JsonSerializable(typeof(GraniteStartChatCommand))]
 [JsonSerializable(typeof(GraniteFinishChatCommand))]
+[JsonSerializable(typeof(EmbeddingEncodeCommand))]
+[JsonSerializable(typeof(EmbeddingResult))]
+[JsonSerializable(typeof(EmbeddingReadyMessage))]
 internal partial class AppJsonContext : JsonSerializerContext { }

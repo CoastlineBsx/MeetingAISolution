@@ -1,20 +1,23 @@
 using System;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace MeetingAI.Host.RAG.Services;
 
 /// <summary>
-/// Embedding NPU 服务（通过 C++ Worker）
+/// Embedding 服务（通过委托注入，解耦具体实现）
 /// </summary>
 public class EmbeddingNPUService
 {
-    private readonly WorkerPipeClient _workerClient;
+    private readonly Func<string, CancellationToken, Task<float[]>> _getEmbedding;
 
-    public EmbeddingNPUService(WorkerPipeClient workerClient)
+    /// <summary>
+    /// 构造函数 - 注入 Embedding 获取委托
+    /// </summary>
+    /// <param name="getEmbedding">获取 Embedding 的委托函数</param>
+    public EmbeddingNPUService(Func<string, CancellationToken, Task<float[]>> getEmbedding)
     {
-        _workerClient = workerClient;
+        _getEmbedding = getEmbedding ?? throw new ArgumentNullException(nameof(getEmbedding));
     }
 
     /// <summary>
@@ -24,20 +27,9 @@ public class EmbeddingNPUService
         string text,
         CancellationToken cancellationToken = default)
     {
-        var command = JsonSerializer.Serialize(new
-        {
-            type = "get_embedding",
-            text
-        });
+        if (string.IsNullOrWhiteSpace(text))
+            return Array.Empty<float>();
 
-        var response = await _workerClient.SendCommandAsync(command, cancellationToken);
-        
-        var result = JsonSerializer.Deserialize<EmbeddingResponse>(response);
-        return result?.Embedding ?? Array.Empty<float>();
-    }
-
-    private class EmbeddingResponse
-    {
-        public float[]? Embedding { get; set; }
+        return await _getEmbedding(text, cancellationToken);
     }
 }

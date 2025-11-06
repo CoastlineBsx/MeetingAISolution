@@ -227,6 +227,37 @@ public sealed partial class MainWindow : Window
             // 清空输入框
             TxtGraniteInput.Text = "";
 
+            // ========== RAG 检索集成 ==========
+            string promptToSend = userInput;
+            if (_isRAGMode && _ragService != null && _isRAGInitialized)
+            {
+                try
+                {
+                    await AppendLineAsync("[RAG] 检索相关文档中...");
+
+                    var ragContext = await _ragService.RetrieveContextAsync(userInput);
+
+                    if (ragContext.Citations.Count > 0)
+                    {
+                        // 保存引用到当前消息
+                        _currentStreamingMessage.Citations = ragContext.Citations;
+
+                        // 构建包含上下文的 Prompt
+                        promptToSend = BuildRAGPrompt(userInput, ragContext.ContextText);
+
+                        await AppendLineAsync($"[RAG] 找到 {ragContext.Citations.Count} 条相关文档");
+                    }
+                    else
+                    {
+                        await AppendLineAsync("[RAG] 未找到相关文档，使用普通模式回答");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await AppendLineAsync($"[RAG] 检索失败: {ex.Message}，使用普通模式");
+                }
+            }
+
             // 获取参数（提取数字部分）
             string maxTokensStr = ((ComboBoxItem)CmbMaxTokens.SelectedItem).Content.ToString()!;
             string temperatureStr = ((ComboBoxItem)CmbTemperature.SelectedItem).Content.ToString()!;
@@ -242,7 +273,7 @@ public sealed partial class MainWindow : Window
                 // 单轮模式：使用Granite的chat template格式
                 string fullPrompt =
                     $"<|start_of_role|>system<|end_of_role|>{GetSystemPrompt()}<|end_of_text|>" +
-                    $"<|start_of_role|>user<|end_of_role|>{userInput}<|end_of_text|>" +
+                    $"<|start_of_role|>user<|end_of_role|>{promptToSend}<|end_of_text|>" +
                     $"<|start_of_role|>assistant<|end_of_role|>";
 
                 var cmd = new GraniteGenerateStreamCommand
@@ -257,7 +288,7 @@ public sealed partial class MainWindow : Window
             {
                 var cmd = new GraniteChatStreamCommand
                 {
-                    prompt = userInput,
+                    prompt = promptToSend,
                     max_tokens = maxTokens,
                     temperature = temperature
                 };
@@ -265,7 +296,7 @@ public sealed partial class MainWindow : Window
             }
 
             await SendJsonAsync(json);
-            await AppendLineAsync($"[Granite] 已发送 ({_graniteMode})：{userInput}");
+            await AppendLineAsync($"[Granite] 已发送 ({_graniteMode}{(_isRAGMode ? " + RAG" : "")})：{userInput}");
         }
         catch (Exception ex)
         {

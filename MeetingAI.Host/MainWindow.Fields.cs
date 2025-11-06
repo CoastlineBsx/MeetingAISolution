@@ -81,6 +81,16 @@ public sealed partial class MainWindow : Window
     private bool _isMeetingBeta2;
     private string? _selectedMeetingBeta2MicrophoneId;
 
+    // ========== RAG Embedding 相关 ==========
+    private TaskCompletionSource<float[]>? _embeddingTcs;
+    private readonly object _embeddingLock = new();
+
+    // ========== RAG 服务相关 ==========
+    private MeetingAI.Host.RAG.VectorStore.SqliteVectorDatabase? _vectorDb;
+    private MeetingAI.Host.RAG.Services.EmbeddingNPUService? _embeddingService;
+    private MeetingAI.Host.RAG.Services.RAGService? _ragService;
+    private bool _isRAGMode = false;  // RAG 模式开关
+    private bool _isRAGInitialized = false;
 
     private const string PipeName = "MeetingAI_Pipe";
 }

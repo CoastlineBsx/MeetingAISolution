@@ -126,6 +126,7 @@ public sealed partial class MainWindow : Window
             BtnMeetingBeta.IsEnabled = true;
             BtnMeetingBeta2.IsEnabled = true;
             BtnStop.IsEnabled = true;
+            BtnTestEmbedding.IsEnabled = true;
             BtnStart.IsEnabled = false;
 
             // 启用 Granite 对话功能
@@ -133,6 +134,9 @@ public sealed partial class MainWindow : Window
             BtnGraniteMulti.IsEnabled = false; // 默认单轮模式
             BtnGraniteClear.IsEnabled = true;
             BtnGraniteSend.IsEnabled = true;
+
+            // 启用 RAG 功能
+            BtnRAGInit.IsEnabled = true;
 
             LblStatus.Text = "Worker 已启动";
             await AppendLineAsync("[Host] Worker 启动完成");
@@ -190,6 +194,23 @@ public sealed partial class MainWindow : Window
 
                 await AppendLineAsync($"[Pipe] {line}");
 
+                // ========== Info 消息处理（设备枚举等） ==========
+                if (line.Contains("\"type\":\"info\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+                        string msg = root.TryGetProperty("message", out var m) ? (m.GetString() ?? "") : "";
+                        if (!string.IsNullOrEmpty(msg))
+                        {
+                            await AppendLineAsync(msg);
+                        }
+                    }
+                    catch { }
+                    continue;
+                }
+
                 // ========== Granite 消息处理 ==========
                 if (line.Contains("\"type\":\"token\""))
                 {
@@ -222,6 +243,53 @@ public sealed partial class MainWindow : Window
                     line.Contains("\"type\":\"granite_ready\""))
                 {
                     // 处理 Granite 状态消息
+                    continue;
+                }
+
+                // ========== Embedding 消息处理 ==========
+                if (line.Contains("\"type\":\"embedding_result\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+
+                        if (root.TryGetProperty("embedding", out var embeddingArray))
+                        {
+                            int dim = embeddingArray.GetArrayLength();
+
+                            // 解析向量
+                            var embedding = new float[dim];
+                            for (int i = 0; i < dim; i++)
+                            {
+                                embedding[i] = embeddingArray[i].GetSingle();
+                            }
+
+                            // 设置结果到等待的任务
+                            SetEmbeddingResult(embedding);
+
+                            await AppendLineAsync($"[Embedding] ✅ 收到向量 (dim={dim})");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await AppendLineAsync($"[Embedding] 解析结果异常: {ex.Message}");
+                        SetEmbeddingError(ex);
+                    }
+                    continue;
+                }
+
+                if (line.Contains("\"type\":\"embedding_ready\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+                        string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
+                        int dim = root.TryGetProperty("dim", out var dimProp) ? dimProp.GetInt32() : 0;
+                        await AppendLineAsync($"[Embedding] ✅ 模型已就绪 (device={device}, dim={dim})");
+                    }
+                    catch { }
                     continue;
                 }
 
@@ -325,6 +393,7 @@ public sealed partial class MainWindow : Window
             BtnTranscribe.IsEnabled = false;
             BtnLoopback.IsEnabled = false;
             BtnStop.IsEnabled = false;
+            BtnTestEmbedding.IsEnabled = false;
             BtnStart.IsEnabled = true;
             LblStatus.Text = "已停止";
             await AppendLineAsync("[Host] Worker 已停止");

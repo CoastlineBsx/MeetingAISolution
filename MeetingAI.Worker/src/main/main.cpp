@@ -37,19 +37,27 @@
 #include "sqlite3.h"
 #include "transcriber.hpp"
 #include "granite/granite_genai.hpp"  // ← OpenVINO 头文件
+#include "embedding/embedding_genai.hpp"  // ← 新增：Embedding GenAI
 #include "command_parser.h"
 #include "logging.h"
 #include "pipe_security.h"
 
+// OpenVINO Core for device enumeration
+#include <openvino/openvino.hpp>
+
 
 static std::once_flag g_model_once2; // ★ 新增：Worker 级只加载一次模型（Whisper）
 static std::once_flag g_granite_once; // ★ 新增：Granite 模型只加载一次
+static std::once_flag g_embedding_once; // ★ 新增：Embedding 模型只加载一次
 
 // ========== Granite GenAI 全局实例 ==========
 static std::unique_ptr<meetingai::granite::GraniteGenAI> g_granite;
 static std::string g_system_prompt = "你是一个专业、简洁的中文助手。请用简体中文回答问题，注重逻辑性和条理性。";
 static int g_max_tokens = 256;
 static float g_temperature = 0.7f;
+
+// ========== Embedding GenAI 全局实例 ==========
+static std::unique_ptr<meetingai::embedding::EmbeddingGenAI> g_embedding;
 
 // ========== 工具函数：获取环境变量 ==========
 static std::string GetEnvOrDefault(const char* key, const char* fallback) {
@@ -162,6 +170,24 @@ HANDLE g_pipe_for_callback = NULL;
 static void InitializeGraniteGenAI(HANDLE hPipe, const std::string& device = "CPU") {
     std::wcout << L"[Worker] 初始化 Granite GenAI...\n";
     try {
+        // 枚举可用设备并通过管道发送
+        ov::Core core;
+        auto available_devices = core.get_available_devices();
+
+        std::string devices_msg = "{\"type\":\"info\",\"message\":\"[OpenVINO] 可用设备:\\n";
+        for (const auto& dev : available_devices) {
+            devices_msg += "  - " + dev;
+            try {
+                auto full_name = core.get_property(dev, ov::device::full_name);
+                devices_msg += " (" + full_name + ")";
+            } catch (...) {}
+            devices_msg += "\\n";
+        }
+        devices_msg += "  将使用: " + device + "\"}\n";
+
+        DWORD written;
+        WriteFile(hPipe, devices_msg.data(), (DWORD)devices_msg.size(), &written, nullptr);
+
         const std::string model_dir = GetEnvOrDefault(
             "MEETINGAI_GRANITE_MODEL",
             "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/granite-3.3-2b-npu"
@@ -172,7 +198,6 @@ static void InitializeGraniteGenAI(HANDLE hPipe, const std::string& device = "CP
 
         // 通知 Host 模型已就绪
         const char* ready = "{\"type\":\"granite_ready\",\"device\":\"CPU\"}\n";
-        DWORD written;
         WriteFile(hPipe, ready, (DWORD)strlen(ready), &written, nullptr);
     }
     catch (const std::exception& e) {
@@ -184,12 +209,57 @@ static void InitializeGraniteGenAI(HANDLE hPipe, const std::string& device = "CP
     }
 }
 
+// ========== Embedding GenAI 初始化 ==========
+static void InitializeEmbeddingGenAI(HANDLE hPipe, const std::string& device = "CPU") {
+    std::wcout << L"[Worker] 初始化 Embedding GenAI...\n";
+    try {
+        // 枚举可用设备并通过管道发送
+        ov::Core core;
+        auto available_devices = core.get_available_devices();
+
+        std::string devices_msg = "{\"type\":\"info\",\"message\":\"[OpenVINO] 可用设备:\\n";
+        for (const auto& dev : available_devices) {
+            devices_msg += "  - " + dev;
+            try {
+                auto full_name = core.get_property(dev, ov::device::full_name);
+                devices_msg += " (" + full_name + ")";
+            } catch (...) {}
+            devices_msg += "\\n";
+        }
+        devices_msg += "  将使用: " + device + "\"}\n";
+
+        DWORD written;
+        WriteFile(hPipe, devices_msg.data(), (DWORD)devices_msg.size(), &written, nullptr);
+
+        const std::string model_dir = GetEnvOrDefault(
+            "MEETINGAI_EMBEDDING_MODEL",
+            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/bge-m3-npu"
+        );
+
+        g_embedding = std::make_unique<meetingai::embedding::EmbeddingGenAI>(model_dir, device);
+        std::wcout << L"[Worker] Embedding GenAI ✅ 初始化成功: " << device.c_str()
+                   << L" (dim=" << g_embedding->embedding_dim() << L")\n";
+
+        // 通知 Host 模型已就绪
+        std::string ready = std::string("{\"type\":\"embedding_ready\",\"device\":\"") +
+                           device + "\",\"dim\":" + std::to_string(g_embedding->embedding_dim()) + "}\n";
+        WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Worker] Embedding GenAI ❌ 初始化失败: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"Embedding 初始化失败: ") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
+
 // ========== Granite GenAI 命令处理 ==========
 static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
     try {
         // 确保模型已加载（懒加载）
         std::call_once(g_granite_once, [&] {
-            InitializeGraniteGenAI(hPipe, "CPU");
+            InitializeGraniteGenAI(hPipe, "GPU");
         });
 
         if (!g_granite) {
@@ -257,6 +327,57 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
     }
     catch (const std::exception& e) {
         std::wcerr << L"[Granite] 处理命令异常: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
+
+// ========== Embedding GenAI 命令处理 ==========
+static void handleEmbeddingCommand(HANDLE hPipe, const std::string& command) {
+    try {
+        // 确保模型已加载（懒加载）
+        std::call_once(g_embedding_once, [&] {
+            InitializeEmbeddingGenAI(hPipe, "GPU");
+        });
+
+        if (!g_embedding) {
+            std::string err = "{\"type\":\"error\",\"message\":\"Embedding 未初始化\"}\n";
+            DWORD written;
+            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            return;
+        }
+
+        auto write_json = [&](const std::string& payload) {
+            DWORD written;
+            WriteFile(hPipe, payload.data(), (DWORD)payload.size(), &written, nullptr);
+            FlushFileBuffers(hPipe);
+        };
+
+        // 解析命令类型
+        if (command.find("\"embedding_encode\"") != std::string::npos) {
+            std::string text = meetingai::proto::extractPrompt(command);
+
+            std::wcout << L"[Embedding] 编码文本: " << text.substr(0, 50).c_str() << L"...\n";
+
+            // 生成向量
+            auto embedding = g_embedding->encode(text);
+
+            // 构建 JSON 响应（向量转为数组）
+            std::string response = "{\"type\":\"embedding_result\",\"embedding\":[";
+            for (size_t i = 0; i < embedding.size(); i++) {
+                response += std::to_string(embedding[i]);
+                if (i < embedding.size() - 1) response += ",";
+            }
+            response += "]}\n";
+
+            write_json(response);
+            std::wcout << L"[Embedding] ✅ 编码完成 (dim=" << embedding.size() << L")\n";
+        }
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Embedding] 处理命令异常: " << e.what() << L"\n";
         std::string err = std::string("{\"type\":\"error\",\"message\":\"") +
             meetingai::proto::jsonEscape(e.what()) + "\"}\n";
         DWORD written;
@@ -535,6 +656,13 @@ int wmain() {
                 // ---- 新增：Granite 命令处理 ----
                 if (buffer.find("\"granite_") != std::string::npos) {
                     handleGraniteCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：Embedding 命令处理 ----
+                if (buffer.find("\"embedding_") != std::string::npos) {
+                    handleEmbeddingCommand(hPipe, buffer);
                     buffer.clear();
                     continue;
                 }

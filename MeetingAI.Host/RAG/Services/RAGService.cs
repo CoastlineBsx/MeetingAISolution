@@ -1,80 +1,57 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using MeetingAI.Host.Models;
 using MeetingAI.Host.RAG.VectorStore;
 
 namespace MeetingAI.Host.RAG.Services;
 
 /// <summary>
-/// RAG 检索增强生成服务
+/// RAG 检索服务（只负责检索，不负责生成）
 /// </summary>
 public class RAGService : IDisposable
 {
     private readonly SqliteVectorDatabase _vectorDb;
     private readonly EmbeddingNPUService _embeddingService;
-    private readonly GraniteNPUService _graniteService;
     private readonly int _topK;
 
     public RAGService(
         SqliteVectorDatabase vectorDb,
         EmbeddingNPUService embeddingService,
-        GraniteNPUService graniteService,
         int topK = 3)
     {
-        _vectorDb = vectorDb;
-        _embeddingService = embeddingService;
-        _graniteService = graniteService;
+        _vectorDb = vectorDb ?? throw new ArgumentNullException(nameof(vectorDb));
+        _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
         _topK = topK;
     }
 
     /// <summary>
-    /// 执行 RAG 查询（流式返回）
+    /// 检索相关文档上下文
     /// </summary>
-    public async IAsyncEnumerable<string> QueryStreamAsync(
-        string question,
-        float temperature = 0.7f,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        // 1. 问题向量化
-        var questionEmbedding = await _embeddingService.GetEmbeddingAsync(question, cancellationToken);
-
-        // 2. 向量检索
-        var searchResults = await _vectorDb.SearchAsync(questionEmbedding, _topK);
-
-        // 3. 构建 RAG Prompt
-        var prompt = BuildRAGPrompt(question, searchResults);
-
-        // 4. Granite NPU 生成
-        await foreach (var chunk in _graniteService.GenerateStreamAsync(
-            prompt,
-            maxTokens: 256,
-            temperature: temperature,
-            cancellationToken: cancellationToken))
-        {
-            yield return chunk;
-        }
-    }
-
-    /// <summary>
-    /// 执行 RAG 查询（一次性返回）
-    /// </summary>
-    public async Task<string> QueryAsync(
-        string question,
-        float temperature = 0.7f,
+    public async Task<RAGContext> RetrieveContextAsync(
+        string query,
         CancellationToken cancellationToken = default)
     {
-        var questionEmbedding = await _embeddingService.GetEmbeddingAsync(question, cancellationToken);
-        var searchResults = await _vectorDb.SearchAsync(questionEmbedding, _topK);
-        var prompt = BuildRAGPrompt(question, searchResults);
+        // 1. 问题向量化
+        var queryEmbedding = await _embeddingService.GetEmbeddingAsync(query, cancellationToken);
 
-        return await _graniteService.GenerateAsync(
-            prompt,
-            maxTokens: 256,
-            temperature: temperature,
-            cancellationToken: cancellationToken);
+        // 2. 向量检索
+        var searchResults = await _vectorDb.SearchAsync(queryEmbedding, _topK);
+
+        // 3. 构建上下文文本
+        var contextText = BuildContextText(searchResults);
+
+        // 4. 构建引用列表
+        var citations = BuildCitations(searchResults);
+
+        return new RAGContext
+        {
+            ContextText = contextText,
+            Citations = citations,
+            Results = searchResults
+        };
     }
 
     /// <summary>
@@ -105,38 +82,60 @@ public class RAGService : IDisposable
         return docId;
     }
 
-    private string BuildRAGPrompt(string question, List<SearchResult> searchResults)
+    /// <summary>
+    /// 获取所有文档列表
+    /// </summary>
+    public async Task<List<DocumentInfo>> GetAllDocumentsAsync()
     {
+        return await _vectorDb.GetAllDocumentsAsync();
+    }
+
+    /// <summary>
+    /// 删除文档
+    /// </summary>
+    public async Task DeleteDocumentAsync(long docId)
+    {
+        await _vectorDb.DeleteDocumentAsync(docId);
+    }
+
+    private string BuildContextText(List<SearchResult> searchResults)
+    {
+        if (searchResults.Count == 0)
+            return string.Empty;
+
         var sb = new StringBuilder();
+        sb.AppendLine("【参考资料】");
 
-        sb.AppendLine("你是一个智能助手，请根据以下参考资料回答用户的问题。");
-        sb.AppendLine("如果参考资料中没有相关信息，请明确说明并基于你的知识回答。");
-        sb.AppendLine();
-
-        if (searchResults.Count > 0)
+        for (int i = 0; i < searchResults.Count; i++)
         {
-            sb.AppendLine("【参考资料】");
-            for (int i = 0; i < searchResults.Count; i++)
-            {
-                var result = searchResults[i];
-                sb.AppendLine($"[资料{i + 1}] 来源: {result.Filename} (第{result.PageNumber}页) - 相似度: {result.Similarity:F3}");
-                sb.AppendLine(result.Content);
-                sb.AppendLine();
-            }
-        }
-        else
-        {
-            sb.AppendLine("【参考资料】");
-            sb.AppendLine("(未找到相关文档)");
+            var result = searchResults[i];
+            sb.AppendLine($"[资料{i + 1}] 来源: {result.Filename} (第{result.PageNumber}页) - 相似度: {result.Similarity:F3}");
+            sb.AppendLine(result.Content);
             sb.AppendLine();
         }
 
-        sb.AppendLine("【用户问题】");
-        sb.AppendLine(question);
-        sb.AppendLine();
-        sb.AppendLine("请基于以上信息简洁回答:");
-
         return sb.ToString();
+    }
+
+    private List<Citation> BuildCitations(List<SearchResult> searchResults)
+    {
+        var citations = new List<Citation>();
+
+        for (int i = 0; i < searchResults.Count; i++)
+        {
+            var result = searchResults[i];
+            citations.Add(new Citation
+            {
+                SourceFile = result.Filename,
+                PageNumber = result.PageNumber,
+                Similarity = result.Similarity,
+                ChunkText = result.Content.Length > 100
+                    ? result.Content.Substring(0, 100) + "..."
+                    : result.Content
+            });
+        }
+
+        return citations;
     }
 
     public void Dispose()
@@ -144,3 +143,25 @@ public class RAGService : IDisposable
         _vectorDb?.Dispose();
     }
 }
+
+/// <summary>
+/// RAG 上下文结果
+/// </summary>
+public class RAGContext
+{
+    /// <summary>
+    /// 构建的上下文文本（用于拼接到 Prompt）
+    /// </summary>
+    public string ContextText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 引用列表（用于 UI 显示）
+    /// </summary>
+    public List<Citation> Citations { get; set; } = new();
+
+    /// <summary>
+    /// 原始搜索结果
+    /// </summary>
+    public List<SearchResult> Results { get; set; } = new();
+}
+
