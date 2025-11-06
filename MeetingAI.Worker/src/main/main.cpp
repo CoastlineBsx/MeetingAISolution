@@ -59,6 +59,9 @@ static float g_temperature = 0.7f;
 // ========== Embedding GenAI 全局实例 ==========
 static std::unique_ptr<meetingai::embedding::EmbeddingGenAI> g_embedding;
 
+// ========== 设备配置 ==========
+static std::string g_device = "CPU";  // 默认使用 CPU
+
 // ========== 工具函数：获取环境变量 ==========
 static std::string GetEnvOrDefault(const char* key, const char* fallback) {
     char* buf = nullptr;
@@ -259,7 +262,7 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
     try {
         // 确保模型已加载（懒加载）
         std::call_once(g_granite_once, [&] {
-            InitializeGraniteGenAI(hPipe, "GPU");
+            InitializeGraniteGenAI(hPipe, g_device);
         });
 
         if (!g_granite) {
@@ -288,6 +291,16 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
             std::wcout << L"[Granite] 单轮生成: " << prompt.c_str() << L"\n";
 
             g_granite->generateStream(prompt, [&](const std::string& token) {
+                // ===== DEBUG: 打印 token 的原始字节 =====
+                std::wcout << L"[DEBUG] Token length: " << token.size() << L" bytes" << std::endl;
+                std::wcout << L"[DEBUG] Token hex: ";
+                for (unsigned char c : token) {
+                    std::wcout << std::hex << std::setw(2) << std::setfill(L'0') << (int)c << L" ";
+                }
+                std::wcout << std::dec << std::endl;
+                std::wcout << L"[DEBUG] Token string: \"" << token.c_str() << L"\"" << std::endl;
+                // ===== END DEBUG =====
+
                 std::string chunk = "{\"type\":\"token\",\"text\":\"" +
                     meetingai::proto::jsonEscape(token) + "\"}\n";
                 write_json(chunk);
@@ -311,6 +324,16 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
             std::wcout << L"[Granite] 多轮对话: " << prompt.c_str() << L"\n";
 
             g_granite->chatStream(prompt, [&](const std::string& token) {
+                // ===== DEBUG: 打印 token 的原始字节 =====
+                std::wcout << L"[DEBUG] Token length: " << token.size() << L" bytes" << std::endl;
+                std::wcout << L"[DEBUG] Token hex: ";
+                for (unsigned char c : token) {
+                    std::wcout << std::hex << std::setw(2) << std::setfill(L'0') << (int)c << L" ";
+                }
+                std::wcout << std::dec << std::endl;
+                std::wcout << L"[DEBUG] Token string: \"" << token.c_str() << L"\"" << std::endl;
+                // ===== END DEBUG =====
+
                 std::string chunk = "{\"type\":\"token\",\"text\":\"" +
                     meetingai::proto::jsonEscape(token) + "\"}\n";
                 write_json(chunk);
@@ -339,7 +362,7 @@ static void handleEmbeddingCommand(HANDLE hPipe, const std::string& command) {
     try {
         // 确保模型已加载（懒加载）
         std::call_once(g_embedding_once, [&] {
-            InitializeEmbeddingGenAI(hPipe, "GPU");
+            InitializeEmbeddingGenAI(hPipe, g_device);
         });
 
         if (!g_embedding) {
@@ -543,11 +566,17 @@ int wmain() {
         }
     }
 
-    // 检查是否传入 --ppid 参数（Host PID）
+    // 检查是否传入 --ppid 和 --device 参数
     DWORD parentPid = 0;
     for (int i = 1; i < __argc; i++) {
         if (std::wstring(__wargv[i]) == L"--ppid" && i + 1 < __argc) {
             parentPid = std::wcstoul(__wargv[++i], nullptr, 10);
+        }
+        else if (std::wstring(__wargv[i]) == L"--device" && i + 1 < __argc) {
+            // 解析 --device 参数（CPU/GPU/NPU）
+            std::wstring wdevice = __wargv[++i];
+            g_device = std::string(wdevice.begin(), wdevice.end());
+            std::wcout << L"[Worker] Device 参数: " << wdevice.c_str() << L"\n";
         }
     }
 

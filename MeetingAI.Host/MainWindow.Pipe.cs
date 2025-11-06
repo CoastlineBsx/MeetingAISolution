@@ -114,7 +114,7 @@ public sealed partial class MainWindow : Window
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                Arguments = $"--ppid {Environment.ProcessId}"
+                Arguments = $"--ppid {Environment.ProcessId} --device GPU"
             });
 
             await Task.Delay(700);

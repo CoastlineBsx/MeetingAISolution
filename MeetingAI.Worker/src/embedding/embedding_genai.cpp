@@ -9,16 +9,26 @@ EmbeddingGenAI::EmbeddingGenAI(const std::string& model_path, const std::string&
     try {
         // 加载 Tokenizer
         tokenizer_ = std::make_unique<ov::genai::Tokenizer>(model_path);
-        
+
         // 加载模型
         std::string model_file = model_path + "/openvino_model.xml";
         auto model = core_.read_model(model_file);
+
+        //// 配置性能参数：充分利用 CPU 核心
+        //ov::AnyMap config;
+        //if (device == "CPU") {
+        //    config["INFERENCE_NUM_THREADS"] = "24";
+        //    config["PERFORMANCE_HINT"] = "THROUGHPUT";  // 吞吐量优先
+        //    std::cout << "[Embedding GenAI] 🚀 CPU 配置: 24 线程, 吞吐量模式" << std::endl;
+        //}
+
+        //compiled_model_ = core_.compile_model(model, device, config);
         compiled_model_ = core_.compile_model(model, device);
-        
+
         // bge-m3 固定维度为 1024
         embedding_dim_ = 1024;
-        
-        std::cout << "[Embedding GenAI] ✅ Initialized on " << device 
+
+        std::cout << "[Embedding GenAI] ✅ Initialized on " << device
                   << ", dim=" << embedding_dim_ << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[Embedding GenAI] ❌ Failed: " << e.what() << std::endl;

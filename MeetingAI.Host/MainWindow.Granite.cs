@@ -86,7 +86,7 @@ public sealed partial class MainWindow : Window
             {
                 var finishCmd = JsonSerializer.Serialize(
                     new GraniteFinishChatCommand(),
-                    AppJsonContext.Default.GraniteFinishChatCommand
+                    AppJsonContext.Utf8.GraniteFinishChatCommand
                 ) + "\n";
                 await SendJsonAsync(finishCmd);
             }
@@ -116,7 +116,7 @@ public sealed partial class MainWindow : Window
                 {
                     system_message = GetSystemPrompt()
                 },
-                AppJsonContext.Default.GraniteStartChatCommand
+                AppJsonContext.Utf8.GraniteStartChatCommand
             ) + "\n";
 
             await SendJsonAsync(startCmd);
@@ -146,7 +146,7 @@ public sealed partial class MainWindow : Window
             {
                 var finishCmd = JsonSerializer.Serialize(
                     new GraniteFinishChatCommand(),
-                    AppJsonContext.Default.GraniteFinishChatCommand
+                    AppJsonContext.Utf8.GraniteFinishChatCommand
                 ) + "\n";
                 await SendJsonAsync(finishCmd);
 
@@ -155,7 +155,7 @@ public sealed partial class MainWindow : Window
                     {
                         system_message = GetSystemPrompt()
                     },
-                    AppJsonContext.Default.GraniteStartChatCommand
+                    AppJsonContext.Utf8.GraniteStartChatCommand
                 ) + "\n";
                 await SendJsonAsync(startCmd);
 
@@ -282,7 +282,7 @@ public sealed partial class MainWindow : Window
                     max_tokens = maxTokens,
                     temperature = temperature
                 };
-                json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.GraniteGenerateStreamCommand) + "\n";
+                json = JsonSerializer.Serialize(cmd, AppJsonContext.Utf8.GraniteGenerateStreamCommand) + "\n";
             }
             else
             {
@@ -292,7 +292,7 @@ public sealed partial class MainWindow : Window
                     max_tokens = maxTokens,
                     temperature = temperature
                 };
-                json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.GraniteChatStreamCommand) + "\n";
+                json = JsonSerializer.Serialize(cmd, AppJsonContext.Utf8.GraniteChatStreamCommand) + "\n";
             }
 
             await SendJsonAsync(json);

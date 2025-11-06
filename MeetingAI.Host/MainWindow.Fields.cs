@@ -92,5 +92,10 @@ public sealed partial class MainWindow : Window
     private bool _isRAGMode = false;  // RAG 模式开关
     private bool _isRAGInitialized = false;
 
+    // ========== 文档管理相关 ==========
+    private MeetingAI.Host.RAG.Services.DocumentProcessor? _documentProcessor;
+    private MeetingAI.Host.RAG.Services.DocumentChunker? _documentChunker;
+    private System.Collections.ObjectModel.ObservableCollection<MeetingAI.Host.RAG.VectorStore.DocumentInfo>? _documentList;
+
     private const string PipeName = "MeetingAI_Pipe";
 }

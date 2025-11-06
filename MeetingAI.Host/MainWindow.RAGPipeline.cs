@@ -37,7 +37,7 @@ public sealed partial class MainWindow : Window
 
             // 构建并发送命令
             var cmd = new EmbeddingEncodeCommand { prompt = text };
-            var json = JsonSerializer.Serialize(cmd, AppJsonContext.Default.EmbeddingEncodeCommand) + "\n";
+            var json = JsonSerializer.Serialize(cmd, AppJsonContext.Utf8.EmbeddingEncodeCommand) + "\n";
             await SendJsonAsync(json);
 
             // 等待响应（会在 MainWindow.Pipe.cs 的读循环中设置结果）

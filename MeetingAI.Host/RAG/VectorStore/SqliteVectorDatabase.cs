@@ -41,7 +41,9 @@ public class SqliteVectorDatabase : IDisposable
                 file_type TEXT,
                 language TEXT,
                 upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                total_chunks INTEGER DEFAULT 0
+                total_chunks INTEGER DEFAULT 0,
+                file_size INTEGER DEFAULT 0,
+                has_ocr INTEGER DEFAULT 0
             );";
 
         var createChunksTable = @"
@@ -61,23 +63,68 @@ public class SqliteVectorDatabase : IDisposable
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = createDocumentsTable + createChunksTable + createIndexes;
         await cmd.ExecuteNonQueryAsync();
+
+        // 数据库迁移：添加缺失的列（兼容旧版本数据库）
+        await MigrateSchemaAsync();
     }
 
-    public async Task<long> AddDocumentAsync(string filename, string filepath, string fileType, string language)
+    /// <summary>
+    /// 数据库迁移：为旧表添加新列
+    /// </summary>
+    private async Task MigrateSchemaAsync()
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        // 检查 file_size 列是否存在
+        var checkFileSizeColumn = @"
+            SELECT COUNT(*) FROM pragma_table_info('documents')
+            WHERE name='file_size';";
+
+        using var checkCmd = _connection.CreateCommand();
+        checkCmd.CommandText = checkFileSizeColumn;
+        var fileSizeExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+
+        if (!fileSizeExists)
+        {
+            using var alterCmd = _connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE documents ADD COLUMN file_size INTEGER DEFAULT 0;";
+            await alterCmd.ExecuteNonQueryAsync();
+        }
+
+        // 检查 has_ocr 列是否存在
+        var checkHasOcrColumn = @"
+            SELECT COUNT(*) FROM pragma_table_info('documents')
+            WHERE name='has_ocr';";
+
+        checkCmd.CommandText = checkHasOcrColumn;
+        var hasOcrExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+
+        if (!hasOcrExists)
+        {
+            using var alterCmd = _connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE documents ADD COLUMN has_ocr INTEGER DEFAULT 0;";
+            await alterCmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    public async Task<long> AddDocumentAsync(string filename, string filepath, string fileType, string language, long fileSize = 0, bool hasOcr = false)
     {
         if (_connection == null)
             throw new InvalidOperationException("Database not initialized");
 
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO documents (filename, filepath, file_type, language)
-            VALUES (@filename, @filepath, @fileType, @language);
+            INSERT INTO documents (filename, filepath, file_type, language, file_size, has_ocr)
+            VALUES (@filename, @filepath, @fileType, @language, @fileSize, @hasOcr);
             SELECT last_insert_rowid();";
 
         cmd.Parameters.AddWithValue("@filename", filename);
         cmd.Parameters.AddWithValue("@filepath", filepath);
         cmd.Parameters.AddWithValue("@fileType", fileType);
         cmd.Parameters.AddWithValue("@language", language);
+        cmd.Parameters.AddWithValue("@fileSize", fileSize);
+        cmd.Parameters.AddWithValue("@hasOcr", hasOcr ? 1 : 0);
 
         var result = await cmd.ExecuteScalarAsync();
         return Convert.ToInt64(result);
@@ -181,7 +228,7 @@ public class SqliteVectorDatabase : IDisposable
         var documents = new List<DocumentInfo>();
 
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT doc_id, filename, file_type, language, upload_time, total_chunks FROM documents;";
+        cmd.CommandText = "SELECT doc_id, filename, file_type, language, upload_time, total_chunks, file_size, has_ocr FROM documents ORDER BY upload_time DESC;";
 
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
@@ -193,11 +240,50 @@ public class SqliteVectorDatabase : IDisposable
                 FileType = reader.GetString(2),
                 Language = reader.GetString(3),
                 UploadTime = reader.GetDateTime(4),
-                TotalChunks = reader.GetInt32(5)
+                TotalChunks = reader.GetInt32(5),
+                FileSize = reader.GetInt64(6),
+                HasOcr = reader.GetInt32(7) == 1
             });
         }
 
         return documents;
+    }
+
+    public async Task<DocumentStats> GetDocumentStatsAsync()
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT
+                COUNT(*) as total_docs,
+                SUM(total_chunks) as total_chunks,
+                SUM(CASE WHEN has_ocr = 1 THEN 1 ELSE 0 END) as ocr_docs
+            FROM documents;";
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return new DocumentStats
+            {
+                TotalDocuments = reader.IsDBNull(0) ? 0 : reader.GetInt32(0),
+                TotalChunks = reader.IsDBNull(1) ? 0 : reader.GetInt32(1),
+                OcrDocuments = reader.IsDBNull(2) ? 0 : reader.GetInt32(2)
+            };
+        }
+
+        return new DocumentStats();
+    }
+
+    public async Task DeleteAllDocumentsAsync()
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM documents;";
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task DeleteDocumentAsync(long docId)
@@ -268,4 +354,27 @@ public class DocumentInfo
     public string Language { get; set; } = string.Empty;
     public DateTime UploadTime { get; set; }
     public int TotalChunks { get; set; }
+    public long FileSize { get; set; }
+    public bool HasOcr { get; set; }
+
+    // UI 显示辅助属性
+    public string FileSizeDisplay => FormatFileSize(FileSize);
+    public string UploadTimeDisplay => UploadTime.ToString("MM-dd HH:mm");
+    public string OcrBadge => HasOcr ? "✓" : "-";
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes}B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024}KB";
+        return $"{bytes / (1024 * 1024)}MB";
+    }
+}
+
+public class DocumentStats
+{
+    public int TotalDocuments { get; set; }
+    public int TotalChunks { get; set; }
+    public int OcrDocuments { get; set; }
+
+    public string DisplayText => $"📊 {TotalDocuments}文档 | {TotalChunks}块 | {OcrDocuments}OCR";
 }

@@ -56,7 +56,7 @@ public sealed partial class MainWindow : Window
             _ragService = new RAGService(
                 _vectorDb,
                 _embeddingService,
-                topK: 3  // 默认检索前3个最相关的文档块
+                topK: 2  // 默认检索前2个最相关的文档块
             );
 
             await AppendLineAsync("[RAG] RAG 服务已就绪");
@@ -67,6 +67,9 @@ public sealed partial class MainWindow : Window
             // 显示现有文档数量
             var docs = await _ragService.GetAllDocumentsAsync();
             await AppendLineAsync($"[RAG] 当前知识库文档数: {docs.Count}");
+
+            // 初始化文档管理功能
+            InitializeDocumentManagement();
         }
         catch (Exception ex)
         {
