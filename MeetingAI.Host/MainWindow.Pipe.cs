@@ -143,6 +143,7 @@ public sealed partial class MainWindow : Window
             BtnMeetingBeta2.IsEnabled = true;
             BtnStop.IsEnabled = true;
             BtnTestEmbedding.IsEnabled = true;
+            BtnTestSimilarity.IsEnabled = true;
             BtnStart.IsEnabled = false;
 
             // 启用 Granite 对话功能
@@ -306,6 +307,41 @@ public sealed partial class MainWindow : Window
                         await AppendLineAsync($"[Embedding] ✅ 模型已就绪 (device={device}, dim={dim})");
                     }
                     catch { }
+                    continue;
+                }
+
+                // ========== 相似度诊断测试结果 ==========
+                if (line.Contains("\"type\":\"similarity_test_result\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+
+                        await AppendLineAsync("\n========== 相似度诊断结果 ==========");
+
+                        if (root.TryGetProperty("pairs", out var pairsArray))
+                        {
+                            for (int i = 0; i < pairsArray.GetArrayLength(); i++)
+                            {
+                                var pair = pairsArray[i];
+                                string text1 = pair.TryGetProperty("text1", out var t1) ? (t1.GetString() ?? "") : "";
+                                string text2 = pair.TryGetProperty("text2", out var t2) ? (t2.GetString() ?? "") : "";
+                                float similarity = pair.TryGetProperty("similarity", out var sim) ? sim.GetSingle() : 0f;
+
+                                await AppendLineAsync($"\n[对比 {i + 1}]");
+                                await AppendLineAsync($"  文本1: {text1}");
+                                await AppendLineAsync($"  文本2: {text2}");
+                                await AppendLineAsync($"  相似度: {similarity:F4} ({similarity * 100:F2}%)");
+                            }
+                        }
+
+                        await AppendLineAsync("\n====================================\n");
+                    }
+                    catch (Exception ex)
+                    {
+                        await AppendLineAsync($"[诊断] 解析结果异常: {ex.Message}");
+                    }
                     continue;
                 }
 

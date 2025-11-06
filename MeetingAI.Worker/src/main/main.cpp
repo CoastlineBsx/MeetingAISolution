@@ -399,6 +399,92 @@ static void handleEmbeddingCommand(HANDLE hPipe, const std::string& command) {
             write_json(response);
             std::wcout << L"[Embedding] ✅ 编码完成 (dim=" << embedding.size() << L")\n";
         }
+        else if (command.find("\"embedding_test_similarity\"") != std::string::npos) {
+            // 诊断测试：测试多组文本对的相似度
+            std::wcout << L"[Embedding] 开始相似度诊断测试...\n";
+
+            // 测试用的文本对（覆盖不同类型）
+            std::vector<std::pair<std::string, std::string>> test_pairs = {
+                // === 组1：简单问候 vs 专业内容 ===
+                {"你好", "量子力学的基本原理包括波粒二象性和不确定性原理"},
+                {"你好", "白少雄在伦敦大学学院攻读法学硕士"},
+                {"早上好", "神经网络的反向传播算法是深度学习的核心"},
+                {"谢谢", "区块链技术采用分布式账本来确保数据安全"},
+
+                // === 组2：日常对话 vs 技术内容 ===
+                {"今天天气如何", "深度学习模型使用反向传播算法进行训练"},
+                {"吃饭了吗", "自然语言处理需要大量的语料库进行训练"},
+                {"周末愉快", "卷积神经网络广泛应用于图像识别领域"},
+
+                // === 组3：单个词 vs 长文本 ===
+                {"苹果", "TCP/IP协议是互联网通信的基础协议栈"},
+                {"学习", "人工智能的发展需要数学、统计学和计算机科学的结合"},
+                {"电脑", "量子计算机利用量子叠加态进行并行计算"},
+
+                // === 组4：人名相关（应该高相似度）===
+                {"白少雄", "白少雄是一个计算机科学博士生"},
+                {"白少雄", "白少雄在伦敦大学学院学习"},
+                {"白少雄研究", "白少雄的研究方向是人工智能与法律"},
+
+                // === 组5：语义相关（应该中等相似度）===
+                {"机器学习", "人工智能是计算机科学的一个重要分支"},
+                {"深度学习", "神经网络是模拟人脑工作的计算模型"},
+                {"算法", "数据结构是计算机程序设计的基础"},
+
+                // === 组6：完全无关 ===
+                {"猫", "火箭发射需要精确的轨道计算"},
+                {"音乐", "化学反应的速率取决于温度和催化剂"},
+                {"颜色", "经济学研究资源的稀缺性和配置效率"},
+
+                // === 组7：抽象概念 vs 具体描述 ===
+                {"爱情", "心理学家认为人际关系建立在相互理解的基础上"},
+                {"自由", "政治哲学探讨个人权利与社会责任的平衡"},
+                {"科学", "实验方法是验证假设的重要手段"},
+
+                // === 组8：短语 vs 相关内容 ===
+                {"人工智能应用", "机器学习在医疗诊断中发挥重要作用"},
+                {"数据分析", "统计学方法帮助我们从数据中提取有价值的信息"},
+                {"编程语言", "Python因其简洁的语法而受到数据科学家的青睐"},
+
+                // === 组9：短语 vs 不相关内容 ===
+                {"编程学习", "美食烹饪需要掌握火候和调味技巧"},
+                {"数学公式", "旅游景点的选择应考虑季节和交通便利性"},
+                {"计算机网络", "园艺爱好者应该了解植物的生长习性"}
+            };
+
+            std::string result = "{\"type\":\"similarity_test_result\",\"pairs\":[";
+
+            for (size_t i = 0; i < test_pairs.size(); i++) {
+                const auto& pair = test_pairs[i];
+
+                // 计算两个文本的 embedding
+                auto emb1 = g_embedding->encode(pair.first);
+                auto emb2 = g_embedding->encode(pair.second);
+
+                // 计算余弦相似度
+                float dot = 0.0f, norm1 = 0.0f, norm2 = 0.0f;
+                for (size_t j = 0; j < emb1.size(); j++) {
+                    dot += emb1[j] * emb2[j];
+                    norm1 += emb1[j] * emb1[j];
+                    norm2 += emb2[j] * emb2[j];
+                }
+                float similarity = dot / (sqrtf(norm1) * sqrtf(norm2));
+
+                // 构建 JSON
+                result += "{\"text1\":\"" + meetingai::proto::jsonEscape(pair.first) + "\",";
+                result += "\"text2\":\"" + meetingai::proto::jsonEscape(pair.second) + "\",";
+                result += "\"similarity\":" + std::to_string(similarity) + "}";
+
+                if (i < test_pairs.size() - 1) result += ",";
+
+                std::wcout << L"[Test] '" << pair.first.c_str() << L"' vs '"
+                          << pair.second.c_str() << L"' = " << similarity << L"\n";
+            }
+
+            result += "]}\n";
+            write_json(result);
+            std::wcout << L"[Embedding] ✅ 诊断测试完成\n";
+        }
     }
     catch (const std::exception& e) {
         std::wcerr << L"[Embedding] 处理命令异常: " << e.what() << L"\n";

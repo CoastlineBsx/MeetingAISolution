@@ -244,13 +244,58 @@ void HandlePipeCommands(HANDLE hPipe) {
                     continue;
                 }
 
-                // 3. 构建 RAG Prompt
-                std::ostringstream prompt;
-                prompt << "参考以下文档内容回答问题：\n\n";
-                for (size_t i = 0; i < chunks.size(); i++) {
-                    prompt << "[文档片段 " << (i + 1) << "]\n" << chunks[i].text << "\n\n";
+                // 3. 智能过滤：绝对阈值 + 相对排序
+                const float ABSOLUTE_THRESHOLD = 0.50f;  // 绝对相似度阈值
+                const float RELATIVE_GAP = 1.3f;         // Top1 应该比 Top2 高出 30%
+
+                std::vector<RetrievalResult> relevant_chunks;
+
+                // 3.1 检查 Top1 是否足够相关
+                if (!chunks.empty() && chunks[0].similarity >= ABSOLUTE_THRESHOLD) {
+                    // 3.2 检查 Top1 是否明显高于 Top2（相对过滤）
+                    bool top1_outstanding = true;
+                    if (chunks.size() >= 2) {
+                        float ratio = chunks[0].similarity / chunks[1].similarity;
+                        if (ratio < RELATIVE_GAP) {
+                            // Top1 和 Top2 差距太小，可能都不太相关
+                            top1_outstanding = false;
+                            std::wcout << L"[RAG] Top1 相似度不够突出 ("
+                                      << chunks[0].similarity << L" vs "
+                                      << chunks[1].similarity << L")，回退到普通模式\n";
+                        }
+                    }
+
+                    // 3.3 如果 Top1 足够突出，收集所有超过阈值的文档
+                    if (top1_outstanding) {
+                        for (const auto& chunk : chunks) {
+                            if (chunk.similarity >= ABSOLUTE_THRESHOLD) {
+                                relevant_chunks.push_back(chunk);
+                            }
+                        }
+                        std::wcout << L"[RAG] 找到 " << relevant_chunks.size()
+                                  << L" 个相关文档（Top1=" << chunks[0].similarity << L")\n";
+                    }
+                } else {
+                    std::wcout << L"[RAG] 相似度过低（"
+                              << (chunks.empty() ? 0.0f : chunks[0].similarity)
+                              << L" < " << ABSOLUTE_THRESHOLD << L")，回退到普通模式\n";
                 }
-                prompt << "问题：" << query << "\n\n请基于上述文档内容回答：";
+
+                // 4. 构建 RAG Prompt
+                std::ostringstream prompt;
+                if (relevant_chunks.empty()) {
+                    // 没有相关文档，回退到普通对话模式
+                    prompt << "用户问题：" << query << "\n\n请直接回答用户的问题。";
+                } else {
+                    // 有相关文档，使用 RAG 模式
+                    prompt << "你是一个智能助手。以下是一些可能相关的文档片段，请仅在它们与问题确实相关时使用。如果文档内容与问题无关，请忽略它们并直接回答问题。\n\n";
+                    prompt << "=== 参考文档 ===\n";
+                    for (size_t i = 0; i < relevant_chunks.size(); i++) {
+                        prompt << "[文档 " << (i + 1) << "] (相似度: " << std::fixed << std::setprecision(2) << relevant_chunks[i].similarity << ")\n";
+                        prompt << relevant_chunks[i].text << "\n\n";
+                    }
+                    prompt << "=== 用户问题 ===\n" << query << "\n\n请回答：";
+                }
 
                 // 4. 流式生成
                 g_granite->generateStream(prompt.str(), [&](const std::string& tok) {

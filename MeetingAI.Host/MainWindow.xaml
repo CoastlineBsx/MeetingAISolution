@@ -52,6 +52,7 @@
 
                 <Button x:Name="BtnStop"  Content="停止 Worker" Click="BtnStop_Click" IsEnabled="False"/>
                 <Button x:Name="BtnTestEmbedding" Content="🧪 测试Embedding" Click="BtnTestEmbedding_Click" IsEnabled="False"/>
+                <Button x:Name="BtnTestSimilarity" Content="🔍 诊断相似度" Click="BtnTestSimilarity_Click" IsEnabled="False"/>
                 <TextBlock x:Name="LblStatus" Margin="12,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
 

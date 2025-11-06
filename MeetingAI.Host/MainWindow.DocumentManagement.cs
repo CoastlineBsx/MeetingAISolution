@@ -35,7 +35,7 @@ public sealed partial class MainWindow : Window
 
             // 初始化文档处理器和分块器
             _documentProcessor = new DocumentProcessor(tesseractDataPath);
-            _documentChunker = new DocumentChunker(targetChunkSize: 800, maxChunkSize: 1200, overlapSize: 100);
+            _documentChunker = new DocumentChunker(targetChunkSize: 500, maxChunkSize: 750, overlapSize: 100);
 
             // 初始化文档列表
             _documentList = new ObservableCollection<DocumentInfo>();

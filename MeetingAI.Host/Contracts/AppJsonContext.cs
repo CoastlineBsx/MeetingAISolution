@@ -20,6 +20,9 @@ namespace MeetingAI.Host.Contracts;
 [JsonSerializable(typeof(EmbeddingEncodeCommand))]
 [JsonSerializable(typeof(EmbeddingResult))]
 [JsonSerializable(typeof(EmbeddingReadyMessage))]
+[JsonSerializable(typeof(TestSimilarityCommand))]
+[JsonSerializable(typeof(SimilarityTestResult))]
+[JsonSerializable(typeof(SimilarityPair))]
 internal partial class AppJsonContext : JsonSerializerContext
 {
     // 延迟初始化：创建一个允许直接输出中文字符（UTF-8）的上下文
