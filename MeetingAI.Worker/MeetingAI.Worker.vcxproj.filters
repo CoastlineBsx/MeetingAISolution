@@ -377,7 +377,6 @@
     <None Include="third_party\openvino_genai\bin\intel64\Release\openvino_tokenizers.dll">
       <Filter>third_party\openvino_genai\bin\intel64\Release</Filter>
     </None>
-    <None Include="packages.config" />
     <None Include="packages.lock.json" />
     <None Include="third_party\openvino_genai\bin\intel64\Debug\tbb12_debug.dll">
       <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
@@ -394,6 +393,7 @@
     <None Include="models\bge-m3-npu\tokenizer.json">
       <Filter>models\bge-m3-npu</Filter>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="third_party\whisper\lib\x64\Debug\ggml.lib">

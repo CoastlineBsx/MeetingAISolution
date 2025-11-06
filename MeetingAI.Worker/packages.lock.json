@@ -4,9 +4,9 @@
     "native,Version=v0.0": {
       "Microsoft.Windows.CppWinRT": {
         "type": "Direct",
-        "requested": "[2.0.220531.1, 2.0.220531.1]",
-        "resolved": "2.0.220531.1",
-        "contentHash": "AXgGTdnDDIyqtRvWuWkazhIHPsAO8g8msFQDAeFwggerjBgoXwjxY3DbwbDj/GYKWM1PYZTjEHPNERnHJHSheA=="
+        "requested": "[2.0.250303.1, 2.0.250303.1]",
+        "resolved": "2.0.250303.1",
+        "contentHash": "9ofajkdPu3wuic60KKXAyCgCCGMXTlyd8KEnCzY5hVwqS8o17zwDLrJElFRx7vEf/Tr/QF2uDNDYdsYlg6TKCw=="
       }
     }
   }

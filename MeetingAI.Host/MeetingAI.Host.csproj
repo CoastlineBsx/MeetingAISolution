@@ -51,11 +51,14 @@
 
   <!-- WinUI / Windows App SDK 依赖 -->
   <ItemGroup>
+    <PackageReference Include="Docnet.Core" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="NAudio" />
     <PackageReference Include="FFMpegCore" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Tesseract" />
   </ItemGroup>
 
   <!-- 让“打包和发布”菜单可用（保持原样） -->
@@ -89,6 +92,10 @@
   <ItemGroup>
     <Compile Update="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\include\MddBootstrapAutoInitializer.cs" Link="MddBootstrapAutoInitializer.cs" />
   </ItemGroup>
-
+  <ItemGroup>
+	<None Include="tessdata\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	</None>
+  </ItemGroup>
 
 </Project>
