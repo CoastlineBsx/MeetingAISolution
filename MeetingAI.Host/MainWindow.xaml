@@ -20,6 +20,16 @@
             <!-- 第一行：基础控制 -->
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button x:Name="BtnStart" Content="启动 Worker" Click="BtnStart_Click"/>
+                <ComboBox x:Name="CmbGraniteDevice" SelectedIndex="1" MinWidth="110" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🧠 Granite-CPU"/>
+                    <ComboBoxItem Content="🧠 Granite-GPU"/>
+                    <ComboBoxItem Content="🧠 Granite-NPU"/>
+                </ComboBox>
+                <ComboBox x:Name="CmbEmbeddingDevice" SelectedIndex="1" MinWidth="130" VerticalAlignment="Center">
+                    <ComboBoxItem Content="📊 Embedding-CPU"/>
+                    <ComboBoxItem Content="📊 Embedding-GPU"/>
+                    <ComboBoxItem Content="📊 Embedding-NPU"/>
+                </ComboBox>
                 <Button x:Name="BtnPing"  Content="发送测试消息" Click="BtnPing_Click" IsEnabled="False"/>
 
                 <!-- 测试转录组 -->

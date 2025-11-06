@@ -60,7 +60,8 @@ static float g_temperature = 0.7f;
 static std::unique_ptr<meetingai::embedding::EmbeddingGenAI> g_embedding;
 
 // ========== 设备配置 ==========
-static std::string g_device = "CPU";  // 默认使用 CPU
+static std::string g_granite_device = "GPU";   // Granite LLM 使用的设备
+static std::string g_embedding_device = "GPU"; // Embedding 使用的设备
 
 // ========== 工具函数：获取环境变量 ==========
 static std::string GetEnvOrDefault(const char* key, const char* fallback) {
@@ -262,7 +263,7 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
     try {
         // 确保模型已加载（懒加载）
         std::call_once(g_granite_once, [&] {
-            InitializeGraniteGenAI(hPipe, g_device);
+            InitializeGraniteGenAI(hPipe, g_granite_device);
         });
 
         if (!g_granite) {
@@ -362,7 +363,7 @@ static void handleEmbeddingCommand(HANDLE hPipe, const std::string& command) {
     try {
         // 确保模型已加载（懒加载）
         std::call_once(g_embedding_once, [&] {
-            InitializeEmbeddingGenAI(hPipe, g_device);
+            InitializeEmbeddingGenAI(hPipe, g_embedding_device);
         });
 
         if (!g_embedding) {
@@ -566,17 +567,21 @@ int wmain() {
         }
     }
 
-    // 检查是否传入 --ppid 和 --device 参数
+    // 解析命令行参数：--ppid, --granite-device, --embedding-device
     DWORD parentPid = 0;
     for (int i = 1; i < __argc; i++) {
         if (std::wstring(__wargv[i]) == L"--ppid" && i + 1 < __argc) {
             parentPid = std::wcstoul(__wargv[++i], nullptr, 10);
         }
-        else if (std::wstring(__wargv[i]) == L"--device" && i + 1 < __argc) {
-            // 解析 --device 参数（CPU/GPU/NPU）
+        else if (std::wstring(__wargv[i]) == L"--granite-device" && i + 1 < __argc) {
             std::wstring wdevice = __wargv[++i];
-            g_device = std::string(wdevice.begin(), wdevice.end());
-            std::wcout << L"[Worker] Device 参数: " << wdevice.c_str() << L"\n";
+            g_granite_device = std::string(wdevice.begin(), wdevice.end());
+            std::wcout << L"[Worker] Granite 设备: " << wdevice.c_str() << L"\n";
+        }
+        else if (std::wstring(__wargv[i]) == L"--embedding-device" && i + 1 < __argc) {
+            std::wstring wdevice = __wargv[++i];
+            g_embedding_device = std::string(wdevice.begin(), wdevice.end());
+            std::wcout << L"[Worker] Embedding 设备: " << wdevice.c_str() << L"\n";
         }
     }
 

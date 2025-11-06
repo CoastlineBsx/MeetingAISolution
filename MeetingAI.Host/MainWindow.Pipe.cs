@@ -110,11 +110,27 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
+            // 读取设备选择 (0=CPU, 1=GPU, 2=NPU)
+            string graniteDevice = CmbGraniteDevice.SelectedIndex switch
+            {
+                0 => "CPU",
+                2 => "NPU",
+                _ => "GPU"
+            };
+            string embeddingDevice = CmbEmbeddingDevice.SelectedIndex switch
+            {
+                0 => "CPU",
+                2 => "NPU",
+                _ => "GPU"
+            };
+
+            await AppendLineAsync($"[Host] 设备配置: Granite={graniteDevice}, Embedding={embeddingDevice}");
+
             _worker = Process.Start(new ProcessStartInfo(workerPath)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                Arguments = $"--ppid {Environment.ProcessId} --device GPU"
+                Arguments = $"--ppid {Environment.ProcessId} --granite-device {graniteDevice} --embedding-device {embeddingDevice}"
             });
 
             await Task.Delay(700);
