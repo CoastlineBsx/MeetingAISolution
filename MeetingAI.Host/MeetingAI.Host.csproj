@@ -14,26 +14,7 @@
     <!-- 保持默认：自动包含 App.xaml / *.xaml，避免重复 -->
     <!-- 不要设置 EnableDefaultPageItems=false -->
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="Configuration\**" />
-    <Compile Remove="Presentation\**" />
-    <Compile Remove="Services\**" />
-    <Content Remove="Configuration\**" />
-    <Content Remove="Presentation\**" />
-    <Content Remove="Services\**" />
-    <EmbeddedResource Remove="Configuration\**" />
-    <EmbeddedResource Remove="Presentation\**" />
-    <EmbeddedResource Remove="Services\**" />
-    <None Remove="Configuration\**" />
-    <None Remove="Presentation\**" />
-    <None Remove="Services\**" />
-    <Page Remove="Configuration\**" />
-    <Page Remove="Presentation\**" />
-    <Page Remove="Services\**" />
-    <PRIResource Remove="Configuration\**" />
-    <PRIResource Remove="Presentation\**" />
-    <PRIResource Remove="Services\**" />
-  </ItemGroup>
+
 
   <ItemGroup>
     <Content Include="Assets\SplashScreen.scale-200.png" />
@@ -70,28 +51,28 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
 
-  <!-- 发布设置：Host层因有UI/音频/COM依赖，禁用裁剪 -->
-  <PropertyGroup>
-    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
-    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <!-- Host层禁用Trim：保留完整COM/WinRT/NAudio支持 -->
-    <PublishTrimmed>False</PublishTrimmed>
-    <EnableComHosting>true</EnableComHosting>
-    <EnableGeneratedComInterfaceComImportInterop>true</EnableGeneratedComInterfaceComImportInterop>
-  <OutputPath>$(SolutionDir)artifacts\bin\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</OutputPath>
-  <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-  <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
-    <WindowsPackageType>None</WindowsPackageType>
-  </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\buildTransitive\..\include\WindowsAppSDK-VersionInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Update="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\include\WindowsAppSDK-VersionInfo.cs" Link="WindowsAppSDK-VersionInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Update="C:\Users\Shaoxiong Bai\.nuget\packages\microsoft.windowsappsdk\1.7.250606001\include\MddBootstrapAutoInitializer.cs" Link="MddBootstrapAutoInitializer.cs" />
-  </ItemGroup>
+	
+
+	<PropertyGroup>
+		<!-- 发布/运行时设置：保持你原来的这些 -->
+		<PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
+		<PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
+		<PublishTrimmed>False</PublishTrimmed>
+		<EnableComHosting>true</EnableComHosting>
+		<EnableGeneratedComInterfaceComImportInterop>true</EnableGeneratedComInterfaceComImportInterop>
+		<WindowsPackageType>None</WindowsPackageType>
+
+		<!-- 统一输出目录（和 C++ 对齐）：Configuration → Platform → ProjectName -->
+		<BaseOutputPath>$(SolutionDir)artifacts\bin\$(Configuration)\$(Platform)\$(ProjectName)\</BaseOutputPath>
+		<BaseIntermediateOutputPath>$(SolutionDir)artifacts\obj\$(Configuration)\$(Platform)\$(ProjectName)\</BaseIntermediateOutputPath>
+
+		<!-- 保留 TFM/RID 子目录，避免未来多框架/多 RID 覆盖 -->
+		<AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+		<AppendRuntimeIdentifierToOutputPath>true</AppendRuntimeIdentifierToOutputPath>
+	</PropertyGroup>
+
+
+
   <ItemGroup>
 	<None Include="tessdata\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
