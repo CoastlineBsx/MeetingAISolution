@@ -201,8 +201,8 @@ static void InitializeGraniteGenAI(HANDLE hPipe, const std::string& device = "CP
         std::wcout << L"[Worker] Granite GenAI ✅ 初始化成功: " << device.c_str() << L"\n";
 
         // 通知 Host 模型已就绪
-        const char* ready = "{\"type\":\"granite_ready\",\"device\":\"CPU\"}\n";
-        WriteFile(hPipe, ready, (DWORD)strlen(ready), &written, nullptr);
+        std::string ready = "{\"type\":\"granite_ready\",\"device\":\"" + device + "\"}\n";
+        WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
     }
     catch (const std::exception& e) {
         std::wcerr << L"[Worker] Granite GenAI ❌ 初始化失败: " << e.what() << L"\n";
@@ -773,8 +773,67 @@ int wmain() {
                     break;
                 }
 
-                    std::string debug4 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载
+                // ---- 新增：预加载模型命令 ----
+                if (buffer.find("\"preload_models\"") != std::string::npos) {
+                    std::wcout << L"[Worker] 收到预加载模型命令\n";
+
+                    DWORD written;
+
+                    // 发送调试消息
+                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 收到 preload_models 命令\"}\n";
+                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+                    // 解析设备选择
+                    std::string graniteDeviceCmd = g_granite_device;
+                    std::string embeddingDeviceCmd = g_embedding_device;
+
+                    auto granitePos = buffer.find("\"granite_device\":\"");
+                    if (granitePos != std::string::npos) {
+                        auto start = granitePos + 18;
+                        auto end = buffer.find("\"", start);
+                        if (end != std::string::npos) {
+                            graniteDeviceCmd = buffer.substr(start, end - start);
+                        }
+                    }
+
+                    auto embeddingPos = buffer.find("\"embedding_device\":\"");
+                    if (embeddingPos != std::string::npos) {
+                        auto start = embeddingPos + 20;
+                        auto end = buffer.find("\"", start);
+                        if (end != std::string::npos) {
+                            embeddingDeviceCmd = buffer.substr(start, end - start);
+                        }
+                    }
+
+                    std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 设备参数: Granite=" + graniteDeviceCmd + ", Embedding=" + embeddingDeviceCmd + "\"}\n";
+                    WriteFile(hPipe, debug2.data(), (DWORD)debug2.size(), &written, nullptr);
+
+                    // 发送确认消息
+                    std::string ack = "{\"type\":\"preload_started\"}\n";
+                    WriteFile(hPipe, ack.data(), (DWORD)ack.size(), &written, nullptr);
+
+                    // 直接在主线程加载模型（使用 call_once 确保只加载一次）
+                    std::string debug3 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载Granite...\"}\n";
+                    WriteFile(hPipe, debug3.data(), (DWORD)debug3.size(), &written, nullptr);
+
+                    std::call_once(g_granite_once, [hPipe, graniteDeviceCmd]() {
+                        InitializeGraniteGenAI(hPipe, graniteDeviceCmd);
+                    });
+
+                    std::string debug4 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载Embedding...\"}\n";
                     WriteFile(hPipe, debug4.data(), (DWORD)debug4.size(), &written, nullptr);
+
+
+                    std::call_once(g_embedding_once, [hPipe, embeddingDeviceCmd]() {
+                        InitializeEmbeddingGenAI(hPipe, embeddingDeviceCmd);
+                    });
+
+                    std::string debug5 = "{\"type\":\"info\",\"message\":\"[Worker Debug]预加载完成\"}\n";
+                    WriteFile(hPipe, debug5.data(), (DWORD)debug5.size(), &written, nullptr);
+                    buffer.clear();
+                    continue;
+                }
+
                 // ---- 新增：Granite 命令处理 ----
                 if (buffer.find("\"granite_") != std::string::npos) {
                     handleGraniteCommand(hPipe, buffer);

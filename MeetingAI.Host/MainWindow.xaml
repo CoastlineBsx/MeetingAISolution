@@ -30,6 +30,7 @@
                     <ComboBoxItem Content="📊 Embedding-GPU"/>
                     <ComboBoxItem Content="📊 Embedding-NPU"/>
                 </ComboBox>
+                <Button x:Name="BtnPreloadModels" Content="🚀 开始加载模型" Click="BtnPreloadModels_Click" IsEnabled="False"/>
                 <Button x:Name="BtnPing"  Content="发送测试消息" Click="BtnPing_Click" IsEnabled="False"/>
 
                 <!-- 测试转录组 -->

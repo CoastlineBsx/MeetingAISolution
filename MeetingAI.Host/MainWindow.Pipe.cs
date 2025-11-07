@@ -134,6 +134,7 @@ public sealed partial class MainWindow : Window
             });
 
             await Task.Delay(700);
+            BtnPreloadModels.IsEnabled = true;
             BtnPing.IsEnabled = true;
             BtnTranscribe.IsEnabled = true;
             BtnLoopback.IsEnabled = true;
@@ -161,6 +162,45 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Host] 启动失败：{ex.Message}");
+        }
+    }
+
+    private async void BtnPreloadModels_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await EnsurePipeAsync();
+
+            // 读取当前设备选择
+            string graniteDevice = CmbGraniteDevice.SelectedIndex switch
+            {
+                0 => "CPU",
+                2 => "NPU",
+                _ => "GPU"
+            };
+            string embeddingDevice = CmbEmbeddingDevice.SelectedIndex switch
+            {
+                0 => "CPU",
+                2 => "NPU",
+                _ => "GPU"
+            };
+
+            await AppendLineAsync($"[Host] 开始预加载模型：Granite-{graniteDevice}, Embedding-{embeddingDevice}");
+
+            // 发送预加载命令
+            var cmd = new { type = "preload_models", granite_device = graniteDevice, embedding_device = embeddingDevice };
+            var json = JsonSerializer.Serialize(cmd) + "\n";
+            var buf = Encoding.UTF8.GetBytes(json);
+            await _pipe.WriteAsync(buf, 0, buf.Length);
+            await _pipe.FlushAsync();
+
+            // 禁用按钮，避免重复点击
+            BtnPreloadModels.IsEnabled = false;
+            LblStatus.Text = "模型加载中...";
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Host] 预加载模型失败：{ex.Message}");
         }
     }
 
@@ -256,10 +296,32 @@ public sealed partial class MainWindow : Window
                     continue;
                 }
 
-                if (line.Contains("\"type\":\"granite_chat_status\"") ||
-                    line.Contains("\"type\":\"granite_ready\""))
+                if (line.Contains("\"type\":\"preload_started\""))
                 {
-                    // 处理 Granite 状态消息
+                    await AppendLineAsync("[Worker] 后台加载已启动");
+                    continue;
+                }
+
+                if (line.Contains("\"type\":\"granite_chat_status\""))
+                {
+                    // 处理 Granite 聊天状态消息
+                    continue;
+                }
+
+                if (line.Contains("\"type\":\"granite_ready\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+                        string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
+                        await AppendLineAsync($"[Granite] ✅ 模型已就绪 (device={device})");
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            LblStatus.Text = "Granite 已就绪";
+                        });
+                    }
+                    catch { }
                     continue;
                 }
 
@@ -305,6 +367,10 @@ public sealed partial class MainWindow : Window
                         string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
                         int dim = root.TryGetProperty("dim", out var dimProp) ? dimProp.GetInt32() : 0;
                         await AppendLineAsync($"[Embedding] ✅ 模型已就绪 (device={device}, dim={dim})");
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            LblStatus.Text = "模型加载完成 ✅";
+                        });
                     }
                     catch { }
                     continue;
