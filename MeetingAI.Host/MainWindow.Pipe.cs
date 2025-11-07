@@ -366,6 +366,38 @@ public sealed partial class MainWindow : Window
                     continue;
                 }
 
+                // ========== Token 计数结果处理 ==========
+                if (line.Contains("\"type\":\"token_count_result\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+
+                        if (root.TryGetProperty("count", out var countProp))
+                        {
+                            int tokenCount = countProp.GetInt32();
+
+                            // 设置结果到等待的任务
+                            lock (_tokenCountLock)
+                            {
+                                _tokenCountTcs?.TrySetResult(tokenCount);
+                                _tokenCountTcs = null;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await AppendLineAsync($"[TokenCount] 解析结果异常: {ex.Message}");
+                        lock (_tokenCountLock)
+                        {
+                            _tokenCountTcs?.TrySetException(ex);
+                            _tokenCountTcs = null;
+                        }
+                    }
+                    continue;
+                }
+
                 if (line.Contains("\"type\":\"embedding_ready\""))
                 {
                     try

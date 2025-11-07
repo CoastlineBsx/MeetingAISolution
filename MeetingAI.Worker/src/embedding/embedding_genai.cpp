@@ -117,4 +117,24 @@ std::vector<float> EmbeddingGenAI::encode(const std::string& text) {
     }
 }
 
+size_t EmbeddingGenAI::countTokens(const std::string& text) {
+    if (!tokenizer_) {
+        throw std::runtime_error("Tokenizer not initialized");
+    }
+
+    if (text.empty()) {
+        return 0;
+    }
+
+    try {
+        // 使用 tokenizer 进行编码并获取 token 数量
+        auto encoded = tokenizer_->encode(text);
+        return encoded.input_ids.get_shape()[1];  // shape 是 [batch_size, sequence_length]
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[Embedding] ❌ countTokens() failed: " << e.what() << std::endl;
+        throw;
+    }
+}
+
 } // namespace meetingai::embedding

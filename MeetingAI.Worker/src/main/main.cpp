@@ -230,7 +230,7 @@ static void InitializeEmbeddingGenAI(HANDLE hPipe, const std::string& device = "
             } catch (...) {}
             devices_msg += "\\n";
         }
-        devices_msg += "  将使用: " + device + "\"}\n";
+        devices_msg += "  将使用: " + device + "\"}";
 
         DWORD written;
         WriteFile(hPipe, devices_msg.data(), (DWORD)devices_msg.size(), &written, nullptr);
@@ -480,6 +480,50 @@ static void handleEmbeddingCommand(HANDLE hPipe, const std::string& command) {
     }
     catch (const std::exception& e) {
         std::wcerr << L"[Embedding] 处理命令异常: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
+
+// ========== Token 计数命令处理 ==========
+static void handleCountTokensCommand(HANDLE hPipe, const std::string& command) {
+    try {
+        // 检查 Embedding 模型是否已加载（使用 Embedding 的 tokenizer）
+        if (!g_embedding) {
+            std::string err = "{\"type\":\"error\",\"message\":\"❌ Embedding 模型未加载，无法计算 token 数\"}\n";
+            DWORD written;
+            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            return;
+        }
+
+        // 提取文本内容
+        std::string text = meetingai::proto::extractPrompt(command);
+
+        if (text.empty()) {
+            std::string err = "{\"type\":\"error\",\"message\":\"❌ 文本内容为空\"}\n";
+            DWORD written;
+            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            return;
+        }
+
+        // 使用 Embedding 的 tokenizer 计算 token 数
+        auto token_count = g_embedding->countTokens(text);
+
+        // 构建响应
+        std::string response = "{\"type\":\"token_count_result\",\"count\":" +
+                               std::to_string(token_count) +
+                               ",\"text_length\":" + std::to_string(text.length()) + "}\n";
+
+        DWORD written;
+        WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
+        FlushFileBuffers(hPipe);
+
+        std::wcout << L"[TokenCount] ✅ 计算完成: " << token_count << L" tokens (文本长度: " << text.length() << L" 字符)\n";
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[TokenCount] 处理命令异常: " << e.what() << L"\n";
         std::string err = std::string("{\"type\":\"error\",\"message\":\"") +
             meetingai::proto::jsonEscape(e.what()) + "\"}\n";
         DWORD written;
@@ -836,6 +880,13 @@ int wmain() {
                 // ---- 新增：Embedding 命令处理 ----
                 if (buffer.find("\"embedding_") != std::string::npos) {
                     handleEmbeddingCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：Token 计数命令处理 ----
+                if (buffer.find("\"count_tokens\"") != std::string::npos) {
+                    handleCountTokensCommand(hPipe, buffer);
                     buffer.clear();
                     continue;
                 }

@@ -218,9 +218,27 @@
                 <!-- 状态文字在前 -->
                 <TextBlock x:Name="LblModeStatus" Text=""
                            VerticalAlignment="Center" Foreground="Gray"/>
+
+                <!-- QuickQA 模式专用控件（默认隐藏） -->
+                <Button x:Name="BtnQuickQALoad" Content="📎 加载文件"
+                        Click="BtnQuickQALoad_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+                <TextBlock x:Name="LblQuickQADoc" Text="未加载文档"
+                           VerticalAlignment="Center" Foreground="Gray" FontSize="12"
+                           Visibility="Collapsed"/>
+                <Button x:Name="BtnQuickQAClear" Content="❌ 清除文件"
+                        Click="BtnQuickQAClear_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+
                 <!-- RAG 模式专用按钮（默认隐藏） -->
                 <Button x:Name="BtnRAGTest" Content="🧪 添加测试文档"
                         Click="BtnRAGTest_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+                <Button x:Name="BtnDocumentManage" Content="📚 文档管理"
+                        Click="BtnDocumentManage_Click" IsEnabled="False"
                         Visibility="Collapsed"
                         Padding="6,4" FontSize="12"/>
             </StackPanel>

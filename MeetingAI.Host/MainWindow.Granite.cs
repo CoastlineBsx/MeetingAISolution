@@ -139,6 +139,12 @@ public sealed partial class MainWindow : Window
     {
         _chatHistory.Clear();
 
+        // 如果是快速问答模式，清空对话历史（但不清除文档）
+        if (_currentDialogMode == "quickqa")
+        {
+            ClearQuickQAHistory();
+        }
+
         // 如果是多轮模式，需要重启会话
         if (_graniteMode == "multi")
         {
@@ -227,9 +233,30 @@ public sealed partial class MainWindow : Window
             // 清空输入框
             TxtGraniteInput.Text = "";
 
-            // ========== RAG 检索集成 ==========
+            // ========== 快速问答模式处理 ==========
             string promptToSend = userInput;
-            if (_isRAGMode && _ragService != null && _isRAGInitialized)
+            if (_currentDialogMode == "quickqa")
+            {
+                // 检查是否可以继续对话
+                if (!CanContinueQuickQA(out string errorMessage))
+                {
+                    await AppendLineAsync($"[快速问答] {errorMessage}");
+
+                    // 移除刚添加的用户消息和AI占位符
+                    _chatHistory.Remove(userMessage);
+                    _chatHistory.Remove(_currentStreamingMessage);
+                    _currentStreamingMessage = null;
+                    return;
+                }
+
+                // 构建QuickQA Prompt
+                promptToSend = BuildQuickQAPrompt(userInput);
+
+                // 保存用户问题（AI回答完成后会添加到历史）
+                await AppendLineAsync($"[快速问答] 对话轮数：{_quickQAHistory.Count + 1}/{MAX_TURNS}");
+            }
+            // ========== RAG 检索集成 ==========
+            else if (_isRAGMode && _ragService != null && _isRAGInitialized)
             {
                 try
                 {
@@ -342,6 +369,20 @@ public sealed partial class MainWindow : Window
             if (_currentStreamingMessage != null)
             {
                 _currentStreamingMessage.IsStreaming = false;
+
+                // 如果是快速问答模式，保存对话历史
+                if (_currentDialogMode == "quickqa" && _chatHistory.Count >= 2)
+                {
+                    // 获取最后一对问答
+                    var userMsg = _chatHistory[^2];  // 倒数第二个是用户消息
+                    var aiMsg = _chatHistory[^1];    // 最后一个是AI回答
+
+                    if (userMsg.Role == "user" && aiMsg.Role == "assistant")
+                    {
+                        AddQuickQAHistory(userMsg.Content, aiMsg.Content);
+                    }
+                }
+
                 _currentStreamingMessage = null;
             }
 

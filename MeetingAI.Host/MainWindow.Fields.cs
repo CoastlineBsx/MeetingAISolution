@@ -97,5 +97,14 @@ public sealed partial class MainWindow : Window
     private MeetingAI.Host.RAG.Services.DocumentChunker? _documentChunker;
     private System.Collections.ObjectModel.ObservableCollection<MeetingAI.Host.RAG.VectorStore.DocumentInfo>? _documentList;
 
+    // ========== 快速问答相关 ==========
+    private string? _quickQADocumentContent;           // 当前加载的文档内容
+    private string? _quickQADocumentName;              // 文档名称
+    private long _quickQADocumentSize;                 // 文档大小（字节）
+    private int _quickQATokenCount;                    // 文档token数
+    private List<(string Question, string Answer)> _quickQAHistory = new();  // 对话历史（最多10轮）
+    private TaskCompletionSource<int>? _tokenCountTcs; // Token计数的异步等待
+    private readonly object _tokenCountLock = new();   // Token计数锁
+
     private const string PipeName = "MeetingAI_Pipe";
 }
