@@ -773,6 +773,8 @@ int wmain() {
                     break;
                 }
 
+                    std::string debug4 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载
+                    WriteFile(hPipe, debug4.data(), (DWORD)debug4.size(), &written, nullptr);
                 // ---- 新增：Granite 命令处理 ----
                 if (buffer.find("\"granite_") != std::string::npos) {
                     handleGraniteCommand(hPipe, buffer);
