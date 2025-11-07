@@ -261,13 +261,9 @@ static void InitializeEmbeddingGenAI(HANDLE hPipe, const std::string& device = "
 // ========== Granite GenAI 命令处理 ==========
 static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
     try {
-        // 确保模型已加载（懒加载）
-        std::call_once(g_granite_once, [&] {
-            InitializeGraniteGenAI(hPipe, g_granite_device);
-        });
-
+        // 检查模型是否已加载（不再自动懒加载）
         if (!g_granite) {
-            std::string err = "{\"type\":\"error\",\"message\":\"Granite 未初始化\"}\n";
+            std::string err = "{\"type\":\"error\",\"message\":\"❌ Granite 模型未加载，请先点击'开始加载模型'按钮\"}\n";
             DWORD written;
             WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
             return;
@@ -361,13 +357,9 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
 // ========== Embedding GenAI 命令处理 ==========
 static void handleEmbeddingCommand(HANDLE hPipe, const std::string& command) {
     try {
-        // 确保模型已加载（懒加载）
-        std::call_once(g_embedding_once, [&] {
-            InitializeEmbeddingGenAI(hPipe, g_embedding_device);
-        });
-
+        // 检查模型是否已加载（不再自动懒加载）
         if (!g_embedding) {
-            std::string err = "{\"type\":\"error\",\"message\":\"Embedding 未初始化\"}\n";
+            std::string err = "{\"type\":\"error\",\"message\":\"❌ Embedding 模型未加载，请先点击'开始加载模型'按钮\"}\n";
             DWORD written;
             WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
             return;

@@ -182,6 +182,7 @@
             </StackPanel>
 
             <!-- 第五行：Granite AI 对话控制 -->
+            <!-- 第一行：全局控制（单轮/多轮/清空历史） -->
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="💬 AI 对话：" VerticalAlignment="Center" FontWeight="Bold"/>
                 <Button x:Name="BtnGraniteSingle" Content="🔄 单轮模式"
@@ -190,34 +191,47 @@
                         Click="BtnGraniteMulti_Click" IsEnabled="False"/>
                 <Button x:Name="BtnGraniteClear" Content="🗑️ 清空历史"
                         Click="BtnGraniteClear_Click" IsEnabled="False"/>
-                <TextBlock x:Name="LblGraniteMode" Text="[未启动]"
+                <TextBlock x:Name="LblGraniteMode" Text="[单轮模式]"
                            VerticalAlignment="Center" Foreground="Gray"/>
+            </StackPanel>
 
-                <!-- RAG 模式切换 -->
-                <Border BorderBrush="#666666" BorderThickness="1" CornerRadius="4"
-                        Padding="8,4" Background="#2D2D2D">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="📚" VerticalAlignment="Center" Foreground="White"/>
-                        <ToggleSwitch x:Name="ToggleRAGMode"
-                                      OnContent="RAG模式" OffContent="普通模式"
-                                      Toggled="ToggleRAGMode_Toggled"
-                                      IsEnabled="False"/>
-                        <Button x:Name="BtnRAGInit" Content="🔧 初始化RAG"
-                                Click="BtnRAGInit_Click" IsEnabled="False"
-                                Padding="6,4" FontSize="12"/>
-                        <Button x:Name="BtnRAGTest" Content="🧪 添加测试文档"
-                                Click="BtnRAGTest_Click" IsEnabled="False"
-                                Padding="6,4" FontSize="12"/>
-                    </StackPanel>
-                </Border>
+            <!-- 第二行：4个对话模式选择 -->
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <TextBlock Text="    " VerticalAlignment="Center"/>
+                <Button x:Name="BtnNormalMode" Content="💬 普通对话"
+                        Click="BtnNormalMode_Click" IsEnabled="False"
+                        Padding="8,4"/>
+                <Button x:Name="BtnQuickQA" Content="⚡ 快速问答"
+                        Click="BtnQuickQA_Click" IsEnabled="False"
+                        Padding="8,4"/>
+                <Button x:Name="BtnIEMode" Content="🔍 IE模式"
+                        Click="BtnIEMode_Click" IsEnabled="False"
+                        Padding="8,4"/>
+                <Button x:Name="BtnRAGMode" Content="📚 RAG模式"
+                        Click="BtnRAGMode_Click" IsEnabled="False"
+                        Padding="8,4"/>
+            </StackPanel>
+
+            <!-- 第三行：动态显示区域 -->
+            <StackPanel x:Name="ModeContentArea" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <TextBlock Text="    " VerticalAlignment="Center"/>
+                <!-- 状态文字在前 -->
+                <TextBlock x:Name="LblModeStatus" Text=""
+                           VerticalAlignment="Center" Foreground="Gray"/>
+                <!-- RAG 模式专用按钮（默认隐藏） -->
+                <Button x:Name="BtnRAGTest" Content="🧪 添加测试文档"
+                        Click="BtnRAGTest_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
             </StackPanel>
         </StackPanel>
 
-        <!-- 文档管理区（可折叠） -->
+        <!-- 文档管理区（可折叠） - RAG模式专用 -->
         <Expander Grid.Row="1" Grid.ColumnSpan="2"
                   x:Name="DocumentExpander"
                   Header="📚 文档管理"
                   IsExpanded="False"
+                  Visibility="Collapsed"
                   Margin="0,8,0,8">
             <Border BorderBrush="#666666" BorderThickness="1" CornerRadius="4"
                     Padding="12" Background="#1E1E1E">

@@ -148,13 +148,21 @@ public sealed partial class MainWindow : Window
             BtnStart.IsEnabled = false;
 
             // 启用 Granite 对话功能
-            BtnGraniteSingle.IsEnabled = true;
-            BtnGraniteMulti.IsEnabled = false; // 默认单轮模式
+            BtnGraniteSingle.IsEnabled = false; // 默认单轮模式，单轮按钮禁用
+            BtnGraniteMulti.IsEnabled = true;   // 多轮按钮启用，可切换
             BtnGraniteClear.IsEnabled = true;
             BtnGraniteSend.IsEnabled = true;
 
-            // 启用 RAG 功能
-            BtnRAGInit.IsEnabled = true;
+            // 启用 4个对话模式按钮
+            BtnNormalMode.IsEnabled = true;
+            BtnQuickQA.IsEnabled = true;
+            BtnIEMode.IsEnabled = true;
+            BtnRAGMode.IsEnabled = true;
+
+            // 默认选中普通对话模式
+            _currentDialogMode = "normal";
+            _isRAGMode = false;
+            LblModeStatus.Text = "✅ 普通对话模式";
 
             LblStatus.Text = "Worker 已启动";
             await AppendLineAsync("[Host] Worker 启动完成");
