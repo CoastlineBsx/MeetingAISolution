@@ -558,33 +558,30 @@ public sealed partial class MainWindow : Window
 
         var sb = new StringBuilder();
 
-        // 单轮或多轮
-        if (_ieDialogHistory.Count == 0)
+        // 判断是单轮模式还是多轮模式
+        if (_graniteMode == "multi")
         {
-            // 单轮模式（第一轮）- 极简格式
-            sb.AppendLine("以下是从文档中提取的结构化信息：");
-            sb.AppendLine(_ieExtractedJson);
-            sb.AppendLine();
-            sb.AppendLine("原始文档内容：");
-            sb.AppendLine(_ieDocumentContent);
-            sb.AppendLine();
-            sb.AppendLine($"请回答：{userQuestion}");
+            // ========== 多轮模式 ==========
+            if (_ieDialogHistory.Count == 0)
+            {
+                // 第1轮：发送JSON + 问题
+                sb.AppendLine("以下是从文档中提取的结构化信息：");
+                sb.AppendLine(_ieExtractedJson);
+                sb.AppendLine();
+                sb.AppendLine($"请回答：{userQuestion}");
+            }
+            else
+            {
+                // 第2轮及以后：只发送问题（Worker session已记住JSON）
+                sb.AppendLine(userQuestion);
+            }
         }
         else
         {
-            // 多轮模式
+            // ========== 单轮模式 ==========
+            // 每次只发送JSON + 问题（不拼历史）
             sb.AppendLine("以下是从文档中提取的结构化信息：");
             sb.AppendLine(_ieExtractedJson);
-            sb.AppendLine();
-            sb.AppendLine("原始文档内容：");
-            sb.AppendLine(_ieDocumentContent);
-            sb.AppendLine();
-            sb.AppendLine("对话历史：");
-            foreach (var (q, a) in _ieDialogHistory)
-            {
-                sb.AppendLine($"问：{q}");
-                sb.AppendLine($"答：{a}");
-            }
             sb.AppendLine();
             sb.AppendLine($"请回答：{userQuestion}");
         }
@@ -592,7 +589,8 @@ public sealed partial class MainWindow : Window
         string finalPrompt = sb.ToString();
 
         // 调试：输出最终prompt状态
-        _ = AppendLineAsync($"[IE DEBUG] 构建的完整Prompt长度：{finalPrompt.Length} 字符");
+        _ = AppendLineAsync($"[IE DEBUG] 模式={_graniteMode}, 历史轮数={_ieDialogHistory.Count}");
+        _ = AppendLineAsync($"[IE DEBUG] Prompt长度：{finalPrompt.Length} 字符");
         _ = AppendLineAsync($"[IE DEBUG] Prompt前200字符：{(finalPrompt.Length > 200 ? finalPrompt.Substring(0, 200) : finalPrompt)}...");
 
         return finalPrompt;

@@ -12,6 +12,34 @@ public partial class MainWindow
     private string _currentDialogMode = ""; // "normal", "quickqa", "ie", "rag"
 
     /// <summary>
+    /// 切换聊天历史（实现模式隔离）
+    /// </summary>
+    private void SwitchChatHistory(System.Collections.ObjectModel.ObservableCollection<Models.ChatMessage> targetHistory)
+    {
+        // 如果当前有流式输出正在进行，先结束它
+        if (_currentStreamingMessage != null)
+        {
+            _currentStreamingMessage.IsStreaming = false;
+            _currentStreamingMessage = null;
+        }
+
+        // 切换到目标模式的历史
+        _chatHistory = targetHistory;
+
+        // 更新UI绑定
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ChatHistoryList.ItemsSource = _chatHistory;
+
+            // 滚动到底部
+            if (_chatHistory.Count > 0)
+            {
+                ChatHistoryList.ScrollIntoView(_chatHistory[^1]);
+            }
+        });
+    }
+
+    /// <summary>
     /// 普通对话模式
     /// </summary>
     private async void BtnNormalMode_Click(object sender, RoutedEventArgs e)
@@ -20,6 +48,9 @@ public partial class MainWindow
         {
             _currentDialogMode = "normal";
             _isRAGMode = false;
+
+            // 切换到普通模式的聊天历史
+            SwitchChatHistory(_normalChatHistory);
 
             // 隐藏所有模式特定控件
             BtnRAGTest.Visibility = Visibility.Collapsed;
@@ -60,6 +91,9 @@ public partial class MainWindow
         {
             _currentDialogMode = "quickqa";
             _isRAGMode = false;
+
+            // 切换到快速问答模式的聊天历史
+            SwitchChatHistory(_quickQAChatHistory);
 
             // 隐藏 RAG 控件
             BtnRAGTest.Visibility = Visibility.Collapsed;
@@ -108,6 +142,9 @@ public partial class MainWindow
         {
             _currentDialogMode = "ie";
             _isRAGMode = false;
+
+            // 切换到IE模式的聊天历史
+            SwitchChatHistory(_ieChatHistory);
 
             // 隐藏其他模式控件
             BtnRAGTest.Visibility = Visibility.Collapsed;
@@ -172,6 +209,9 @@ public partial class MainWindow
         try
         {
             _currentDialogMode = "rag";
+
+            // 切换到RAG模式的聊天历史
+            SwitchChatHistory(_ragChatHistory);
 
             // 隐藏 QuickQA 控件
             BtnQuickQALoad.Visibility = Visibility.Collapsed;

@@ -165,10 +165,33 @@ public sealed partial class MainWindow : Window
 
         var sb = new StringBuilder();
 
-        // 单轮或多轮的 Prompt 格式
-        if (_quickQAHistory.Count == 0)
+        // 判断是单轮模式还是多轮模式
+        if (_graniteMode == "multi")
         {
-            // 单轮模式（第一轮）
+            // ========== 多轮模式 ==========
+            if (_quickQAHistory.Count == 0)
+            {
+                // 第1轮：发送文档 + 问题
+                sb.AppendLine("你是一个文档问答助手。请仔细阅读以下文档内容，然后回答用户的问题。");
+                sb.AppendLine();
+                sb.AppendLine("=== 文档开始 ===");
+                sb.AppendLine(_quickQADocumentContent);
+                sb.AppendLine("=== 文档结束 ===");
+                sb.AppendLine();
+                sb.AppendLine($"用户问题：{userQuestion}");
+                sb.AppendLine();
+                sb.AppendLine("请基于上述文档内容回答，如果文档中没有相关信息，请明确告知。");
+            }
+            else
+            {
+                // 第2轮及以后：只发送问题（Worker session已记住文档）
+                sb.AppendLine(userQuestion);
+            }
+        }
+        else
+        {
+            // ========== 单轮模式 ==========
+            // 每次只发送文档 + 问题（不拼历史）
             sb.AppendLine("你是一个文档问答助手。请仔细阅读以下文档内容，然后回答用户的问题。");
             sb.AppendLine();
             sb.AppendLine("=== 文档开始 ===");
@@ -178,27 +201,6 @@ public sealed partial class MainWindow : Window
             sb.AppendLine($"用户问题：{userQuestion}");
             sb.AppendLine();
             sb.AppendLine("请基于上述文档内容回答，如果文档中没有相关信息，请明确告知。");
-        }
-        else
-        {
-            // 多轮模式
-            sb.AppendLine("你是一个文档问答助手。请仔细阅读以下文档内容，然后回答用户的问题。");
-            sb.AppendLine();
-            sb.AppendLine("=== 文档开始 ===");
-            sb.AppendLine(_quickQADocumentContent);
-            sb.AppendLine("=== 文档结束 ===");
-            sb.AppendLine();
-            sb.AppendLine("=== 对话历史 ===");
-            foreach (var (q, a) in _quickQAHistory)
-            {
-                sb.AppendLine($"用户：{q}");
-                sb.AppendLine($"助手：{a}");
-            }
-            sb.AppendLine("=== 历史结束 ===");
-            sb.AppendLine();
-            sb.AppendLine($"用户问题：{userQuestion}");
-            sb.AppendLine();
-            sb.AppendLine("请基于上述文档内容和对话历史回答，如果文档中没有相关信息，请明确告知。");
         }
 
         return sb.ToString();

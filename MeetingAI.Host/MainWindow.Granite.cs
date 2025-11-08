@@ -15,7 +15,13 @@ namespace MeetingAI.Host;
 
 public sealed partial class MainWindow : Window
 {
-    // 对话历史
+    // 四个模式各自独立的对话历史
+    private ObservableCollection<ChatMessage> _normalChatHistory = new();
+    private ObservableCollection<ChatMessage> _quickQAChatHistory = new();
+    private ObservableCollection<ChatMessage> _ieChatHistory = new();
+    private ObservableCollection<ChatMessage> _ragChatHistory = new();
+
+    // 当前激活的对话历史（指向上面4个之一）
     private ObservableCollection<ChatMessage> _chatHistory = new();
 
     // 当前模式：single 或 multi
@@ -32,6 +38,8 @@ public sealed partial class MainWindow : Window
 
     private void InitializeGranite()
     {
+        // 默认使用普通模式的历史
+        _chatHistory = _normalChatHistory;
         ChatHistoryList.ItemsSource = _chatHistory;
 
         // 等待 ListView 加载完成后获取内部 ScrollViewer
