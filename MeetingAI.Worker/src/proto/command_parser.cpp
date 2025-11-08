@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "command_parser.h"
 #include <cstdio>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 namespace meetingai::proto {
 
@@ -209,62 +212,44 @@ namespace meetingai::proto {
     }
 
     // ==================== Granite GenAI 相关 ====================
-    std::string extractPrompt(const std::string& json) {
-        return extractStringField(json, "prompt");
+    std::string extractPrompt(const std::string& jsonStr) {
+        try {
+            auto j = json::parse(jsonStr);
+            return j.value("prompt", std::string(""));
+        }
+        catch (...) {
+            return "";
+        }
     }
 
-    int extractMaxTokens(const std::string& json, int defaultValue) {
-        size_t pos = json.find("\"max_tokens\"");
-        if (pos == std::string::npos) return defaultValue;
-
-        size_t colon = json.find(":", pos);
-        if (colon == std::string::npos) return defaultValue;
-
-        size_t start = colon + 1;
-        while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) start++;
-
-        size_t end = start;
-        while (end < json.size() && (json[end] >= '0' && json[end] <= '9')) end++;
-
-        if (end == start) return defaultValue;
-
+    int extractMaxTokens(const std::string& jsonStr, int defaultValue) {
         try {
-            return std::stoi(json.substr(start, end - start));
+            auto j = json::parse(jsonStr);
+            return j.value("max_tokens", defaultValue);
         }
         catch (...) {
             return defaultValue;
         }
     }
 
-    float extractTemperature(const std::string& json, float defaultValue) {
-        size_t pos = json.find("\"temperature\"");
-        if (pos == std::string::npos) return defaultValue;
-
-        size_t colon = json.find(":", pos);
-        if (colon == std::string::npos) return defaultValue;
-
-        size_t start = colon + 1;
-        while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) start++;
-
-        size_t end = start;
-        while (end < json.size() &&
-               ((json[end] >= '0' && json[end] <= '9') || json[end] == '.' || json[end] == '-')) {
-            end++;
-        }
-
-        if (end == start) return defaultValue;
-
+    float extractTemperature(const std::string& jsonStr, float defaultValue) {
         try {
-            return std::stof(json.substr(start, end - start));
+            auto j = json::parse(jsonStr);
+            return j.value("temperature", defaultValue);
         }
         catch (...) {
             return defaultValue;
         }
     }
 
-    std::string extractSystemMessage(const std::string& json, const std::string& defaultValue) {
-        std::string result = extractStringField(json, "system_message");
-        return result.empty() ? defaultValue : result;
+    std::string extractSystemMessage(const std::string& jsonStr, const std::string& defaultValue) {
+        try {
+            auto j = json::parse(jsonStr);
+            return j.value("system_message", defaultValue);
+        }
+        catch (...) {
+            return defaultValue;
+        }
     }
 
 } // namespace meetingai::proto
