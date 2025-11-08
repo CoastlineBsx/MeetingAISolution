@@ -145,6 +145,12 @@ public sealed partial class MainWindow : Window
             ClearQuickQAHistory();
         }
 
+        // 如果是IE模式，清空对话历史（但不清除文档和提取结果）
+        if (_currentDialogMode == "ie")
+        {
+            ClearIEDialogHistory();
+        }
+
         // 如果是多轮模式，需要重启会话
         if (_graniteMode == "multi")
         {
@@ -233,9 +239,30 @@ public sealed partial class MainWindow : Window
             // 清空输入框
             TxtGraniteInput.Text = "";
 
-            // ========== 快速问答模式处理 ==========
+            // ========== IE 对话模式处理 ==========
             string promptToSend = userInput;
-            if (_currentDialogMode == "quickqa")
+            if (_currentDialogMode == "ie")
+            {
+                // 检查是否可以继续对话
+                if (!CanContinueIEDialog(out string errorMessage))
+                {
+                    await AppendLineAsync($"[IE] {errorMessage}");
+
+                    // 移除刚添加的用户消息和AI占位符
+                    _chatHistory.Remove(userMessage);
+                    _chatHistory.Remove(_currentStreamingMessage);
+                    _currentStreamingMessage = null;
+                    return;
+                }
+
+                // 构建IE Dialog Prompt
+                promptToSend = BuildIEDialogPrompt(userInput);
+
+                // 保存用户问题（AI回答完成后会添加到历史）
+                await AppendLineAsync($"[IE] 对话轮数：{_ieDialogHistory.Count + 1}/{MAX_IE_TURNS}");
+            }
+            // ========== 快速问答模式处理 ==========
+            else if (_currentDialogMode == "quickqa")
             {
                 // 检查是否可以继续对话
                 if (!CanContinueQuickQA(out string errorMessage))
@@ -303,6 +330,13 @@ public sealed partial class MainWindow : Window
                     $"<|start_of_role|>user<|end_of_role|>{promptToSend}<|end_of_text|>" +
                     $"<|start_of_role|>assistant<|end_of_role|>";
 
+                // 调试：输出最终发送的prompt
+                if (_currentDialogMode == "ie")
+                {
+                    await AppendLineAsync($"[GRANITE DEBUG] 最终fullPrompt长度：{fullPrompt.Length} 字符");
+                    await AppendLineAsync($"[GRANITE DEBUG] fullPrompt前300字符：{(fullPrompt.Length > 300 ? fullPrompt.Substring(0, 300) : fullPrompt)}...");
+                }
+
                 var cmd = new GraniteGenerateStreamCommand
                 {
                     prompt = fullPrompt,
@@ -340,6 +374,21 @@ public sealed partial class MainWindow : Window
     // ========== 处理流式响应 ==========
     private Task HandleGraniteStreamToken(string token)
     {
+        // ========== IE文档类型识别 ==========
+        if (_isIEDetecting && _ieDetectionBuffer != null)
+        {
+            _ieDetectionBuffer.Append(token);
+            return Task.CompletedTask;
+        }
+
+        // ========== IE信息提取 ==========
+        if (_isIEExtracting && _ieExtractionBuffer != null)
+        {
+            _ieExtractionBuffer.Append(token);
+            return Task.CompletedTask;
+        }
+
+        // ========== 正常聊天模式 ==========
         if (_currentStreamingMessage == null)
             return Task.CompletedTask;
 
@@ -363,6 +412,35 @@ public sealed partial class MainWindow : Window
 
     private void HandleGraniteStreamDone()
     {
+        // ========== IE文档类型识别完成 ==========
+        if (_isIEDetecting && _ieDetectionBuffer != null)
+        {
+            _ = DispatcherQueue.TryEnqueue(async () =>
+            {
+                string typeId = _ieDetectionBuffer.ToString().Trim();
+                _ieDetectionBuffer = null;
+                _isIEDetecting = false;
+
+                await HandleIEDetectionResult(typeId);
+            });
+            return;
+        }
+
+        // ========== IE信息提取完成 ==========
+        if (_isIEExtracting && _ieExtractionBuffer != null)
+        {
+            _ = DispatcherQueue.TryEnqueue(async () =>
+            {
+                string fullJson = _ieExtractionBuffer.ToString();
+                _ieExtractionBuffer = null;
+                _isIEExtracting = false;
+
+                await HandleIEExtractionResult(fullJson);
+            });
+            return;
+        }
+
+        // ========== 正常聊天模式 ==========
         // 必须在 UI 线程执行，因为会触发 PropertyChanged
         _ = DispatcherQueue.TryEnqueue(() =>
         {
@@ -380,6 +458,19 @@ public sealed partial class MainWindow : Window
                     if (userMsg.Role == "user" && aiMsg.Role == "assistant")
                     {
                         AddQuickQAHistory(userMsg.Content, aiMsg.Content);
+                    }
+                }
+
+                // 如果是IE对话模式，保存对话历史
+                if (_currentDialogMode == "ie" && _chatHistory.Count >= 2)
+                {
+                    // 获取最后一对问答
+                    var userMsg = _chatHistory[^2];  // 倒数第二个是用户消息
+                    var aiMsg = _chatHistory[^1];    // 最后一个是AI回答
+
+                    if (userMsg.Role == "user" && aiMsg.Role == "assistant")
+                    {
+                        AddIEDialogHistory(userMsg.Content, aiMsg.Content);
                     }
                 }
 

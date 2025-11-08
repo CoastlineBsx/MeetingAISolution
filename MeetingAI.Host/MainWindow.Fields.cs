@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
@@ -105,6 +106,24 @@ public sealed partial class MainWindow : Window
     private List<(string Question, string Answer)> _quickQAHistory = new();  // 对话历史（最多10轮）
     private TaskCompletionSource<int>? _tokenCountTcs; // Token计数的异步等待
     private readonly object _tokenCountLock = new();   // Token计数锁
+
+    // ========== IE模式相关 ==========
+    private string? _ieDocumentContent;                // 当前加载的文档内容
+    private string? _ieDocumentName;                   // 文档名称
+    private long _ieDocumentSize;                      // 文档大小（字节）
+    private int _ieTokenCount;                         // 文档token数
+    private string? _ieSelectedTemplateId;             // 选中的模板ID
+    private string? _ieExtractedJson;                  // 提取的JSON结果
+    private List<(string Question, string Answer)> _ieDialogHistory = new();  // 对话历史（最多10轮）
+    private bool _isIEDialogMode = false;              // 是否在对话模式
+
+    // IE文档类型识别相关
+    private bool _isIEDetecting = false;               // 是否正在识别文档类型
+    private StringBuilder? _ieDetectionBuffer;         // 识别响应收集器
+
+    // IE信息提取相关
+    private bool _isIEExtracting = false;              // 是否正在提取
+    private StringBuilder? _ieExtractionBuffer;        // 提取响应收集器
 
     private const string PipeName = "MeetingAI_Pipe";
 }

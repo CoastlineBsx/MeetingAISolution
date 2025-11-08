@@ -30,6 +30,16 @@ public partial class MainWindow
             LblQuickQADoc.Visibility = Visibility.Collapsed;
             BtnQuickQAClear.Visibility = Visibility.Collapsed;
 
+            BtnIELoad.Visibility = Visibility.Collapsed;
+            CmbIETemplate.Visibility = Visibility.Collapsed;
+            LblIEDoc.Visibility = Visibility.Collapsed;
+            BtnIEExtract.Visibility = Visibility.Collapsed;
+            LblIEStatus.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            BtnIEExport.Visibility = Visibility.Collapsed;
+            BtnIEReExtract.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
+
             // 更新状态提示
             LblModeStatus.Text = "✅ 普通对话模式";
 
@@ -56,6 +66,17 @@ public partial class MainWindow
             BtnDocumentManage.Visibility = Visibility.Collapsed;
             DocumentExpander.Visibility = Visibility.Collapsed;
 
+            // 隐藏 IE 控件
+            BtnIELoad.Visibility = Visibility.Collapsed;
+            CmbIETemplate.Visibility = Visibility.Collapsed;
+            LblIEDoc.Visibility = Visibility.Collapsed;
+            BtnIEExtract.Visibility = Visibility.Collapsed;
+            LblIEStatus.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            BtnIEExport.Visibility = Visibility.Collapsed;
+            BtnIEReExtract.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
+
             // 显示 QuickQA 控件
             BtnQuickQALoad.Visibility = Visibility.Visible;
             BtnQuickQALoad.IsEnabled = true;
@@ -79,7 +100,7 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// IE模式（占位）
+    /// IE模式
     /// </summary>
     private async void BtnIEMode_Click(object sender, RoutedEventArgs e)
     {
@@ -88,7 +109,7 @@ public partial class MainWindow
             _currentDialogMode = "ie";
             _isRAGMode = false;
 
-            // 隐藏所有模式特定控件
+            // 隐藏其他模式控件
             BtnRAGTest.Visibility = Visibility.Collapsed;
             BtnDocumentManage.Visibility = Visibility.Collapsed;
             DocumentExpander.Visibility = Visibility.Collapsed;
@@ -97,10 +118,45 @@ public partial class MainWindow
             LblQuickQADoc.Visibility = Visibility.Collapsed;
             BtnQuickQAClear.Visibility = Visibility.Collapsed;
 
-            // 更新状态提示
-            LblModeStatus.Text = "🔍 IE模式（开发中）";
+            // 显示 IE 控件
+            BtnIELoad.Visibility = Visibility.Visible;
+            BtnIELoad.IsEnabled = true;
+            CmbIETemplate.Visibility = Visibility.Visible;
+            CmbIETemplate.IsEnabled = true;
+            LblIEDoc.Visibility = Visibility.Visible;
+            BtnIEExtract.Visibility = Visibility.Visible;
+            LblIEStatus.Visibility = Visibility.Visible;
+            BtnIECopyJSON.Visibility = Visibility.Visible;
+            BtnIEExport.Visibility = Visibility.Visible;
+            BtnIEReExtract.Visibility = Visibility.Visible;
+            BtnIEContinueDialog.Visibility = Visibility.Visible;
 
-            await AppendLineAsync("[模式] IE模式暂未实现");
+            // 填充模板下拉菜单
+            CmbIETemplate.Items.Clear();
+            foreach (var template in IETemplates.AllTemplates)
+            {
+                var item = new ComboBoxItem
+                {
+                    Content = $"{template.Icon} {template.Name}",
+                    Tag = template.Id
+                };
+                CmbIETemplate.Items.Add(item);
+            }
+
+            // 默认选择通用模板（最后一个）
+            if (CmbIETemplate.Items.Count > 0)
+            {
+                CmbIETemplate.SelectedIndex = CmbIETemplate.Items.Count - 1;
+            }
+
+            // 更新状态提示
+            LblModeStatus.Text = "🔍 IE模式";
+
+            // 更新 IE UI 状态
+            UpdateIEUI();
+
+            await AppendLineAsync("[模式] 已切换到 IE 模式");
+            await AppendLineAsync("[模式] 💡 IE模式适合从文档中提取结构化信息");
         }
         catch (Exception ex)
         {
@@ -121,6 +177,17 @@ public partial class MainWindow
             BtnQuickQALoad.Visibility = Visibility.Collapsed;
             LblQuickQADoc.Visibility = Visibility.Collapsed;
             BtnQuickQAClear.Visibility = Visibility.Collapsed;
+
+            // 隐藏 IE 控件
+            BtnIELoad.Visibility = Visibility.Collapsed;
+            CmbIETemplate.Visibility = Visibility.Collapsed;
+            LblIEDoc.Visibility = Visibility.Collapsed;
+            BtnIEExtract.Visibility = Visibility.Collapsed;
+            LblIEStatus.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            BtnIEExport.Visibility = Visibility.Collapsed;
+            BtnIEReExtract.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
 
             // 显示RAG专用控件
             BtnRAGTest.Visibility = Visibility.Visible;

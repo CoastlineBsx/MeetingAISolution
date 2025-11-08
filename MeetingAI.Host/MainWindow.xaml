@@ -241,6 +241,45 @@
                         Click="BtnDocumentManage_Click" IsEnabled="False"
                         Visibility="Collapsed"
                         Padding="6,4" FontSize="12"/>
+
+                <!-- IE 模式专用控件（默认隐藏） -->
+                <Button x:Name="BtnIELoad" Content="📎 加载文件"
+                        Click="BtnIELoad_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+                <ComboBox x:Name="CmbIETemplate"
+                          SelectionChanged="CmbIETemplate_SelectionChanged"
+                          IsEnabled="False"
+                          Visibility="Collapsed"
+                          MinWidth="150" FontSize="12">
+                    <!-- 模板选项会在代码中动态填充 -->
+                </ComboBox>
+                <TextBlock x:Name="LblIEDoc" Text="未加载文档"
+                           VerticalAlignment="Center" Foreground="Gray" FontSize="12"
+                           Visibility="Collapsed"/>
+                <Button x:Name="BtnIEExtract" Content="▶️ 开始提取"
+                        Click="BtnIEExtract_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+                <TextBlock x:Name="LblIEStatus" Text=""
+                           VerticalAlignment="Center" Foreground="Gray" FontSize="12"
+                           Visibility="Collapsed"/>
+                <Button x:Name="BtnIECopyJSON" Content="📋 复制JSON"
+                        Click="BtnIECopyJSON_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+                <Button x:Name="BtnIEExport" Content="💾 导出"
+                        Click="BtnIEExport_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+                <Button x:Name="BtnIEReExtract" Content="🔄 重新提取"
+                        Click="BtnIEReExtract_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
+                <Button x:Name="BtnIEContinueDialog" Content="💬 继续提问"
+                        Click="BtnIEContinueDialog_Click" IsEnabled="False"
+                        Visibility="Collapsed"
+                        Padding="6,4" FontSize="12"/>
             </StackPanel>
         </StackPanel>
 
