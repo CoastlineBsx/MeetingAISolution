@@ -556,66 +556,37 @@ public sealed partial class MainWindow : Window
             throw new InvalidOperationException("IE对话模式未初始化");
         }
 
-        // 调试：输出数据状态
-        _ = AppendLineAsync($"[IE DEBUG] 提取的JSON长度：{_ieExtractedJson.Length} 字符");
-        _ = AppendLineAsync($"[IE DEBUG] JSON前100字符：{(_ieExtractedJson.Length > 100 ? _ieExtractedJson.Substring(0, 100) : _ieExtractedJson)}...");
-        _ = AppendLineAsync($"[IE DEBUG] 原始文档长度：{_ieDocumentContent.Length} 字符");
-        _ = AppendLineAsync($"[IE DEBUG] 文档前100字符：{(_ieDocumentContent.Length > 100 ? _ieDocumentContent.Substring(0, 100) : _ieDocumentContent)}...");
-
         var sb = new StringBuilder();
 
         // 单轮或多轮
         if (_ieDialogHistory.Count == 0)
         {
-            // 单轮模式（第一轮）
-            sb.AppendLine("你是一个智能文档助手。我已经从一份文档中提取了结构化信息，现在请回答用户的问题。");
-            sb.AppendLine();
-            sb.AppendLine("=== 提取的结构化信息 ===");
+            // 单轮模式（第一轮）- 极简格式
+            sb.AppendLine("以下是从文档中提取的结构化信息：");
             sb.AppendLine(_ieExtractedJson);
-            sb.AppendLine("=== 结构化信息结束 ===");
             sb.AppendLine();
-            sb.AppendLine("=== 原始文档内容 ===");
+            sb.AppendLine("原始文档内容：");
             sb.AppendLine(_ieDocumentContent);
-            sb.AppendLine("=== 文档结束 ===");
             sb.AppendLine();
-            sb.AppendLine($"用户问题：{userQuestion}");
-            sb.AppendLine();
-            sb.AppendLine("回答要求：");
-            sb.AppendLine("1. 优先从结构化信息中查找答案");
-            sb.AppendLine("2. 如果结构化信息不足，参考原始文档内容");
-            sb.AppendLine("3. 如果两者有冲突，以原始文档为准");
-            sb.AppendLine("4. 给出准确、简洁的回答");
-            sb.AppendLine("5. 如果无法找到答案，明确告知");
+            sb.AppendLine($"请回答：{userQuestion}");
         }
         else
         {
             // 多轮模式
-            sb.AppendLine("你是一个智能文档助手。我已经从一份文档中提取了结构化信息，现在请基于上下文回答用户的问题。");
-            sb.AppendLine();
-            sb.AppendLine("=== 提取的结构化信息 ===");
+            sb.AppendLine("以下是从文档中提取的结构化信息：");
             sb.AppendLine(_ieExtractedJson);
-            sb.AppendLine("=== 结构化信息结束 ===");
             sb.AppendLine();
-            sb.AppendLine("=== 原始文档内容 ===");
+            sb.AppendLine("原始文档内容：");
             sb.AppendLine(_ieDocumentContent);
-            sb.AppendLine("=== 文档结束 ===");
             sb.AppendLine();
-            sb.AppendLine("=== 对话历史 ===");
+            sb.AppendLine("对话历史：");
             foreach (var (q, a) in _ieDialogHistory)
             {
-                sb.AppendLine($"用户：{q}");
-                sb.AppendLine($"助手：{a}");
+                sb.AppendLine($"问：{q}");
+                sb.AppendLine($"答：{a}");
             }
-            sb.AppendLine("=== 历史结束 ===");
             sb.AppendLine();
-            sb.AppendLine($"用户问题：{userQuestion}");
-            sb.AppendLine();
-            sb.AppendLine("回答要求：");
-            sb.AppendLine("1. 结合对话历史理解用户意图");
-            sb.AppendLine("2. 优先从结构化信息中查找答案");
-            sb.AppendLine("3. 如果结构化信息不足，参考原始文档内容");
-            sb.AppendLine("4. 如果两者有冲突，以原始文档为准");
-            sb.AppendLine("5. 给出准确、简洁的回答");
+            sb.AppendLine($"请回答：{userQuestion}");
         }
 
         string finalPrompt = sb.ToString();

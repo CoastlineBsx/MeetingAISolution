@@ -60,6 +60,12 @@ public sealed partial class MainWindow : Window
     // ========== 获取系统提示词 ==========
     private string GetSystemPrompt()
     {
+        // IE模式：使用极简system prompt
+        if (_currentDialogMode == "ie")
+        {
+            return "基于提供的文档信息回答问题。";
+        }
+
         if (RbSimple.IsChecked == true)
         {
             return "Use simple, easy-to-understand language. Avoid jargon. Explain like teaching a beginner.";
