@@ -4,11 +4,63 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Meeting AI (Local)">
 
-    <NavigationView x:Name="NavView"
-                    PaneDisplayMode="Left"
-                    IsBackButtonVisible="Collapsed"
-                    IsSettingsVisible="True"
-                    SelectionChanged="NavView_SelectionChanged">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 自定义标题栏 (48px 高度以容纳搜索框) -->
+        <Grid x:Name="CustomTitleBar"
+              Grid.Row="0"
+              Background="Transparent"
+              Height="48">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧：图标 + 标题 -->
+            <StackPanel Grid.Column="0"
+                       Orientation="Horizontal"
+                       VerticalAlignment="Center"
+                       Margin="16,0,0,0">
+                <!-- 应用图标 (16x16) -->
+                <FontIcon Glyph="&#xE8F2;"
+                         FontSize="16"
+                         Margin="0,0,16,0"/>
+
+                <!-- 应用标题 (Segoe UI Variable, Caption 样式) -->
+                <TextBlock x:Name="AppTitleTextBlock"
+                          Text="Meeting AI (Local)"
+                          Style="{StaticResource CaptionTextBlockStyle}"
+                          VerticalAlignment="Center"
+                          TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+
+            <!-- 中央：搜索框 -->
+            <AutoSuggestBox x:Name="SearchBox"
+                           Grid.Column="1"
+                           PlaceholderText="搜索功能..."
+                           QueryIcon="Find"
+                           Width="400"
+                           Height="32"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           TextChanged="SearchBox_TextChanged"
+                           QuerySubmitted="SearchBox_QuerySubmitted"/>
+
+            <!-- 右侧：为系统按钮预留空间 (由 Windows 自动管理) -->
+        </Grid>
+
+        <!-- NavigationView (占据剩余空间) -->
+        <NavigationView x:Name="NavView"
+                        Grid.Row="1"
+                        PaneDisplayMode="Left"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="True"
+                        SelectionChanged="NavView_SelectionChanged">
 
         <NavigationView.MenuItems>
             <NavigationViewItem Icon="Home" Content="主页" Tag="home" IsSelected="True">
@@ -536,9 +588,9 @@
                     <ListView.ItemTemplate>
                         <DataTemplate>
                             <Grid Margin="4,2">
-                                <!-- 用户消息（右对齐，使用强调色） -->
+                                <!-- 用户消息（右对齐，Teams 紫蓝色） -->
                                 <Border Visibility="{Binding IsUserVisible}"
-                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        Background="{ThemeResource UserBubbleBackground}"
                                         CornerRadius="12"
                                         Padding="12,8"
                                         HorizontalAlignment="Right"
@@ -546,22 +598,20 @@
                                     <StackPanel>
                                         <TextBlock Text="{Binding Content}"
                                                    TextWrapping="Wrap"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                                   Foreground="{ThemeResource UserBubbleText}"
                                                    IsTextSelectionEnabled="True"/>
                                         <TextBlock Text="{Binding DisplayTime}"
                                                    FontSize="10"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorSecondaryBrush}"
+                                                   Foreground="{ThemeResource UserBubbleText}"
                                                    HorizontalAlignment="Right"
                                                    Margin="0,4,0,0"
-                                                   Opacity="0.8"/>
+                                                   Opacity="0.7"/>
                                     </StackPanel>
                                 </Border>
 
-                                <!-- AI 消息（左对齐，使用卡片背景） -->
+                                <!-- AI 消息（左对齐，深灰/浅灰） -->
                                 <Border Visibility="{Binding IsAssistantVisible}"
-                                        Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
+                                        Background="{ThemeResource AIBubbleBackground}"
                                         CornerRadius="12"
                                         Padding="12,8"
                                         HorizontalAlignment="Left"
@@ -569,7 +619,7 @@
                                     <StackPanel>
                                         <TextBlock Text="{Binding Content}"
                                                    TextWrapping="Wrap"
-                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                   Foreground="{ThemeResource AIBubbleText}"
                                                    IsTextSelectionEnabled="True"/>
 
                                         <!-- RAG 引用列表 -->
@@ -578,14 +628,12 @@
                                                       Margin="0,8,0,0">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                                            BorderThickness="1"
+                                                    <Border Background="{ThemeResource CitationBackground}"
                                                             CornerRadius="6"
                                                             Padding="8,4"
                                                             Margin="0,2">
                                                         <StackPanel>
-                                                            <TextBlock Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                            <TextBlock Foreground="{ThemeResource CitationAccent}"
                                                                        FontSize="11"
                                                                        FontWeight="SemiBold">
                                                                 <Run Text="📎 "/>
@@ -593,14 +641,16 @@
                                                             </TextBlock>
                                                             <TextBlock Text="{Binding ChunkText}"
                                                                        TextWrapping="Wrap"
-                                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                       Foreground="{ThemeResource AIBubbleText}"
                                                                        FontSize="10"
                                                                        Margin="0,2,0,0"
                                                                        MaxLines="2"
-                                                                       TextTrimming="CharacterEllipsis"/>
-                                                            <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Opacity="0.8"/>
+                                                            <TextBlock Foreground="{ThemeResource AIBubbleText}"
                                                                        FontSize="9"
-                                                                       Margin="0,2,0,0">
+                                                                       Margin="0,2,0,0"
+                                                                       Opacity="0.6">
                                                                 <Run Text="相似度: "/>
                                                                 <Run Text="{Binding SimilarityDisplay}"/>
                                                             </TextBlock>
@@ -612,9 +662,9 @@
 
                                         <TextBlock Text="{Binding DisplayTime}"
                                                    FontSize="10"
-                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                   Foreground="{ThemeResource AIBubbleText}"
                                                    Margin="0,4,0,0"
-                                                   Opacity="0.8"/>
+                                                   Opacity="0.6"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
@@ -926,31 +976,29 @@
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <Grid Margin="4,2">
-                                    <!-- 用户消息（右对齐，使用强调色） -->
+                                    <!-- 用户消息（右对齐，Teams 紫蓝色） -->
                                     <Border Visibility="{Binding IsUserVisible}"
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                            Background="{ThemeResource UserBubbleBackground}"
                                             CornerRadius="12"
                                             Padding="12,8"
                                             HorizontalAlignment="Right"
                                             MaxWidth="600">
                                         <TextBlock Text="{Binding Content}"
                                                    TextWrapping="Wrap"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                                   Foreground="{ThemeResource UserBubbleText}"
                                                    IsTextSelectionEnabled="True"/>
                                     </Border>
 
-                                    <!-- AI 消息（左对齐，使用卡片背景） -->
+                                    <!-- AI 消息（左对齐，深灰/浅灰） -->
                                     <Border Visibility="{Binding IsAssistantVisible}"
-                                            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
-                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                            BorderThickness="1"
+                                            Background="{ThemeResource AIBubbleBackground}"
                                             CornerRadius="12"
                                             Padding="12,8"
                                             HorizontalAlignment="Left"
                                             MaxWidth="600">
                                         <TextBlock Text="{Binding Content}"
                                                    TextWrapping="Wrap"
-                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                   Foreground="{ThemeResource AIBubbleText}"
                                                    IsTextSelectionEnabled="True"/>
                                     </Border>
                                 </Grid>
@@ -1240,4 +1288,5 @@
             </Grid>
         </NavigationView.Content>
     </NavigationView>
+    </Grid>
 </Window>

@@ -62,9 +62,9 @@
 		<EnableGeneratedComInterfaceComImportInterop>true</EnableGeneratedComInterfaceComImportInterop>
 		<WindowsPackageType>None</WindowsPackageType>
 
-		<!-- 统一输出目录（和 C++ 对齐）：Configuration → Platform → ProjectName -->
-		<BaseOutputPath>$(SolutionDir)artifacts\bin\$(Configuration)\$(Platform)\$(ProjectName)\</BaseOutputPath>
-		<BaseIntermediateOutputPath>$(SolutionDir)artifacts\obj\$(Configuration)\$(Platform)\$(ProjectName)\</BaseIntermediateOutputPath>
+		<!-- 统一输出目录（修正：删除 ProjectName 避免路径重复） -->
+		<BaseOutputPath>$(SolutionDir)artifacts\bin\$(Configuration)\$(Platform)\</BaseOutputPath>
+		<BaseIntermediateOutputPath>$(SolutionDir)artifacts\obj\$(Configuration)\$(Platform)\</BaseIntermediateOutputPath>
 
 		<!-- 保留 TFM/RID 子目录，避免未来多框架/多 RID 覆盖 -->
 		<AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>

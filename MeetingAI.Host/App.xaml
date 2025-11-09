@@ -8,9 +8,46 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+
+            <!-- 聊天颜色主题 (Teams/Copilot 风格) -->
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- Dark Mode -->
+                <ResourceDictionary x:Key="Dark">
+                    <!-- 聊天面板背景 -->
+                    <SolidColorBrush x:Key="ChatPanelBackground" Color="#1F1F1F"/>
+
+                    <!-- 用户消息气泡 (紫蓝色 Teams 品牌色) -->
+                    <SolidColorBrush x:Key="UserBubbleBackground" Color="#464EB8"/>
+                    <SolidColorBrush x:Key="UserBubbleText" Color="#FFFFFF"/>
+
+                    <!-- AI消息气泡 (深灰色) -->
+                    <SolidColorBrush x:Key="AIBubbleBackground" Color="#2B2B2B"/>
+                    <SolidColorBrush x:Key="AIBubbleText" Color="#EDEDED"/>
+
+                    <!-- RAG引用卡片 -->
+                    <SolidColorBrush x:Key="CitationBackground" Color="#3B3B3B"/>
+                    <SolidColorBrush x:Key="CitationAccent" Color="#6B74C8"/>
+                </ResourceDictionary>
+
+                <!-- Light Mode -->
+                <ResourceDictionary x:Key="Light">
+                    <!-- 聊天面板背景 -->
+                    <SolidColorBrush x:Key="ChatPanelBackground" Color="#FFFFFF"/>
+
+                    <!-- 用户消息气泡 (浅紫蓝) -->
+                    <SolidColorBrush x:Key="UserBubbleBackground" Color="#E1E0F7"/>
+                    <SolidColorBrush x:Key="UserBubbleText" Color="#1B1A1F"/>
+
+                    <!-- AI消息气泡 (浅灰) -->
+                    <SolidColorBrush x:Key="AIBubbleBackground" Color="#F3F2F1"/>
+                    <SolidColorBrush x:Key="AIBubbleText" Color="#1B1A1F"/>
+
+                    <!-- RAG引用卡片 -->
+                    <SolidColorBrush x:Key="CitationBackground" Color="#EAEAEA"/>
+                    <SolidColorBrush x:Key="CitationAccent" Color="#464EB8"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
