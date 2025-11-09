@@ -174,6 +174,8 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
     <ClCompile Include="src\embedding\embedding_genai.cpp" />
     <ClCompile Include="src\granite\granite_genai.cpp" />
     <ClCompile Include="src\ipc\pipe_security.cpp" />
+    <ClCompile Include="src\llava\image_processor.cpp" />
+    <ClCompile Include="src\llava\llava_genai.cpp" />
     <ClCompile Include="src\main\main.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
@@ -268,6 +270,9 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
     <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
     <ClInclude Include="include\meetingai\util\logging.h" />
     <ClInclude Include="include\meetingai\util\paths.h" />
+    <ClInclude Include="src\llava\image_processor.h" />
+    <ClInclude Include="src\llava\llava_genai.h" />
+    <ClInclude Include="src\llava\stb_image.h" />
     <ClInclude Include="src\pch.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>

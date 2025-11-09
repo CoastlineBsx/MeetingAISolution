@@ -18,6 +18,7 @@
 #include "transcriber.hpp"
 #include "granite/granite_genai.hpp"  // ← OpenVINO 头文件
 #include "embedding/embedding_genai.hpp"  // ← 新增：Embedding GenAI
+#include "llava/llava_genai.h"  // ← 新增：LLaVA GenAI
 #include "command_parser.h"
 #include "logging.h"
 #include "pipe_security.h"
@@ -29,6 +30,7 @@
 static std::once_flag g_model_once2; // ★ 新增：Worker 级只加载一次模型（Whisper）
 static std::once_flag g_granite_once; // ★ 新增：Granite 模型只加载一次
 static std::once_flag g_embedding_once; // ★ 新增：Embedding 模型只加载一次
+static std::once_flag g_llava_once; // ★ 新增：LLaVA 模型只加载一次
 
 // ========== Granite GenAI 全局实例 ==========
 static std::unique_ptr<meetingai::granite::GraniteGenAI> g_granite;
@@ -39,9 +41,13 @@ static float g_temperature = 0.7f;
 // ========== Embedding GenAI 全局实例 ==========
 static std::unique_ptr<meetingai::embedding::EmbeddingGenAI> g_embedding;
 
+// ========== LLaVA GenAI 全局实例 ==========
+static std::unique_ptr<llava::LLaVAGenAI> g_llava;
+
 // ========== 设备配置 ==========
 static std::string g_granite_device = "GPU";   // Granite LLM 使用的设备
 static std::string g_embedding_device = "GPU"; // Embedding 使用的设备
+static std::string g_llava_device = "NPU";     // LLaVA 使用的设备
 
 // ========== 工具函数：获取环境变量 ==========
 static std::string GetEnvOrDefault(const char* key, const char* fallback) {
@@ -146,6 +152,156 @@ static void InitializeEmbeddingGenAI(HANDLE hPipe, const std::string& device = "
     catch (const std::exception& e) {
         std::wcerr << L"[Worker] Embedding GenAI ❌ 初始化失败: " << e.what() << L"\n";
         std::string err = std::string("{\"type\":\"error\",\"message\":\"Embedding 初始化失败: ") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
+
+// ========== LLaVA GenAI 初始化 ==========
+static void InitializeLLaVAGenAI(HANDLE hPipe, const std::string& device = "NPU") {
+    std::wcout << L"[Worker] 初始化 LLaVA GenAI...\n";
+    try {
+        // 使用模型目录路径（包含所有 LLaVA 模型文件）
+        const std::string model_path = GetEnvOrDefault(
+            "MEETINGAI_LLAVA_MODEL",
+            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/llava"
+        );
+
+        // 使用 VLMPipeline API，直接传入模型目录和设备
+        g_llava = std::make_unique<llava::LLaVAGenAI>(model_path, device);
+
+        std::wcout << L"[Worker] LLaVA GenAI ✅ 初始化成功: " << device.c_str() << L"\n";
+
+        // 通知 Host 模型已就绪
+        std::string ready = std::string("{\"type\":\"llava_ready\",\"device\":\"") + device + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Worker] LLaVA GenAI ❌ 初始化失败: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"LLaVA 初始化失败: ") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
+
+// ========== LLaVA GenAI 命令处理 ==========
+static void handleLLaVACommand(HANDLE hPipe, const std::string& command) {
+    try {
+        // ========== 新增：独立的 load_llava 命令处理 ==========
+        if (command.find("\"type\":\"load_llava\"") != std::string::npos) {
+            DWORD written;
+
+            std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] 收到 load_llava 命令\"}\n";
+            WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+            // 解析设备参数
+            std::string device = "GPU";  // 默认使用 GPU
+            auto devicePos = command.find("\"device\":\"");
+            if (devicePos != std::string::npos) {
+                auto start = devicePos + 10;
+                auto end = command.find("\"", start);
+                if (end != std::string::npos) {
+                    device = command.substr(start, end - start);
+                }
+            }
+
+            std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker] LLaVA 设备: " + device + "\"}\n";
+            WriteFile(hPipe, debug2.data(), (DWORD)debug2.size(), &written, nullptr);
+
+            std::string debug3 = "{\"type\":\"info\",\"message\":\"[Worker] 开始加载 LLaVA 模型（这可能需要 30-60 秒）...\"}\n";
+            WriteFile(hPipe, debug3.data(), (DWORD)debug3.size(), &written, nullptr);
+
+            // 调用初始化函数（使用 call_once 确保只加载一次）
+            std::call_once(g_llava_once, [hPipe, device]() {
+                InitializeLLaVAGenAI(hPipe, device);
+            });
+
+            std::string debug4 = "{\"type\":\"info\",\"message\":\"[Worker] LLaVA 加载完成\"}\n";
+            WriteFile(hPipe, debug4.data(), (DWORD)debug4.size(), &written, nullptr);
+
+            return;
+        }
+
+        // 检查模型是否已加载
+        if (!g_llava) {
+            std::string err = "{\"type\":\"error\",\"message\":\"❌ LLaVA 模型未加载，请先点击'加载LLaVA模型'按钮\"}\n";
+            DWORD written;
+            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            return;
+        }
+
+        auto write_json = [&](const std::string& payload) {
+            DWORD written;
+            WriteFile(hPipe, payload.data(), (DWORD)payload.size(), &written, nullptr);
+            FlushFileBuffers(hPipe);
+        };
+
+        // 辅助函数：提取 image_path 字段
+        auto extractImagePath = [](const std::string& json) -> std::string {
+            size_t pos = json.find("\"image_path\"");
+            if (pos == std::string::npos) return "";
+            size_t colonPos = json.find(":", pos);
+            if (colonPos == std::string::npos) return "";
+            size_t quoteStart = json.find("\"", colonPos);
+            if (quoteStart == std::string::npos) return "";
+            size_t quoteEnd = json.find("\"", quoteStart + 1);
+            if (quoteEnd == std::string::npos) return "";
+            return json.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+        };
+
+        // -------- 单轮模式：生成 --------
+        if (command.find("\"llava_generate\"") != std::string::npos) {
+            std::string image_path = extractImagePath(command);
+            std::string prompt = meetingai::proto::extractPrompt(command);
+            int maxTokens = meetingai::proto::extractMaxTokens(command, 512);
+            float temp = meetingai::proto::extractTemperature(command, 0.7f);
+
+            std::wcout << L"[LLaVA] 单轮生成: " << image_path.c_str() << L"\n";
+
+            g_llava->generateStream(image_path, prompt, [&](const std::string& token) {
+                std::string chunk = "{\"type\":\"llava_token\",\"token\":\"" +
+                    meetingai::proto::jsonEscape(token) + "\"}\n";
+                write_json(chunk);
+            }, maxTokens, temp);
+
+            write_json("{\"type\":\"llava_complete\"}\n");
+        }
+        // -------- 多轮模式：开始会话 --------
+        else if (command.find("\"llava_start_chat\"") != std::string::npos) {
+            std::string image_path = extractImagePath(command);
+            g_llava->startChat(image_path);
+            write_json("{\"type\":\"llava_chat_status\",\"status\":\"started\"}\n");
+            std::wcout << L"[LLaVA] 多轮会话已开始\n";
+        }
+        // -------- 多轮模式：流式对话 --------
+        else if (command.find("\"llava_chat_stream\"") != std::string::npos) {
+            std::string prompt = meetingai::proto::extractPrompt(command);
+            int maxTokens = meetingai::proto::extractMaxTokens(command, 512);
+            float temp = meetingai::proto::extractTemperature(command, 0.7f);
+
+            std::wcout << L"[LLaVA] 多轮对话: " << prompt.c_str() << L"\n";
+
+            g_llava->chatStream(prompt, [&](const std::string& token) {
+                std::string chunk = "{\"type\":\"llava_token\",\"token\":\"" +
+                    meetingai::proto::jsonEscape(token) + "\"}\n";
+                write_json(chunk);
+            }, maxTokens, temp);
+
+            write_json("{\"type\":\"llava_complete\"}\n");
+        }
+        // -------- 多轮模式：结束会话 --------
+        else if (command.find("\"llava_finish_chat\"") != std::string::npos) {
+            g_llava->finishChat();
+            write_json("{\"type\":\"llava_chat_status\",\"status\":\"finished\"}\n");
+            std::wcout << L"[LLaVA] 多轮会话已结束\n";
+        }
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[LLaVA] 处理命令异常: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"") +
             meetingai::proto::jsonEscape(e.what()) + "\"}\n";
         DWORD written;
         WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
@@ -696,6 +852,7 @@ int wmain() {
                     // 解析设备选择
                     std::string graniteDeviceCmd = g_granite_device;
                     std::string embeddingDeviceCmd = g_embedding_device;
+                    std::string llavaDeviceCmd = g_llava_device;
 
                     auto granitePos = buffer.find("\"granite_device\":\"");
                     if (granitePos != std::string::npos) {
@@ -715,7 +872,16 @@ int wmain() {
                         }
                     }
 
-                    std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 设备参数: Granite=" + graniteDeviceCmd + ", Embedding=" + embeddingDeviceCmd + "\"}\n";
+                    auto llavaPos = buffer.find("\"llava_device\":\"");
+                    if (llavaPos != std::string::npos) {
+                        auto start = llavaPos + 16;
+                        auto end = buffer.find("\"", start);
+                        if (end != std::string::npos) {
+                            llavaDeviceCmd = buffer.substr(start, end - start);
+                        }
+                    }
+
+                    std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 设备参数: Granite=" + graniteDeviceCmd + ", Embedding=" + embeddingDeviceCmd + ", LLaVA=" + llavaDeviceCmd + "\"}\n";
                     WriteFile(hPipe, debug2.data(), (DWORD)debug2.size(), &written, nullptr);
 
                     // 发送确认消息
@@ -733,10 +899,17 @@ int wmain() {
                     std::string debug4 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载Embedding...\"}\n";
                     WriteFile(hPipe, debug4.data(), (DWORD)debug4.size(), &written, nullptr);
 
-
                     std::call_once(g_embedding_once, [hPipe, embeddingDeviceCmd]() {
                         InitializeEmbeddingGenAI(hPipe, embeddingDeviceCmd);
                     });
+
+                    // ---- 临时注释：测试 LLaVA 加载问题 ----
+                    // std::string debug4_5 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载LLaVA...\"}\n";
+                    // WriteFile(hPipe, debug4_5.data(), (DWORD)debug4_5.size(), &written, nullptr);
+                    //
+                    // std::call_once(g_llava_once, [hPipe, llavaDeviceCmd]() {
+                    //     InitializeLLaVAGenAI(hPipe, llavaDeviceCmd);
+                    // });
 
                     std::string debug5 = "{\"type\":\"info\",\"message\":\"[Worker Debug]预加载完成\"}\n";
                     WriteFile(hPipe, debug5.data(), (DWORD)debug5.size(), &written, nullptr);
@@ -754,6 +927,13 @@ int wmain() {
                 // ---- 新增：Embedding 命令处理 ----
                 if (buffer.find("\"embedding_") != std::string::npos) {
                     handleEmbeddingCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：LLaVA 命令处理 ----
+                if (buffer.find("\"llava_") != std::string::npos || buffer.find("\"load_llava\"") != std::string::npos) {
+                    handleLLaVACommand(hPipe, buffer);
                     buffer.clear();
                     continue;
                 }

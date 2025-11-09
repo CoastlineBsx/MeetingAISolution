@@ -153,11 +153,12 @@ public sealed partial class MainWindow : Window
             BtnGraniteClear.IsEnabled = true;
             BtnGraniteSend.IsEnabled = true;
 
-            // 启用 4个对话模式按钮
+            // 启用 5个对话模式按钮
             BtnNormalMode.IsEnabled = true;
             BtnQuickQA.IsEnabled = true;
             BtnIEMode.IsEnabled = true;
             BtnRAGMode.IsEnabled = true;
+            BtnLLaVAMode.IsEnabled = true;
 
             // 默认选中普通对话模式
             _currentDialogMode = "normal";
@@ -413,6 +414,62 @@ public sealed partial class MainWindow : Window
                         });
                     }
                     catch { }
+                    continue;
+                }
+
+                // ========== LLaVA 消息处理 ==========
+                if (line.Contains("\"type\":\"llava_ready\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+                        string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
+                        await AppendLineAsync($"[LLaVA] ✅ 模型已就绪 (device={device})");
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            LblStatus.Text = "LLaVA 已就绪";
+                            LblLLaVAStatus.Text = $"✅ 模型已加载 ({device})";
+                            LblLLaVAStatus.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green);
+
+                            // 启用所有 LLaVA 功能按钮
+                            BtnUploadImage.IsEnabled = true;
+                            BtnLLaVASingle.IsEnabled = false;  // 默认单轮模式
+                            BtnLLaVAMulti.IsEnabled = true;
+                            BtnLLaVAClear.IsEnabled = true;
+                            BtnLLaVASend.IsEnabled = true;
+
+                            _isLLaVALoaded = true;
+                        });
+                    }
+                    catch { }
+                    continue;
+                }
+
+                if (line.Contains("\"type\":\"llava_token\""))
+                {
+                    try
+                    {
+                        using var jd = JsonDocument.Parse(line);
+                        var root = jd.RootElement;
+                        string token = root.TryGetProperty("token", out var t) ? (t.GetString() ?? "") : "";
+                        await HandleLLaVAStreamToken(token);
+                    }
+                    catch { }
+                    continue;
+                }
+
+                if (line.Contains("\"type\":\"llava_complete\""))
+                {
+                    try
+                    {
+                        HandleLLaVAStreamDone();
+                        await AppendLineAsync("[LLaVA] 生成完成");
+                    }
+                    catch (Exception ex)
+                    {
+                        await AppendLineAsync($"[LLaVA] 处理 complete 消息异常：{ex.Message}");
+                    }
                     continue;
                 }
 

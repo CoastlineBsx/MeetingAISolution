@@ -195,7 +195,7 @@
                            VerticalAlignment="Center" Foreground="Gray"/>
             </StackPanel>
 
-            <!-- 第二行：4个对话模式选择 -->
+            <!-- 第二行：5个对话模式选择 -->
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
                 <TextBlock Text="    " VerticalAlignment="Center"/>
                 <Button x:Name="BtnNormalMode" Content="💬 普通对话"
@@ -209,6 +209,9 @@
                         Padding="8,4"/>
                 <Button x:Name="BtnRAGMode" Content="📚 RAG模式"
                         Click="BtnRAGMode_Click" IsEnabled="False"
+                        Padding="8,4"/>
+                <Button x:Name="BtnLLaVAMode" Content="🖼️ 视觉问答"
+                        Click="BtnLLaVAMode_Click" IsEnabled="False"
                         Padding="8,4"/>
             </StackPanel>
 
@@ -633,6 +636,155 @@
                 <Button x:Name="BtnGraniteSend" Grid.Row="5"
                         Content="📤 发送 (Ctrl+Enter)"
                         Click="BtnGraniteSend_Click"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,4,0,0"
+                        IsEnabled="False"/>
+            </Grid>
+
+            <!-- 右侧：LLaVA 视觉问答区（默认隐藏） -->
+            <Grid Grid.Column="2" x:Name="LLaVAPanel" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="200"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="80"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="🖼️ 视觉问答" FontWeight="Bold" Margin="0,0,0,4"/>
+
+                <!-- 图片预览区 -->
+                <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1"
+                        CornerRadius="4" Margin="0,4"
+                        AllowDrop="True"
+                        DragOver="ImgPreview_DragOver"
+                        Drop="ImgPreview_Drop">
+                    <Grid>
+                        <Image x:Name="ImgPreview" Stretch="Uniform"/>
+                        <TextBlock Text="拖拽图片到此处&#x0a;或点击上传按钮"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   TextAlignment="Center"
+                                   Foreground="Gray"
+                                   FontSize="14"
+                                   x:Name="ImgPlaceholder"/>
+                    </Grid>
+                </Border>
+
+                <!-- 图片上传控制 -->
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,4">
+                    <Button x:Name="BtnLoadLLaVA" Content="🚀 加载LLaVA模型"
+                            Click="BtnLoadLLaVA_Click" IsEnabled="True"
+                            Background="#FF4CAF50" Foreground="White"/>
+                    <Button x:Name="BtnUploadImage" Content="📤 上传图片"
+                            Click="BtnUploadImage_Click" IsEnabled="False"/>
+                    <TextBlock x:Name="LblImageStatus" Text="未加载图片"
+                               VerticalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock x:Name="LblLLaVAStatus" Text="⚠️ 未加载模型"
+                               VerticalAlignment="Center" Foreground="Orange" FontWeight="Bold"/>
+                </StackPanel>
+
+                <!-- 模式切换 -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,4">
+                    <Button x:Name="BtnLLaVASingle" Content="🔄 单轮模式"
+                            Click="BtnLLaVASingle_Click" IsEnabled="False"/>
+                    <Button x:Name="BtnLLaVAMulti" Content="💬 多轮模式"
+                            Click="BtnLLaVAMulti_Click" IsEnabled="False"/>
+                    <Button x:Name="BtnLLaVAClear" Content="🗑️ 清空历史"
+                            Click="BtnLLaVAClear_Click" IsEnabled="False"/>
+                    <TextBlock x:Name="LblLLaVAMode" Text="[单轮模式]"
+                               VerticalAlignment="Center" Foreground="Gray"/>
+                </StackPanel>
+
+                <!-- LLaVA 对话历史 -->
+                <ListView x:Name="LLaVAChatList" Grid.Row="4"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          SelectionMode="None"
+                          Margin="0,4">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="4"/>
+                            <Setter Property="Margin" Value="0"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="4,2">
+                                <!-- 用户消息（右对齐） -->
+                                <Border Visibility="{Binding IsUserVisible}"
+                                        Background="#1976D2"
+                                        CornerRadius="12"
+                                        Padding="12,8"
+                                        HorizontalAlignment="Right"
+                                        MaxWidth="400">
+                                    <TextBlock Text="{Binding Content}"
+                                               TextWrapping="Wrap"
+                                               Foreground="White"
+                                               IsTextSelectionEnabled="True"/>
+                                </Border>
+
+                                <!-- AI 消息（左对齐） -->
+                                <Border Visibility="{Binding IsAssistantVisible}"
+                                        Background="#455A64"
+                                        CornerRadius="12"
+                                        Padding="12,8"
+                                        HorizontalAlignment="Left"
+                                        MaxWidth="400">
+                                    <TextBlock Text="{Binding Content}"
+                                               TextWrapping="Wrap"
+                                               Foreground="White"
+                                               IsTextSelectionEnabled="True"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <!-- LLaVA 参数控制 -->
+                <Grid Grid.Row="5" Margin="0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Text="创造性:" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbLLaVATemperature" Grid.Column="1"
+                              SelectedIndex="1" Margin="4,0">
+                        <ComboBoxItem Content="0.1 精确"/>
+                        <ComboBoxItem Content="0.7 平衡"/>
+                        <ComboBoxItem Content="0.9 创意"/>
+                    </ComboBox>
+
+                    <TextBlock Grid.Column="2" Text="长度:"
+                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <ComboBox x:Name="CmbLLaVAMaxTokens" Grid.Column="3"
+                              SelectedIndex="1" Margin="4,0">
+                        <ComboBoxItem Content="256 简短"/>
+                        <ComboBoxItem Content="512 正常"/>
+                        <ComboBoxItem Content="1024 详细"/>
+                    </ComboBox>
+
+                    <!-- 输入框 -->
+                    <TextBox x:Name="TxtLLaVAInput" Grid.Row="1" Grid.ColumnSpan="4"
+                             PlaceholderText="输入关于图片的问题..."
+                             TextWrapping="Wrap"
+                             Margin="0,4,0,0"/>
+                </Grid>
+
+                <!-- 发送按钮 -->
+                <Button x:Name="BtnLLaVASend" Grid.Row="6"
+                        Content="📤 发送"
+                        Click="BtnLLaVASend_Click"
                         HorizontalAlignment="Stretch"
                         Margin="0,4,0,0"
                         IsEnabled="False"/>

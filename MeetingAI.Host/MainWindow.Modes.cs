@@ -49,6 +49,12 @@ public partial class MainWindow
             _currentDialogMode = "normal";
             _isRAGMode = false;
 
+            // 显示 Granite 面板，隐藏 LLaVA 面板
+            ChatHistoryList.Visibility = Visibility.Visible;
+            TxtGraniteInput.Visibility = Visibility.Visible;
+            BtnGraniteSend.Visibility = Visibility.Visible;
+            LLaVAPanel.Visibility = Visibility.Collapsed;
+
             // 切换到普通模式的聊天历史
             SwitchChatHistory(_normalChatHistory);
 
@@ -91,6 +97,12 @@ public partial class MainWindow
         {
             _currentDialogMode = "quickqa";
             _isRAGMode = false;
+
+            // 显示 Granite 面板，隐藏 LLaVA 面板
+            ChatHistoryList.Visibility = Visibility.Visible;
+            TxtGraniteInput.Visibility = Visibility.Visible;
+            BtnGraniteSend.Visibility = Visibility.Visible;
+            LLaVAPanel.Visibility = Visibility.Collapsed;
 
             // 切换到快速问答模式的聊天历史
             SwitchChatHistory(_quickQAChatHistory);
@@ -142,6 +154,12 @@ public partial class MainWindow
         {
             _currentDialogMode = "ie";
             _isRAGMode = false;
+
+            // 显示 Granite 面板，隐藏 LLaVA 面板
+            ChatHistoryList.Visibility = Visibility.Visible;
+            TxtGraniteInput.Visibility = Visibility.Visible;
+            BtnGraniteSend.Visibility = Visibility.Visible;
+            LLaVAPanel.Visibility = Visibility.Collapsed;
 
             // 切换到IE模式的聊天历史
             SwitchChatHistory(_ieChatHistory);
@@ -210,6 +228,12 @@ public partial class MainWindow
         {
             _currentDialogMode = "rag";
 
+            // 显示 Granite 面板，隐藏 LLaVA 面板
+            ChatHistoryList.Visibility = Visibility.Visible;
+            TxtGraniteInput.Visibility = Visibility.Visible;
+            BtnGraniteSend.Visibility = Visibility.Visible;
+            LLaVAPanel.Visibility = Visibility.Collapsed;
+
             // 切换到RAG模式的聊天历史
             SwitchChatHistory(_ragChatHistory);
 
@@ -269,6 +293,69 @@ public partial class MainWindow
         catch (Exception ex)
         {
             // 静默处理，不影响用户
+        }
+    }
+
+    /// <summary>
+    /// LLaVA 视觉问答模式
+    /// </summary>
+    private async void BtnLLaVAMode_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _currentDialogMode = "llava";
+            _isRAGMode = false;
+
+            // 隐藏 Granite 面板，显示 LLaVA 面板
+            ChatHistoryList.Visibility = Visibility.Collapsed;
+            TxtGraniteInput.Visibility = Visibility.Collapsed;
+            BtnGraniteSend.Visibility = Visibility.Collapsed;
+            RbSimple.Visibility = Visibility.Collapsed;
+            RbNormal.Visibility = Visibility.Collapsed;
+            RbProfessional.Visibility = Visibility.Collapsed;
+            CmbTemperature.Visibility = Visibility.Collapsed;
+            CmbMaxTokens.Visibility = Visibility.Collapsed;
+
+            LLaVAPanel.Visibility = Visibility.Visible;
+
+            // 隐藏其他模式控件
+            BtnRAGTest.Visibility = Visibility.Collapsed;
+            BtnDocumentManage.Visibility = Visibility.Collapsed;
+            DocumentExpander.Visibility = Visibility.Collapsed;
+
+            BtnQuickQALoad.Visibility = Visibility.Collapsed;
+            LblQuickQADoc.Visibility = Visibility.Collapsed;
+            BtnQuickQAClear.Visibility = Visibility.Collapsed;
+
+            BtnIELoad.Visibility = Visibility.Collapsed;
+            CmbIETemplate.Visibility = Visibility.Collapsed;
+            LblIEDoc.Visibility = Visibility.Collapsed;
+            BtnIEExtract.Visibility = Visibility.Collapsed;
+            LblIEStatus.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            BtnIEExport.Visibility = Visibility.Collapsed;
+            BtnIEReExtract.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
+
+            // 更新 LLaVA 聊天列表绑定
+            LLaVAChatList.ItemsSource = _llavaChatHistory;
+
+            // 启用 LLaVA 控件
+            BtnUploadImage.IsEnabled = true;
+            BtnLLaVASingle.IsEnabled = false;  // 默认单轮模式
+            BtnLLaVAMulti.IsEnabled = true;
+            BtnLLaVAClear.IsEnabled = true;
+            BtnLLaVASend.IsEnabled = true;
+
+            // 更新状态提示
+            LblModeStatus.Text = "🖼️ 视觉问答模式";
+
+            await AppendLineAsync("[模式] 已切换到 LLaVA 视觉问答模式");
+            await AppendLineAsync("[模式] 💡 上传图片后可以对图片内容进行提问");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[模式] 切换失败：{ex.Message}");
         }
     }
 }
