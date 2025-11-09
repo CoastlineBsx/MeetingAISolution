@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using MeetingAI.Host.Contracts;
 using MeetingAI.Host.Models;
 using Windows.Storage;
@@ -51,11 +52,19 @@ public sealed partial class MainWindow : Window
 
             await EnsurePipeAsync();
 
+            // 读取用户选择的设备
+            string llaVADevice = CmbLLaVADevice.SelectedIndex switch
+            {
+                0 => "CPU",
+                2 => "NPU",
+                _ => "GPU"
+            };
+
             // 发送加载 LLaVA 命令
             var loadCmd = new
             {
                 type = "load_llava",
-                device = "GPU"  // 使用 GPU，避免 NPU 兼容性问题
+                device = llaVADevice
             };
             var json = JsonSerializer.Serialize(loadCmd) + "\n";
             await SendJsonAsync(json);
@@ -128,7 +137,12 @@ public sealed partial class MainWindow : Window
             DispatcherQueue.TryEnqueue(() =>
             {
                 ImgPreview.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(file.Path));
+                ImgPlaceholder.Visibility = Visibility.Collapsed;
                 LblImageStatus.Text = $"✅ {file.Name} ({properties.Size / 1024:F0} KB)";
+                LblImageStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Green);
+
+                // 启用删除按钮
+                BtnDeleteImage.IsEnabled = true;
             });
 
             await AppendLineAsync($"[LLaVA] 图片已加载: {file.Name}");
@@ -142,6 +156,51 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[LLaVA] 加载图片失败：{ex.Message}");
+        }
+    }
+
+    // ========== 删除图片 ==========
+    private async void BtnDeleteImage_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 如果在多轮模式，先结束会话
+            if (_llavaMode == "multi")
+            {
+                await EnsurePipeAsync();
+                var finishCmd = new { type = "llava_finish_chat" };
+                var json = JsonSerializer.Serialize(finishCmd) + "\n";
+                await SendJsonAsync(json);
+
+                // 切回单轮模式
+                _llavaMode = "single";
+                LblLLaVAMode.Text = "[单轮模式] 每次重新编码图片";
+                BtnLLaVASingle.IsEnabled = false;
+                BtnLLaVAMulti.IsEnabled = true;
+            }
+
+            // 清空图片相关数据
+            _currentImagePath = null;
+
+            // 更新UI
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ImgPreview.Source = null;
+                ImgPlaceholder.Visibility = Visibility.Visible;
+                LblImageStatus.Text = "未加载图片";
+                LblImageStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray);
+
+                // 禁用删除按钮和模式切换按钮
+                BtnDeleteImage.IsEnabled = false;
+                BtnLLaVASingle.IsEnabled = false;
+                BtnLLaVAMulti.IsEnabled = false;
+            });
+
+            await AppendLineAsync("[LLaVA] ✅ 图片已删除");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[LLaVA] 删除图片失败：{ex.Message}");
         }
     }
 

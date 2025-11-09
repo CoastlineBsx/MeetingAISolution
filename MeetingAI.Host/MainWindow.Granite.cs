@@ -74,11 +74,16 @@ public sealed partial class MainWindow : Window
             return "基于提供的文档信息回答问题。";
         }
 
-        if (RbSimple.IsChecked == true)
+        // 检查是否在ChatPage，如果是则从ChatPage读取
+        bool isInChatPage = ChatPage.Visibility == Visibility.Visible;
+        var rbSimple = isInChatPage ? RbSimpleChat : RbSimple;
+        var rbProfessional = isInChatPage ? RbProfessionalChat : RbProfessional;
+
+        if (rbSimple.IsChecked == true)
         {
             return "Use simple, easy-to-understand language. Avoid jargon. Explain like teaching a beginner.";
         }
-        else if (RbProfessional.IsChecked == true)
+        else if (rbProfessional.IsChecked == true)
         {
             return "Use technical terminology and professional language. Assume expert-level knowledge. Be concise and precise.";
         }
@@ -109,6 +114,9 @@ public sealed partial class MainWindow : Window
             LblGraniteMode.Text = "[单轮模式] 每次独立回答";
             BtnGraniteSingle.IsEnabled = false;
             BtnGraniteMulti.IsEnabled = true;
+            // 同步ChatPage的按钮状态
+            BtnGraniteSingleChat.IsEnabled = false;
+            BtnGraniteMultiChat.IsEnabled = true;
 
             await AppendLineAsync("[Granite] 已切换到单轮模式");
         }
@@ -139,6 +147,9 @@ public sealed partial class MainWindow : Window
             LblGraniteMode.Text = "[多轮模式] 保留上下文";
             BtnGraniteSingle.IsEnabled = true;
             BtnGraniteMulti.IsEnabled = false;
+            // 同步ChatPage的按钮状态
+            BtnGraniteSingleChat.IsEnabled = true;
+            BtnGraniteMultiChat.IsEnabled = false;
 
             await AppendLineAsync("[Granite] 已切换到多轮模式，会话已开始");
         }
@@ -219,7 +230,10 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var userInput = TxtGraniteInput.Text.Trim();
+            // 检查是否在ChatPage，如果是则从ChatPage读取
+            bool isInChatPage = ChatPage.Visibility == Visibility.Visible;
+
+            var userInput = isInChatPage ? TxtGraniteInputChat.Text.Trim() : TxtGraniteInput.Text.Trim();
             if (string.IsNullOrEmpty(userInput)) return;
 
             await EnsurePipeAsync();
@@ -245,13 +259,21 @@ public sealed partial class MainWindow : Window
             _scrollThrottleCounter = 0;
 
             // 自动滚动到底部
-            if (ChatHistoryList.Items.Count > 0)
+            var chatListView = isInChatPage ? ChatHistoryListChat : ChatHistoryList;
+            if (chatListView.Items.Count > 0)
             {
-                ChatHistoryList.ScrollIntoView(ChatHistoryList.Items[^1]);
+                chatListView.ScrollIntoView(chatListView.Items[^1]);
             }
 
             // 清空输入框
-            TxtGraniteInput.Text = "";
+            if (isInChatPage)
+            {
+                TxtGraniteInputChat.Text = "";
+            }
+            else
+            {
+                TxtGraniteInput.Text = "";
+            }
 
             // ========== IE 对话模式处理 ==========
             string promptToSend = userInput;
@@ -326,9 +348,12 @@ public sealed partial class MainWindow : Window
                 }
             }
 
-            // 获取参数（提取数字部分）
-            string maxTokensStr = ((ComboBoxItem)CmbMaxTokens.SelectedItem).Content.ToString()!;
-            string temperatureStr = ((ComboBoxItem)CmbTemperature.SelectedItem).Content.ToString()!;
+            // 获取参数（提取数字部分）- 根据所在页面读取
+            var maxTokensCombo = isInChatPage ? CmbMaxTokensChat : CmbMaxTokens;
+            var temperatureCombo = isInChatPage ? CmbTemperatureChat : CmbTemperature;
+
+            string maxTokensStr = ((ComboBoxItem)maxTokensCombo.SelectedItem).Content.ToString()!;
+            string temperatureStr = ((ComboBoxItem)temperatureCombo.SelectedItem).Content.ToString()!;
 
             // 提取数字：取第一个空格之前的部分
             int maxTokens = int.Parse(maxTokensStr.Split(' ')[0]);

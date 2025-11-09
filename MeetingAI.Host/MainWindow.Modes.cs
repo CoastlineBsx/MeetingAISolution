@@ -77,7 +77,22 @@ public partial class MainWindow
             BtnIEReExtract.Visibility = Visibility.Collapsed;
             BtnIEContinueDialog.Visibility = Visibility.Collapsed;
 
-            // 更新状态提示
+            // 主页的控件（带"2"后缀）也要隐藏
+            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
+            LblQuickQADoc2.Visibility = Visibility.Collapsed;
+            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
+            BtnRAGTest2.Visibility = Visibility.Collapsed;
+            BtnDocumentManage2.Visibility = Visibility.Collapsed;
+            BtnIELoad2.Visibility = Visibility.Collapsed;
+            CmbIETemplate2.Visibility = Visibility.Collapsed;
+            LblIEDoc2.Visibility = Visibility.Collapsed;
+            BtnIEExtract2.Visibility = Visibility.Collapsed;
+            LblIEStatus2.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON2.Visibility = Visibility.Collapsed;
+            BtnIEExport2.Visibility = Visibility.Collapsed;
+            BtnIEReExtract2.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog2.Visibility = Visibility.Collapsed;
+
             LblModeStatus.Text = "✅ 普通对话模式";
 
             await AppendLineAsync("[模式] 已切换到普通对话模式");
@@ -130,7 +145,23 @@ public partial class MainWindow
             BtnQuickQAClear.Visibility = Visibility.Visible;
             // BtnQuickQAClear.IsEnabled 由 UpdateQuickQAUI() 控制
 
-            // 更新状态提示
+            // 主页的控件（带"2"后缀）- 显示QuickQA控件，隐藏其他
+            BtnQuickQALoad2.Visibility = Visibility.Visible;
+            BtnQuickQALoad2.IsEnabled = true;
+            LblQuickQADoc2.Visibility = Visibility.Visible;
+            BtnQuickQAClear2.Visibility = Visibility.Visible;
+            BtnRAGTest2.Visibility = Visibility.Collapsed;
+            BtnDocumentManage2.Visibility = Visibility.Collapsed;
+            BtnIELoad2.Visibility = Visibility.Collapsed;
+            CmbIETemplate2.Visibility = Visibility.Collapsed;
+            LblIEDoc2.Visibility = Visibility.Collapsed;
+            BtnIEExtract2.Visibility = Visibility.Collapsed;
+            LblIEStatus2.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON2.Visibility = Visibility.Collapsed;
+            BtnIEExport2.Visibility = Visibility.Collapsed;
+            BtnIEReExtract2.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog2.Visibility = Visibility.Collapsed;
+
             LblModeStatus.Text = "⚡ 快速问答模式";
 
             // 更新文档显示
@@ -204,8 +235,41 @@ public partial class MainWindow
                 CmbIETemplate.SelectedIndex = CmbIETemplate.Items.Count - 1;
             }
 
-            // 更新状态提示
-            LblModeStatus.Text = "🔍 IE模式";
+            // 主页的控件（带"2"后缀）- 显示IE控件，隐藏其他
+            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
+            LblQuickQADoc2.Visibility = Visibility.Collapsed;
+            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
+            BtnRAGTest2.Visibility = Visibility.Collapsed;
+            BtnDocumentManage2.Visibility = Visibility.Collapsed;
+            BtnIELoad2.Visibility = Visibility.Visible;
+            BtnIELoad2.IsEnabled = true;
+            CmbIETemplate2.Visibility = Visibility.Visible;
+            CmbIETemplate2.IsEnabled = true;
+            LblIEDoc2.Visibility = Visibility.Visible;
+            BtnIEExtract2.Visibility = Visibility.Visible;
+            LblIEStatus2.Visibility = Visibility.Visible;
+            BtnIECopyJSON2.Visibility = Visibility.Visible;
+            BtnIEExport2.Visibility = Visibility.Visible;
+            BtnIEReExtract2.Visibility = Visibility.Visible;
+            BtnIEContinueDialog2.Visibility = Visibility.Visible;
+
+            // 填充主页模板下拉菜单
+            CmbIETemplate2.Items.Clear();
+            foreach (var template in IETemplates.AllTemplates)
+            {
+                var item = new ComboBoxItem
+                {
+                    Content = $"{template.Icon} {template.Name}",
+                    Tag = template.Id
+                };
+                CmbIETemplate2.Items.Add(item);
+            }
+            if (CmbIETemplate2.Items.Count > 0)
+            {
+                CmbIETemplate2.SelectedIndex = CmbIETemplate2.Items.Count - 1;
+            }
+
+            LblModeStatus.Text = "🔍 IE 模式";
 
             // 更新 IE UI 状态
             UpdateIEUI();
@@ -261,8 +325,25 @@ public partial class MainWindow
             DocumentExpander.Visibility = Visibility.Visible;
             DocumentExpander.IsExpanded = false; // 不自动展开，等用户点击按钮
 
-            // 更新状态提示
-            LblModeStatus.Text = "📚 RAG模式";
+            // 主页的控件（带"2"后缀）- 显示RAG控件，隐藏其他
+            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
+            LblQuickQADoc2.Visibility = Visibility.Collapsed;
+            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
+            BtnRAGTest2.Visibility = Visibility.Visible;
+            BtnRAGTest2.IsEnabled = true;
+            BtnDocumentManage2.Visibility = Visibility.Visible;
+            BtnDocumentManage2.IsEnabled = true;
+            BtnIELoad2.Visibility = Visibility.Collapsed;
+            CmbIETemplate2.Visibility = Visibility.Collapsed;
+            LblIEDoc2.Visibility = Visibility.Collapsed;
+            BtnIEExtract2.Visibility = Visibility.Collapsed;
+            LblIEStatus2.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON2.Visibility = Visibility.Collapsed;
+            BtnIEExport2.Visibility = Visibility.Collapsed;
+            BtnIEReExtract2.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog2.Visibility = Visibility.Collapsed;
+
+            LblModeStatus.Text = "📚 RAG 模式";
 
             // 自动初始化RAG（如果还没初始化）
             if (!_isRAGInitialized)
@@ -347,7 +428,22 @@ public partial class MainWindow
             BtnLLaVAClear.IsEnabled = true;
             BtnLLaVASend.IsEnabled = true;
 
-            // 更新状态提示
+            // 主页的控件（带"2"后缀）- 隐藏所有模式专用控件
+            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
+            LblQuickQADoc2.Visibility = Visibility.Collapsed;
+            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
+            BtnRAGTest2.Visibility = Visibility.Collapsed;
+            BtnDocumentManage2.Visibility = Visibility.Collapsed;
+            BtnIELoad2.Visibility = Visibility.Collapsed;
+            CmbIETemplate2.Visibility = Visibility.Collapsed;
+            LblIEDoc2.Visibility = Visibility.Collapsed;
+            BtnIEExtract2.Visibility = Visibility.Collapsed;
+            LblIEStatus2.Visibility = Visibility.Collapsed;
+            BtnIECopyJSON2.Visibility = Visibility.Collapsed;
+            BtnIEExport2.Visibility = Visibility.Collapsed;
+            BtnIEReExtract2.Visibility = Visibility.Collapsed;
+            BtnIEContinueDialog2.Visibility = Visibility.Collapsed;
+
             LblModeStatus.Text = "🖼️ 视觉问答模式";
 
             await AppendLineAsync("[模式] 已切换到 LLaVA 视觉问答模式");

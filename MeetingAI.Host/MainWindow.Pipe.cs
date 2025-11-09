@@ -153,17 +153,23 @@ public sealed partial class MainWindow : Window
             BtnGraniteClear.IsEnabled = true;
             BtnGraniteSend.IsEnabled = true;
 
-            // 启用 5个对话模式按钮
-            BtnNormalMode.IsEnabled = true;
+            // 默认选中普通对话模式
+            _currentDialogMode = "normal";
+            _isRAGMode = false;
+
+            // 启用模式选择按钮（普通对话已迁移到导航）
             BtnQuickQA.IsEnabled = true;
             BtnIEMode.IsEnabled = true;
             BtnRAGMode.IsEnabled = true;
             BtnLLaVAMode.IsEnabled = true;
 
-            // 默认选中普通对话模式
-            _currentDialogMode = "normal";
-            _isRAGMode = false;
-            LblModeStatus.Text = "✅ 普通对话模式";
+            // 启用ChatPage的按钮
+            BtnGraniteSingleChat.IsEnabled = false; // 默认单轮模式，单轮按钮禁用
+            BtnGraniteMultiChat.IsEnabled = true;
+            BtnGraniteClearChat.IsEnabled = true;
+            BtnGraniteSendChat.IsEnabled = true;
+
+            LblModeStatus.Text = "";
 
             LblStatus.Text = "Worker 已启动";
             await AppendLineAsync("[Host] Worker 启动完成");
@@ -509,24 +515,6 @@ public sealed partial class MainWindow : Window
                 }
 
                 // ========== Whisper 转录消息处理 ==========
-                if (line.Contains("\"type\":\"stream_segment2\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-                        string streamId = root.TryGetProperty("stream_id", out var sid) ? (sid.GetString() ?? "") : "";
-                        string src = root.TryGetProperty("source", out var s) ? (s.GetString() ?? "") : "";
-                        double t0 = root.TryGetProperty("t0_ms", out var t0e) ? t0e.GetDouble() / 1000.0 : 0.0;
-                        double t1 = root.TryGetProperty("t1_ms", out var t1e) ? t1e.GetDouble() / 1000.0 : 0.0;
-                        string text = root.TryGetProperty("text", out var te) ? (te.GetString() ?? "") : "";
-
-                        await AppendLineAsync($"[Stream {src}] [{t0:F2}-{t1:F2}s] {text}");
-                    }
-                    catch { }
-                    continue;
-                }
-
                 if (line.Contains("\"type\":\"asr_segment\""))
                 {
                     continue;
