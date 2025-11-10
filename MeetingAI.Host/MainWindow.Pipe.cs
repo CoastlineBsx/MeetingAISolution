@@ -164,10 +164,9 @@ public sealed partial class MainWindow : Window
             BtnLLaVAMode.IsEnabled = true;
 
             // 启用ChatPage的按钮
-            BtnGraniteSingleChat.IsEnabled = false; // 默认单轮模式，单轮按钮禁用
-            BtnGraniteMultiChat.IsEnabled = true;
             BtnGraniteClearChat.IsEnabled = true;
             BtnGraniteSendChat.IsEnabled = true;
+            // ChatPage的对话模式现在由ComboBox控制，默认选中Single-turn（索引0）
 
             LblModeStatus.Text = "";
 

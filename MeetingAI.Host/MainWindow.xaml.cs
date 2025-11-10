@@ -202,11 +202,11 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== 主题切换 ==========
-    private void ThemeRadioButtons_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ThemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ThemeRadioButtons.SelectedItem is RadioButton selectedButton)
+        if (ThemeComboBox?.SelectedItem is ComboBoxItem selectedItem)
         {
-            var tag = selectedButton.Tag?.ToString();
+            var tag = selectedItem.Tag?.ToString();
             ElementTheme theme = tag switch
             {
                 "Light" => ElementTheme.Light,
@@ -214,13 +214,13 @@ public sealed partial class MainWindow : Window
                 _ => ElementTheme.Default
             };
 
-            // 应用到整个窗口内容
+            // Apply to entire window content
             if (this.Content is FrameworkElement rootElement)
             {
                 rootElement.RequestedTheme = theme;
             }
 
-            // 可选：保存设置
+            // Optional: save setting
             // Windows.Storage.ApplicationData.Current.LocalSettings.Values["AppTheme"] = tag;
         }
     }

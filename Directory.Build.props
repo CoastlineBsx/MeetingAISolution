@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!-- 只对 .NET SDK-style 项目（C# 项目）应用自定义路径 -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <!-- 统一输出目录配置（在 Microsoft.Common.props 导入之前生效） -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)artifacts\bin\$(Configuration)\$(Platform)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)artifacts\obj\$(Configuration)\$(Platform)\</BaseIntermediateOutputPath>
+
+    <!-- 保留 TFM/RID 子目录 -->
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>true</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+</Project>

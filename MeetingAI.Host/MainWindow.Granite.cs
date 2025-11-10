@@ -74,26 +74,94 @@ public sealed partial class MainWindow : Window
             return "基于提供的文档信息回答问题。";
         }
 
-        // 检查是否在ChatPage，如果是则从ChatPage读取
+        // 检查是否在ChatPage，如果是则从ChatPage的ComboBox读取
         bool isInChatPage = ChatPage.Visibility == Visibility.Visible;
-        var rbSimple = isInChatPage ? RbSimpleChat : RbSimple;
-        var rbProfessional = isInChatPage ? RbProfessionalChat : RbProfessional;
 
-        if (rbSimple.IsChecked == true)
+        if (isInChatPage)
         {
-            return "Use simple, easy-to-understand language. Avoid jargon. Explain like teaching a beginner.";
+            // ChatPage使用ComboBox
+            if (CmbAnswerStyleChat?.SelectedItem is ComboBoxItem selectedItem)
+            {
+                var tag = selectedItem.Tag?.ToString();
+                return tag switch
+                {
+                    "Simple" => "Use simple, easy-to-understand language. Avoid jargon. Explain like teaching a beginner.",
+                    "Professional" => "Use technical terminology and professional language. Assume expert-level knowledge. Be concise and precise.",
+                    _ => "Provide clear, accurate answers. Use appropriate technical terms with explanations when needed."
+                };
+            }
         }
-        else if (rbProfessional.IsChecked == true)
+        else
         {
-            return "Use technical terminology and professional language. Assume expert-level knowledge. Be concise and precise.";
+            // HomePage使用RadioButtons
+            if (RbSimple.IsChecked == true)
+            {
+                return "Use simple, easy-to-understand language. Avoid jargon. Explain like teaching a beginner.";
+            }
+            else if (RbProfessional.IsChecked == true)
+            {
+                return "Use technical terminology and professional language. Assume expert-level knowledge. Be concise and precise.";
+            }
         }
-        else // Normal mode
-        {
-            return "Provide clear, accurate answers. Use appropriate technical terms with explanations when needed.";
-        }
+
+        // Default to Normal mode
+        return "Provide clear, accurate answers. Use appropriate technical terms with explanations when needed.";
     }
 
     // ========== 模式切换 ==========
+    private async void CmbConversationMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox comboBox || comboBox.SelectedItem is not ComboBoxItem selectedItem)
+            return;
+
+        var tag = selectedItem.Tag?.ToString();
+        if (string.IsNullOrEmpty(tag))
+            return;
+
+        try
+        {
+            await EnsurePipeAsync();
+
+            if (tag == "Single")
+            {
+                // 如果当前是多轮模式，先结束会话
+                if (_graniteMode == "multi")
+                {
+                    var finishCmd = JsonSerializer.Serialize(
+                        new GraniteFinishChatCommand(),
+                        AppJsonContext.Utf8.GraniteFinishChatCommand
+                    ) + "\n";
+                    await SendJsonAsync(finishCmd);
+                }
+
+                _graniteMode = "single";
+                LblGraniteMode.Text = "[单轮模式] 每次独立回答";
+                await AppendLineAsync("[Granite] 已切换到单轮模式");
+            }
+            else if (tag == "Multi")
+            {
+                // 启动多轮会话
+                var startCmd = JsonSerializer.Serialize(
+                    new GraniteStartChatCommand
+                    {
+                        system_message = GetSystemPrompt()
+                    },
+                    AppJsonContext.Utf8.GraniteStartChatCommand
+                ) + "\n";
+
+                await SendJsonAsync(startCmd);
+
+                _graniteMode = "multi";
+                LblGraniteMode.Text = "[多轮模式] 保留上下文";
+                await AppendLineAsync("[Granite] 已切换到多轮模式，会话已开始");
+            }
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Granite] 切换模式失败：{ex.Message}");
+        }
+    }
+
     private async void BtnGraniteSingle_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -114,9 +182,6 @@ public sealed partial class MainWindow : Window
             LblGraniteMode.Text = "[单轮模式] 每次独立回答";
             BtnGraniteSingle.IsEnabled = false;
             BtnGraniteMulti.IsEnabled = true;
-            // 同步ChatPage的按钮状态
-            BtnGraniteSingleChat.IsEnabled = false;
-            BtnGraniteMultiChat.IsEnabled = true;
 
             await AppendLineAsync("[Granite] 已切换到单轮模式");
         }
@@ -147,9 +212,6 @@ public sealed partial class MainWindow : Window
             LblGraniteMode.Text = "[多轮模式] 保留上下文";
             BtnGraniteSingle.IsEnabled = true;
             BtnGraniteMulti.IsEnabled = false;
-            // 同步ChatPage的按钮状态
-            BtnGraniteSingleChat.IsEnabled = true;
-            BtnGraniteMultiChat.IsEnabled = false;
 
             await AppendLineAsync("[Granite] 已切换到多轮模式，会话已开始");
         }
@@ -348,16 +410,29 @@ public sealed partial class MainWindow : Window
                 }
             }
 
-            // 获取参数（提取数字部分）- 根据所在页面读取
+            // 获取参数 - 根据所在页面读取
             var maxTokensCombo = isInChatPage ? CmbMaxTokensChat : CmbMaxTokens;
             var temperatureCombo = isInChatPage ? CmbTemperatureChat : CmbTemperature;
 
-            string maxTokensStr = ((ComboBoxItem)maxTokensCombo.SelectedItem).Content.ToString()!;
-            string temperatureStr = ((ComboBoxItem)temperatureCombo.SelectedItem).Content.ToString()!;
+            int maxTokens;
+            float temperature;
 
-            // 提取数字：取第一个空格之前的部分
-            int maxTokens = int.Parse(maxTokensStr.Split(' ')[0]);
-            float temperature = float.Parse(temperatureStr.Split(' ')[0]);
+            if (isInChatPage)
+            {
+                // ChatPage: 从Tag读取
+                string maxTokensTag = ((ComboBoxItem)maxTokensCombo.SelectedItem).Tag?.ToString() ?? "1024";
+                string temperatureTag = ((ComboBoxItem)temperatureCombo.SelectedItem).Tag?.ToString() ?? "0.7";
+                maxTokens = int.Parse(maxTokensTag);
+                temperature = float.Parse(temperatureTag);
+            }
+            else
+            {
+                // HomePage: 从Content读取并提取数字
+                string maxTokensStr = ((ComboBoxItem)maxTokensCombo.SelectedItem).Content.ToString()!;
+                string temperatureStr = ((ComboBoxItem)temperatureCombo.SelectedItem).Content.ToString()!;
+                maxTokens = int.Parse(maxTokensStr.Split(' ')[0]);
+                temperature = float.Parse(temperatureStr.Split(' ')[0]);
+            }
 
             // 根据模式发送命令
             string json;

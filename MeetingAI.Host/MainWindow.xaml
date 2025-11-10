@@ -69,7 +69,7 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
-            <NavigationViewItem Content="💬 智能对话" Tag="chat">
+            <NavigationViewItem Content="智能对话" Tag="chat">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE8F2;"/>
                 </NavigationViewItem.Icon>
@@ -78,7 +78,7 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
-            <NavigationViewItem Content="📄 文档助手" Tag="quickqa">
+            <NavigationViewItem Content="文档助手" Tag="quickqa">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE8A5;"/>
                 </NavigationViewItem.Icon>
@@ -87,7 +87,7 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
-            <NavigationViewItem Content="🔍 智能解析" Tag="ie">
+            <NavigationViewItem Content="智能解析" Tag="ie">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE721;"/>
                 </NavigationViewItem.Icon>
@@ -96,7 +96,7 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
-            <NavigationViewItem Content="📚 知识库" Tag="rag">
+            <NavigationViewItem Content="知识库" Tag="rag">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE8F1;"/>
                 </NavigationViewItem.Icon>
@@ -105,7 +105,7 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
-            <NavigationViewItem Content="🖼️ 视觉理解" Tag="llava">
+            <NavigationViewItem Content="视觉理解" Tag="llava">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xEB9F;"/>
                 </NavigationViewItem.Icon>
@@ -934,24 +934,76 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="120"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- 标题 -->
-                    <TextBlock Text="💬 智能对话" FontSize="20" FontWeight="Bold" Margin="0,0,0,8"/>
+                    <TextBlock Text="智能对话" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
 
-                    <!-- 单轮/多轮/清空按钮 -->
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
-                        <Button x:Name="BtnGraniteSingleChat" Content="🔄 单轮模式"
-                                Click="BtnGraniteSingle_Click" IsEnabled="False"/>
-                        <Button x:Name="BtnGraniteMultiChat" Content="💬 多轮模式"
-                                Click="BtnGraniteMulti_Click" IsEnabled="False"/>
-                        <Button x:Name="BtnGraniteClearChat" Content="🗑️ 清空历史"
-                                Click="BtnGraniteClear_Click" IsEnabled="False"/>
-                    </StackPanel>
+                    <!-- 配置面板 -->
+                    <Grid Grid.Row="1" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- 对话轮数 -->
+                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                            <TextBlock Text="Conversation mode" FontSize="12" Margin="0,0,0,4"/>
+                            <ComboBox x:Name="CmbConversationModeChat" HorizontalAlignment="Stretch"
+                                      SelectionChanged="CmbConversationMode_SelectionChanged" SelectedIndex="0">
+                                <ComboBoxItem Content="Single-turn" Tag="Single"/>
+                                <ComboBoxItem Content="Multi-turn" Tag="Multi"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- 答案模式 -->
+                        <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                            <TextBlock Text="Answer style" FontSize="12" Margin="0,0,0,4"/>
+                            <ComboBox x:Name="CmbAnswerStyleChat" HorizontalAlignment="Stretch" SelectedIndex="1">
+                                <ComboBoxItem Content="Simple" Tag="Simple"/>
+                                <ComboBoxItem Content="Normal" Tag="Normal"/>
+                                <ComboBoxItem Content="Professional" Tag="Professional"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- 创造性 -->
+                        <StackPanel Grid.Column="2" Margin="0,0,8,0">
+                            <TextBlock Text="Creativity" FontSize="12" Margin="0,0,0,4"/>
+                            <ComboBox x:Name="CmbTemperatureChat" HorizontalAlignment="Stretch" SelectedIndex="1">
+                                <ComboBoxItem Content="Precise" Tag="0.1"/>
+                                <ComboBoxItem Content="Balanced" Tag="0.7"/>
+                                <ComboBoxItem Content="Creative" Tag="0.9"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- 长度 -->
+                        <StackPanel Grid.Column="3" Margin="0,0,8,0">
+                            <TextBlock Text="Length" FontSize="12" Margin="0,0,0,4"/>
+                            <ComboBox x:Name="CmbMaxTokensChat" HorizontalAlignment="Stretch" SelectedIndex="2">
+                                <ComboBoxItem Content="Brief" Tag="512"/>
+                                <ComboBoxItem Content="Normal" Tag="1024"/>
+                                <ComboBoxItem Content="Detailed" Tag="2048"/>
+                                <ComboBoxItem Content="Extensive" Tag="4096"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- 清空历史按钮 -->
+                        <Button x:Name="BtnGraniteClearChat" Grid.Column="4"
+                                Content="Clear history"
+                                Click="BtnGraniteClear_Click"
+                                VerticalAlignment="Bottom"
+                                IsEnabled="False"/>
+                    </Grid>
 
                     <!-- 对话历史（美化版） -->
                     <ListView x:Name="ChatHistoryListChat" Grid.Row="2"
@@ -1006,93 +1058,15 @@
                         </ListView.ItemTemplate>
                     </ListView>
 
-                    <!-- 回答模式 -->
-                    <StackPanel Grid.Row="3" Margin="0,0,0,8">
-                        <TextBlock Text="回答模式" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <StackPanel Orientation="Horizontal" Spacing="12">
-                            <RadioButton x:Name="RbSimpleChat" Content="简单" GroupName="AnswerModeChat">
-                                <ToolTipService.ToolTip>
-                                    <ToolTip Content="用通俗易懂的语言，像给外行人解释一样"/>
-                                </ToolTipService.ToolTip>
-                            </RadioButton>
-                            <RadioButton x:Name="RbNormalChat" Content="普通" GroupName="AnswerModeChat" IsChecked="True">
-                                <ToolTipService.ToolTip>
-                                    <ToolTip Content="用清晰准确的语言，正常理性的表达"/>
-                                </ToolTipService.ToolTip>
-                            </RadioButton>
-                            <RadioButton x:Name="RbProfessionalChat" Content="专业" GroupName="AnswerModeChat">
-                                <ToolTipService.ToolTip>
-                                    <ToolTip Content="使用专业术语，假设用户有相关领域知识"/>
-                                </ToolTipService.ToolTip>
-                            </RadioButton>
-                        </StackPanel>
-                    </StackPanel>
-
-                    <!-- 参数控制 -->
-                    <Grid Grid.Row="4" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <TextBlock Text="创造性:" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="CmbTemperatureChat" Grid.Column="1"
-                                  SelectedIndex="1" Margin="4,0">
-                            <ToolTipService.ToolTip>
-                                <ToolTip>
-                                    <StackPanel MaxWidth="250">
-                                        <TextBlock FontWeight="Bold" Text="创造性（Temperature）"/>
-                                        <TextBlock TextWrapping="Wrap" Margin="0,4,0,0">
-                                            • 0.1-0.3：精确、一致（事实查询）
-                                            • 0.5-0.7：平衡、自然（日常对话）
-                                            • 0.8-1.0：创意、多样（创作内容）
-                                        </TextBlock>
-                                    </StackPanel>
-                                </ToolTip>
-                            </ToolTipService.ToolTip>
-                            <ComboBoxItem Content="0.1 精确"/>
-                            <ComboBoxItem Content="0.3 保守"/>
-                            <ComboBoxItem Content="0.7 平衡"/>
-                            <ComboBoxItem Content="0.9 创意"/>
-                        </ComboBox>
-
-                        <TextBlock Grid.Column="2" Text="长度:"
-                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
-                        <ComboBox x:Name="CmbMaxTokensChat" Grid.Column="3"
-                                  SelectedIndex="3" Margin="4,0">
-                            <ToolTipService.ToolTip>
-                                <ToolTip>
-                                    <StackPanel MaxWidth="250">
-                                        <TextBlock FontWeight="Bold" Text="回答长度（Max Tokens）"/>
-                                        <TextBlock TextWrapping="Wrap" Margin="0,4,0,0">
-                                            • 128: ~60字 (超简短)
-                                            • 512: ~250字 (简短)
-                                            • 1024: ~500字 (正常)
-                                            • 2048: ~1000字 (详细，推荐)
-                                            • 4096: ~2000字 (很详细)
-                                        </TextBlock>
-                                    </StackPanel>
-                                </ToolTip>
-                            </ToolTipService.ToolTip>
-                            <ComboBoxItem Content="128 超简短"/>
-                            <ComboBoxItem Content="512 简短"/>
-                            <ComboBoxItem Content="1024 正常"/>
-                            <ComboBoxItem Content="2048 详细"/>
-                            <ComboBoxItem Content="4096 很详细"/>
-                        </ComboBox>
-                    </Grid>
-
                     <!-- 输入框 -->
-                    <TextBox x:Name="TxtGraniteInputChat" Grid.Row="5"
+                    <TextBox x:Name="TxtGraniteInputChat" Grid.Row="3"
                              PlaceholderText="输入问题（Ctrl+Enter 发送）..."
                              TextWrapping="Wrap" AcceptsReturn="True"
                              PreviewKeyDown="TxtGraniteInput_PreviewKeyDown"/>
 
                     <!-- 发送按钮 -->
-                    <Button x:Name="BtnGraniteSendChat" Grid.Row="6"
-                            Content="📤 发送 (Ctrl+Enter)"
+                    <Button x:Name="BtnGraniteSendChat" Grid.Row="4"
+                            Content="Send (Ctrl+Enter)"
                             Click="BtnGraniteSend_Click"
                             HorizontalAlignment="Stretch"
                             Margin="0,8,0,0"
@@ -1186,103 +1160,158 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- 设置页面 -->
-                <Grid x:Name="SettingsPage" Padding="16" Visibility="Collapsed">
-                    <ScrollViewer>
-                        <StackPanel Spacing="24" MaxWidth="800">
-                            <!-- 标题 -->
-                            <TextBlock Text="设置" FontSize="28" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                <!-- Settings Page (Windows 11 Settings Style) -->
+                <Grid x:Name="SettingsPage" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <!-- 主内容容器：MaxWidth 1600px，超过后居中并留白 -->
+                        <Grid MaxWidth="1600" HorizontalAlignment="Center" Padding="48,32,48,32">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
 
-                            <!-- 外观设置 -->
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="外观" FontSize="20" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                            <!-- Page Title -->
+                            <TextBlock Text="Settings"
+                                       FontSize="32"
+                                       FontWeight="Bold"
+                                       Margin="0,0,0,24"/>
 
-                                <!-- 主题切换卡片 -->
-                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="8"
-                                        Padding="16">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
+                            <!-- Settings Content -->
+                            <StackPanel Grid.Row="1" Spacing="4">
 
-                                        <!-- 标题和图标 -->
-                                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                                <!-- Appearance Section -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Appearance"
+                                               FontSize="20"
+                                               FontWeight="SemiBold"
+                                               Margin="0,0,0,8"/>
+
+                                    <!-- Theme Setting Card -->
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="16"
+                                            Margin="0,0,0,2">
+                                        <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
 
+                                            <!-- Icon -->
                                             <FontIcon Grid.Column="0"
                                                       Glyph="&#xE771;"
                                                       FontSize="20"
-                                                      Margin="0,0,12,0"
+                                                      Margin="0,0,24,0"
+                                                      VerticalAlignment="Center"
                                                       Foreground="{ThemeResource AccentFillColorDefaultBrush}"/>
 
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="应用主题"
+                                            <!-- Title and Description -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                                <TextBlock Text="App theme"
                                                            FontSize="16"
                                                            FontWeight="SemiBold"/>
-                                                <TextBlock Text="选择应用的颜色主题"
+                                                <TextBlock Text="Choose between light, dark, or system theme"
                                                            FontSize="12"
                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                           Margin="0,2,0,0"/>
+                                                           TextWrapping="Wrap"/>
                                             </StackPanel>
+
+                                            <!-- ComboBox (缩小宽度) -->
+                                            <ComboBox x:Name="ThemeComboBox"
+                                                      Grid.Column="2"
+                                                      MinWidth="200"
+                                                      MaxWidth="280"
+                                                      HorizontalAlignment="Left"
+                                                      VerticalAlignment="Center"
+                                                      SelectionChanged="ThemeComboBox_SelectionChanged"
+                                                      SelectedIndex="0">
+                                                <ComboBoxItem Content="Use system setting" Tag="Default"/>
+                                                <ComboBoxItem Content="Light" Tag="Light"/>
+                                                <ComboBoxItem Content="Dark" Tag="Dark"/>
+                                            </ComboBox>
                                         </Grid>
+                                    </Border>
 
-                                        <!-- 主题选择按钮 -->
-                                        <RadioButtons x:Name="ThemeRadioButtons"
-                                                      Grid.Row="1"
-                                                      SelectionChanged="ThemeRadioButtons_SelectionChanged"
-                                                      Margin="0,8,0,0">
-                                            <RadioButton Content="跟随系统" Tag="Default" IsChecked="True">
-                                                <ToolTipService.ToolTip>
-                                                    <ToolTip Content="应用主题将跟随系统设置自动切换"/>
-                                                </ToolTipService.ToolTip>
-                                            </RadioButton>
-                                            <RadioButton Content="浅色模式" Tag="Light">
-                                                <ToolTipService.ToolTip>
-                                                    <ToolTip Content="始终使用浅色主题"/>
-                                                </ToolTipService.ToolTip>
-                                            </RadioButton>
-                                            <RadioButton Content="深色模式" Tag="Dark">
-                                                <ToolTipService.ToolTip>
-                                                    <ToolTip Content="始终使用深色主题"/>
-                                                </ToolTipService.ToolTip>
-                                            </RadioButton>
-                                        </RadioButtons>
-                                    </Grid>
-                                </Border>
+                                    <!-- Language Setting Card -->
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="16"
+                                            Margin="0,0,0,2">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Icon -->
+                                            <FontIcon Grid.Column="0"
+                                                      Glyph="&#xF2B7;"
+                                                      FontSize="20"
+                                                      Margin="0,0,24,0"
+                                                      VerticalAlignment="Center"
+                                                      Foreground="{ThemeResource AccentFillColorDefaultBrush}"/>
+
+                                            <!-- Title and Description -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                                <TextBlock Text="Windows display language"
+                                                           FontSize="16"
+                                                           FontWeight="SemiBold"/>
+                                                <TextBlock Text="Windows features like Settings and File Explorer will appear in this language"
+                                                           FontSize="12"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+
+                                            <!-- ComboBox (缩小宽度) -->
+                                            <ComboBox x:Name="LanguageComboBox"
+                                                      Grid.Column="2"
+                                                      MinWidth="200"
+                                                      MaxWidth="280"
+                                                      HorizontalAlignment="Left"
+                                                      VerticalAlignment="Center"
+                                                      SelectedIndex="0">
+                                                <ComboBoxItem Content="English (United Kingdom)" Tag="en-GB"/>
+                                                <ComboBoxItem Content="简体中文（中国）" Tag="zh-CN"/>
+                                            </ComboBox>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- About Section -->
+                                <StackPanel Spacing="4" Margin="0,20,0,0">
+                                    <TextBlock Text="About"
+                                               FontSize="20"
+                                               FontWeight="SemiBold"
+                                               Margin="0,0,0,8"/>
+
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="24">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="MeetingAI"
+                                                       FontSize="16"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock Text="Version 1.0.0"
+                                                       FontSize="12"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                            <TextBlock Text="Local AI assistant powered by OpenVINO"
+                                                       FontSize="12"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
                             </StackPanel>
-
-                            <!-- 关于 -->
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="关于" FontSize="20" FontWeight="SemiBold" Margin="0,8,0,4"/>
-
-                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="8"
-                                        Padding="16">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="MeetingAI"
-                                                   FontSize="16"
-                                                   FontWeight="SemiBold"/>
-                                        <TextBlock Text="版本 1.0.0"
-                                                   FontSize="12"
-                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                                        <TextBlock Text="基于 OpenVINO 的本地 AI 助手"
-                                                   FontSize="12"
-                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                   TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
-                        </StackPanel>
+                        </Grid>
                     </ScrollViewer>
                 </Grid>
             </Grid>
