@@ -1151,8 +1151,8 @@
                 <!-- Settings Page (Windows 11 Settings Style) -->
                 <Grid x:Name="SettingsPage" Visibility="Collapsed">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <!-- Main content container: MaxWidth 1600px, centered beyond that -->
-                        <Grid MaxWidth="1600" HorizontalAlignment="Center" Padding="32">
+                        <!-- Main content container -->
+                        <Grid Padding="32">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
@@ -1184,6 +1184,7 @@
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
@@ -1198,7 +1199,7 @@
 
                                             <!-- Title and Description -->
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"
-                                                        MaxWidth="480" Margin="0,0,32,0">
+                                                        MaxWidth="480">
                                                 <TextBlock Text="App theme"
                                                            FontSize="16"
                                                            FontWeight="SemiBold"/>
@@ -1208,12 +1209,14 @@
                                                            TextWrapping="Wrap"/>
                                             </StackPanel>
 
-                                            <!-- ComboBox (Auto Width with MinWidth) -->
+                                            <!-- Spacer Column -->
+
+                                            <!-- ComboBox (Auto Width) -->
                                             <ComboBox x:Name="ThemeComboBox"
-                                                      Grid.Column="2"
-                                                      MinWidth="180"
+                                                      Grid.Column="3"
                                                       HorizontalAlignment="Left"
                                                       VerticalAlignment="Center"
+                                                      Margin="32,0,0,0"
                                                       SelectionChanged="ThemeComboBox_SelectionChanged"
                                                       SelectedIndex="0">
                                                 <ComboBoxItem Content="Use system setting" Tag="Default"/>
@@ -1233,6 +1236,7 @@
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
@@ -1247,26 +1251,159 @@
 
                                             <!-- Title and Description -->
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"
-                                                        MaxWidth="480" Margin="0,0,32,0">
-                                                <TextBlock Text="Windows display language"
+                                                        MaxWidth="480">
+                                                <TextBlock Text="Display language"
                                                            FontSize="16"
                                                            FontWeight="SemiBold"/>
-                                                <TextBlock Text="Windows features like Settings and File Explorer will appear in this language"
+                                                <TextBlock Text="Choose the language for the application interface"
                                                            FontSize="12"
                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                            TextWrapping="Wrap"/>
                                             </StackPanel>
 
-                                            <!-- ComboBox (Auto Width with MinWidth) -->
+                                            <!-- Spacer Column -->
+
+                                            <!-- ComboBox (Auto Width) -->
                                             <ComboBox x:Name="LanguageComboBox"
-                                                      Grid.Column="2"
-                                                      MinWidth="180"
+                                                      Grid.Column="3"
                                                       HorizontalAlignment="Left"
                                                       VerticalAlignment="Center"
+                                                      Margin="32,0,0,0"
                                                       SelectedIndex="0">
                                                 <ComboBoxItem Content="English (United Kingdom)" Tag="en-GB"/>
                                                 <ComboBoxItem Content="简体中文（中国）" Tag="zh-CN"/>
                                             </ComboBox>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- Audio Testing Section -->
+                                <StackPanel Spacing="4" Margin="0,20,0,0">
+                                    <TextBlock Text="Audio testing"
+                                               FontSize="20"
+                                               FontWeight="SemiBold"
+                                               Margin="0,0,0,8"/>
+
+                                    <!-- Microphone Test Card -->
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="16"
+                                            Margin="0,0,0,2">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <Grid Grid.Row="0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Icon -->
+                                                <FontIcon Grid.Column="0"
+                                                          Glyph="&#xE720;"
+                                                          FontSize="20"
+                                                          Margin="0,0,24,0"
+                                                          VerticalAlignment="Center"
+                                                          Foreground="{ThemeResource AccentFillColorDefaultBrush}"/>
+
+                                                <!-- Title and Description -->
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"
+                                                            MaxWidth="480">
+                                                    <TextBlock Text="Microphone test"
+                                                               FontSize="16"
+                                                               FontWeight="SemiBold"/>
+                                                    <TextBlock Text="Test your microphone and view audio levels"
+                                                               FontSize="12"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               TextWrapping="Wrap"/>
+                                                </StackPanel>
+
+                                                <!-- Spacer Column (Grid.Column="2") with Width="*" pushes button to the right -->
+
+                                                <!-- Test Button -->
+                                                <Button x:Name="BtnMicrophoneTest"
+                                                        Grid.Column="3"
+                                                        Content="Start test"
+                                                        Click="BtnMicrophoneTest_Click"
+                                                        MinWidth="120"
+                                                        VerticalAlignment="Center"
+                                                        Margin="32,0,0,0"/>
+                                            </Grid>
+
+                                            <!-- Volume Indicator (Collapsed by default) -->
+                                            <StackPanel x:Name="MicrophoneVolumePanel"
+                                                        Grid.Row="1"
+                                                        Visibility="Collapsed"
+                                                        Margin="44,12,0,0"
+                                                        Spacing="8">
+                                                <TextBlock Text="Volume level:"
+                                                           FontSize="12"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                                <ProgressBar x:Name="MicrophoneVolumeBar"
+                                                             Height="8"
+                                                             Maximum="100"
+                                                             Value="0"
+                                                             CornerRadius="4"/>
+                                                <TextBlock x:Name="MicrophoneVolumeText"
+                                                           Text="0%"
+                                                           FontSize="12"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Speaker Test Card -->
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="16"
+                                            Margin="0,0,0,2">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Icon -->
+                                            <FontIcon Grid.Column="0"
+                                                      Glyph="&#xE767;"
+                                                      FontSize="20"
+                                                      Margin="0,0,24,0"
+                                                      VerticalAlignment="Center"
+                                                      Foreground="{ThemeResource AccentFillColorDefaultBrush}"/>
+
+                                            <!-- Title and Description -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"
+                                                        MaxWidth="480">
+                                                <TextBlock Text="Speaker test"
+                                                           FontSize="16"
+                                                           FontWeight="SemiBold"/>
+                                                <TextBlock Text="Test your speakers with a sample sound"
+                                                           FontSize="12"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+
+                                            <!-- Spacer Column -->
+
+                                            <!-- Test Button -->
+                                            <Button x:Name="BtnSpeakerTest"
+                                                    Grid.Column="3"
+                                                    Content="Play test sound"
+                                                    Click="BtnSpeakerTest_Click"
+                                                    MinWidth="120"
+                                                    VerticalAlignment="Center"
+                                                    Margin="32,0,0,0"/>
                                         </Grid>
                                     </Border>
                                 </StackPanel>

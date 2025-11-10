@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace MeetingAI.Host;
 
@@ -124,6 +125,14 @@ public sealed partial class MainWindow : Window
     // IE信息提取相关
     private bool _isIEExtracting = false;              // 是否正在提取
     private StringBuilder? _ieExtractionBuffer;        // 提取响应收集器
+
+    // ========== Audio Test 相关 ==========
+    private WasapiCapture? _microphoneTestCapture;    // 麦克风测试捕获
+    private bool _isMicrophoneTestRunning;             // 麦克风测试运行状态
+    private CancellationTokenSource? _microphoneTestCancellation; // 麦克风测试取消令牌
+    private WaveOutEvent? _speakerTestOutput;          // 扬声器测试输出
+    private SignalGenerator? _speakerTestGenerator;    // 扬声器测试信号生成器
+    private bool _isSpeakerTestRunning;                // 扬声器测试运行状态
 
     private const string PipeName = "MeetingAI_Pipe";
 }
