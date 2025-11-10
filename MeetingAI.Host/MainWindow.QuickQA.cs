@@ -8,6 +8,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
+using MeetingAI.Host.Contracts;
+using MeetingAI.Host.Contracts.Messages;
 
 namespace MeetingAI.Host;
 
@@ -139,16 +141,20 @@ public sealed partial class MainWindow : Window
             if (string.IsNullOrEmpty(_quickQADocumentName))
             {
                 // 未加载文档
-                LblQuickQADoc.Text = "未加载文档";
+                LblQuickQADoc.Text = "No document loaded";
                 BtnQuickQAClear.IsEnabled = false;
+                BtnQuickQASend.IsEnabled = false;
+                BtnQuickQAClearHistory.IsEnabled = false;
             }
             else
             {
                 // 已加载文档
                 string sizeStr = FormatFileSize(_quickQADocumentSize);
                 int currentTurn = _quickQAHistory.Count;
-                LblQuickQADoc.Text = $"文件: {_quickQADocumentName} ({sizeStr}, {_quickQATokenCount} tokens, {currentTurn}/{MAX_TURNS}轮)";
+                LblQuickQADoc.Text = $"File: {_quickQADocumentName} ({sizeStr}, {_quickQATokenCount} tokens, {currentTurn}/{MAX_TURNS} turns)";
                 BtnQuickQAClear.IsEnabled = true;
+                BtnQuickQASend.IsEnabled = true;
+                BtnQuickQAClearHistory.IsEnabled = true;
             }
         });
     }
@@ -160,27 +166,34 @@ public sealed partial class MainWindow : Window
     {
         if (string.IsNullOrEmpty(_quickQADocumentContent))
         {
-            throw new InvalidOperationException("未加载文档");
+            throw new InvalidOperationException("No document loaded");
         }
 
         var sb = new StringBuilder();
 
+        // 获取当前对话模式（从QuickQA页面的ComboBox）
+        string mode = "single";
+        if (CmbConversationModeQuickQA?.SelectedItem is ComboBoxItem selectedItem)
+        {
+            mode = selectedItem.Tag?.ToString() ?? "single";
+        }
+
         // 判断是单轮模式还是多轮模式
-        if (_graniteMode == "multi")
+        if (mode.ToLower() == "multi")
         {
             // ========== 多轮模式 ==========
             if (_quickQAHistory.Count == 0)
             {
                 // 第1轮：发送文档 + 问题
-                sb.AppendLine("你是一个文档问答助手。请仔细阅读以下文档内容，然后回答用户的问题。");
+                sb.AppendLine("You are a document Q&A assistant. Please carefully read the following document content, then answer the user's question.");
                 sb.AppendLine();
-                sb.AppendLine("=== 文档开始 ===");
+                sb.AppendLine("=== Document Start ===");
                 sb.AppendLine(_quickQADocumentContent);
-                sb.AppendLine("=== 文档结束 ===");
+                sb.AppendLine("=== Document End ===");
                 sb.AppendLine();
-                sb.AppendLine($"用户问题：{userQuestion}");
+                sb.AppendLine($"User question: {userQuestion}");
                 sb.AppendLine();
-                sb.AppendLine("请基于上述文档内容回答，如果文档中没有相关信息，请明确告知。");
+                sb.AppendLine("Please answer based on the above document content. If the document doesn't contain relevant information, please clearly state that.");
             }
             else
             {
@@ -192,15 +205,15 @@ public sealed partial class MainWindow : Window
         {
             // ========== 单轮模式 ==========
             // 每次只发送文档 + 问题（不拼历史）
-            sb.AppendLine("你是一个文档问答助手。请仔细阅读以下文档内容，然后回答用户的问题。");
+            sb.AppendLine("You are a document Q&A assistant. Please carefully read the following document content, then answer the user's question.");
             sb.AppendLine();
-            sb.AppendLine("=== 文档开始 ===");
+            sb.AppendLine("=== Document Start ===");
             sb.AppendLine(_quickQADocumentContent);
-            sb.AppendLine("=== 文档结束 ===");
+            sb.AppendLine("=== Document End ===");
             sb.AppendLine();
-            sb.AppendLine($"用户问题：{userQuestion}");
+            sb.AppendLine($"User question: {userQuestion}");
             sb.AppendLine();
-            sb.AppendLine("请基于上述文档内容回答，如果文档中没有相关信息，请明确告知。");
+            sb.AppendLine("Please answer based on the above document content. If the document doesn't contain relevant information, please clearly state that.");
         }
 
         return sb.ToString();
@@ -246,6 +259,185 @@ public sealed partial class MainWindow : Window
         _quickQAHistory.Clear();
         UpdateQuickQAUI();
         _ = AppendLineAsync("[快速问答] 对话历史已清空");
+    }
+
+    /// <summary>
+    /// 清空快速问答聊天历史按钮点击事件
+    /// </summary>
+    private void BtnQuickQAClearHistory_Click(object sender, RoutedEventArgs e)
+    {
+        _quickQAChatHistory.Clear();
+        _quickQAHistory.Clear();
+        UpdateQuickQAUI();
+        _ = AppendLineAsync("[Document Assistant] Chat history cleared");
+    }
+
+    /// <summary>
+    /// QuickQA输入框键盘事件（Ctrl+Enter发送）
+    /// </summary>
+    private void TxtQuickQAInput_PreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Enter)
+        {
+            var ctrl = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control);
+            if (ctrl.HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+            {
+                // Ctrl+Enter: 发送消息
+                e.Handled = true;
+                BtnQuickQASend_Click(sender, new RoutedEventArgs());
+            }
+        }
+    }
+
+    /// <summary>
+    /// QuickQA发送按钮点击事件
+    /// </summary>
+    private async void BtnQuickQASend_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var userInput = TxtQuickQAInput.Text.Trim();
+            if (string.IsNullOrWhiteSpace(userInput))
+                return;
+
+            // 检查是否可以继续对话
+            if (!CanContinueQuickQA(out string errorMessage))
+            {
+                await AppendLineAsync($"[Document Assistant] {errorMessage}");
+                return;
+            }
+
+            await EnsurePipeAsync();
+
+            // 添加用户消息到历史
+            var userMessage = new Models.ChatMessage
+            {
+                Role = "user",
+                Content = userInput
+            };
+            _quickQAChatHistory.Add(userMessage);
+
+            // 创建 AI 消息占位符（用于流式追加）
+            var aiMessage = new Models.ChatMessage
+            {
+                Role = "assistant",
+                Content = "",
+                IsStreaming = true
+            };
+            _quickQAChatHistory.Add(aiMessage);
+
+            // 设置 QuickQA 专用的流式消息
+            _quickQAStreamingMessage = aiMessage;
+            _quickQAScrollThrottle = 0;  // 重置滚动计数器
+
+            // 滚动到底部
+            if (_quickQAChatHistory.Count > 0)
+            {
+                ChatHistoryListQuickQA.ScrollIntoView(_quickQAChatHistory[_quickQAChatHistory.Count - 1]);
+            }
+
+            // 清空输入框
+            TxtQuickQAInput.Text = "";
+
+            // 构建QuickQA Prompt
+            string promptToSend = BuildQuickQAPrompt(userInput);
+            await AppendLineAsync($"[Document Assistant] Conversation turn: {_quickQAHistory.Count + 1}/{MAX_TURNS}");
+
+            // 发送消息并处理流式响应
+            await SendQuickQAMessageAsync(promptToSend, aiMessage, userInput);
+
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Document Assistant] ❌ Error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 获取QuickQA的系统提示词
+    /// </summary>
+    private string GetQuickQASystemPrompt()
+    {
+        string basePrompt = "You are a helpful document Q&A assistant. ";
+
+        // 获取Answer Style设置
+        if (CmbAnswerStyleQuickQA?.SelectedItem is ComboBoxItem selectedItem)
+        {
+            var tag = selectedItem.Tag?.ToString();
+            return basePrompt + (tag switch
+            {
+                "Simple" => "Use simple, easy-to-understand language. Avoid jargon. Explain like teaching a beginner.",
+                "Professional" => "Use technical terminology and professional language. Assume expert-level knowledge. Be concise and precise.",
+                _ => "Provide clear, accurate answers based on the document. Use appropriate technical terms with explanations when needed."
+            });
+        }
+
+        return basePrompt + "Provide clear, accurate answers based on the document.";
+    }
+
+    /// <summary>
+    /// 发送QuickQA消息到Worker并处理流式响应
+    /// </summary>
+    private async Task SendQuickQAMessageAsync(string prompt, Models.ChatMessage aiMessage, string userQuestion)
+    {
+        try
+        {
+            // 不再设置 _currentStreamingMessage，因为已经设置了 _quickQAStreamingMessage
+
+            // 获取参数（从UI控件读取）
+            float temperature = 0.7f;  // 默认值
+            int maxTokens = 2048;      // 默认值
+
+            // 读取Temperature设置
+            if (CmbTemperatureQuickQA?.SelectedItem is ComboBoxItem tempItem)
+            {
+                if (float.TryParse(tempItem.Tag?.ToString(), out float temp))
+                {
+                    temperature = temp;
+                }
+            }
+
+            // 读取MaxTokens设置
+            if (CmbMaxTokensQuickQA?.SelectedItem is ComboBoxItem tokenItem)
+            {
+                if (int.TryParse(tokenItem.Tag?.ToString(), out int tokens))
+                {
+                    maxTokens = tokens;
+                }
+            }
+
+            // 构建fullPrompt（单轮模式格式）
+            string fullPrompt =
+                $"<|start_of_role|>system<|end_of_role|>{GetQuickQASystemPrompt()}<|end_of_text|>" +
+                $"<|start_of_role|>user<|end_of_role|>{prompt}<|end_of_text|>" +
+                $"<|start_of_role|>assistant<|end_of_role|>";
+
+            // 创建命令
+            var cmd = new GraniteGenerateStreamCommand
+            {
+                prompt = fullPrompt,
+                max_tokens = maxTokens,
+                temperature = temperature
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(cmd, AppJsonContext.Utf8.GraniteGenerateStreamCommand) + "\n";
+
+            // 发送命令
+            await SendJsonAsync(json);
+            await AppendLineAsync($"[Document Assistant] Message sent (Temperature: {temperature}, Max tokens: {maxTokens})");
+
+            // Note: 流式响应会通过管道读取循环自动处理，更新aiMessage.Content
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Document Assistant] ❌ Send error: {ex.Message}");
+            if (_currentStreamingMessage != null)
+            {
+                _currentStreamingMessage.Content = $"❌ Error: {ex.Message}";
+                _currentStreamingMessage.IsStreaming = false;
+                _currentStreamingMessage = null;
+            }
+        }
     }
 
     /// <summary>

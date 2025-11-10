@@ -38,6 +38,9 @@ public sealed partial class MainWindow : Window
 
         // 初始化 Granite 对话
         InitializeGranite();
+
+        // 初始化 SD 页面
+        InitializeSDPage();
     }
 
     private void SetupTitleBar()
@@ -230,11 +233,13 @@ public sealed partial class MainWindow : Window
     {
         // 隐藏所有页面
         HomePage.Visibility = Visibility.Collapsed;
+        StartupPage.Visibility = Visibility.Collapsed;
         ChatPage.Visibility = Visibility.Collapsed;
         QuickQAPage.Visibility = Visibility.Collapsed;
         IEPage.Visibility = Visibility.Collapsed;
         RAGPage.Visibility = Visibility.Collapsed;
         LLaVAPage.Visibility = Visibility.Collapsed;
+        SDPage.Visibility = Visibility.Collapsed;
         HelpPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
 
@@ -252,6 +257,9 @@ public sealed partial class MainWindow : Window
                 case "home":
                     HomePage.Visibility = Visibility.Visible;
                     break;
+                case "startup":
+                    StartupPage.Visibility = Visibility.Visible;
+                    break;
                 case "chat":
                     ChatPage.Visibility = Visibility.Visible;
                     // 绑定聊天历史到普通对话模式
@@ -259,9 +267,50 @@ public sealed partial class MainWindow : Window
                     // 设置为普通对话模式
                     _currentDialogMode = "normal";
                     _isRAGMode = false;
+                    // 更新 _chatHistory 指针
+                    _chatHistory = _normalChatHistory;
+                    // 清理其他模式的流式消息状态
+                    if (_quickQAStreamingMessage != null)
+                    {
+                        _quickQAStreamingMessage.IsStreaming = false;
+                        _quickQAStreamingMessage = null;
+                    }
+                    if (_ieStreamingMessage != null)
+                    {
+                        _ieStreamingMessage.IsStreaming = false;
+                        _ieStreamingMessage = null;
+                    }
+                    if (_ragStreamingMessage != null)
+                    {
+                        _ragStreamingMessage.IsStreaming = false;
+                        _ragStreamingMessage = null;
+                    }
                     break;
                 case "quickqa":
                     QuickQAPage.Visibility = Visibility.Visible;
+                    // 绑定聊天历史到文档助手模式
+                    ChatHistoryListQuickQA.ItemsSource = _quickQAChatHistory;
+                    // 设置为QuickQA模式
+                    _currentDialogMode = "quickqa";
+                    _isRAGMode = false;
+                    // 更新 _chatHistory 指针
+                    _chatHistory = _quickQAChatHistory;
+                    // 清理其他模式的流式消息状态
+                    if (_normalStreamingMessage != null)
+                    {
+                        _normalStreamingMessage.IsStreaming = false;
+                        _normalStreamingMessage = null;
+                    }
+                    if (_ieStreamingMessage != null)
+                    {
+                        _ieStreamingMessage.IsStreaming = false;
+                        _ieStreamingMessage = null;
+                    }
+                    if (_ragStreamingMessage != null)
+                    {
+                        _ragStreamingMessage.IsStreaming = false;
+                        _ragStreamingMessage = null;
+                    }
                     break;
                 case "ie":
                     IEPage.Visibility = Visibility.Visible;
@@ -271,6 +320,35 @@ public sealed partial class MainWindow : Window
                     break;
                 case "llava":
                     LLaVAPage.Visibility = Visibility.Visible;
+                    // Set to Visual Understanding mode
+                    _currentDialogMode = "visual";
+                    _isRAGMode = false;
+                    // Update _chatHistory pointer
+                    _chatHistory = VisualChatHistory;
+                    // Clean up other modes' streaming messages
+                    if (_normalStreamingMessage != null)
+                    {
+                        _normalStreamingMessage.IsStreaming = false;
+                        _normalStreamingMessage = null;
+                    }
+                    if (_quickQAStreamingMessage != null)
+                    {
+                        _quickQAStreamingMessage.IsStreaming = false;
+                        _quickQAStreamingMessage = null;
+                    }
+                    if (_ieStreamingMessage != null)
+                    {
+                        _ieStreamingMessage.IsStreaming = false;
+                        _ieStreamingMessage = null;
+                    }
+                    if (_ragStreamingMessage != null)
+                    {
+                        _ragStreamingMessage.IsStreaming = false;
+                        _ragStreamingMessage = null;
+                    }
+                    break;
+                case "sd":
+                    SDPage.Visibility = Visibility.Visible;
                     break;
                 case "help":
                     HelpPage.Visibility = Visibility.Visible;

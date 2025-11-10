@@ -16,15 +16,45 @@ public partial class MainWindow
     /// </summary>
     private void SwitchChatHistory(System.Collections.ObjectModel.ObservableCollection<Models.ChatMessage> targetHistory)
     {
-        // 如果当前有流式输出正在进行，先结束它
-        if (_currentStreamingMessage != null)
+        // 清理当前模式的流式输出
+        var currentStreamMsg = GetCurrentModeStreamingMessage();
+        if (currentStreamMsg != null)
         {
-            _currentStreamingMessage.IsStreaming = false;
-            _currentStreamingMessage = null;
+            currentStreamMsg.IsStreaming = false;
+            SetCurrentModeStreamingMessage(null);
+        }
+
+        // 清理所有模式的流式消息（确保完全隔离）
+        if (_normalStreamingMessage != null)
+        {
+            _normalStreamingMessage.IsStreaming = false;
+            _normalStreamingMessage = null;
+        }
+        if (_quickQAStreamingMessage != null)
+        {
+            _quickQAStreamingMessage.IsStreaming = false;
+            _quickQAStreamingMessage = null;
+        }
+        if (_ieStreamingMessage != null)
+        {
+            _ieStreamingMessage.IsStreaming = false;
+            _ieStreamingMessage = null;
+        }
+        if (_ragStreamingMessage != null)
+        {
+            _ragStreamingMessage.IsStreaming = false;
+            _ragStreamingMessage = null;
         }
 
         // 切换到目标模式的历史
         _chatHistory = targetHistory;
+
+        // 重置所有滚动计数器
+        _normalScrollThrottle = 0;
+        _quickQAScrollThrottle = 0;
+        _ieScrollThrottle = 0;
+        _ragScrollThrottle = 0;
+        _scrollThrottleCounter = 0;
 
         // 更新UI绑定
         DispatcherQueue.TryEnqueue(() =>
@@ -78,9 +108,6 @@ public partial class MainWindow
             BtnIEContinueDialog.Visibility = Visibility.Collapsed;
 
             // 主页的控件（带"2"后缀）也要隐藏
-            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
-            LblQuickQADoc2.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
             BtnRAGTest2.Visibility = Visibility.Collapsed;
             BtnDocumentManage2.Visibility = Visibility.Collapsed;
             BtnIELoad2.Visibility = Visibility.Collapsed;
@@ -145,11 +172,7 @@ public partial class MainWindow
             BtnQuickQAClear.Visibility = Visibility.Visible;
             // BtnQuickQAClear.IsEnabled 由 UpdateQuickQAUI() 控制
 
-            // 主页的控件（带"2"后缀）- 显示QuickQA控件，隐藏其他
-            BtnQuickQALoad2.Visibility = Visibility.Visible;
-            BtnQuickQALoad2.IsEnabled = true;
-            LblQuickQADoc2.Visibility = Visibility.Visible;
-            BtnQuickQAClear2.Visibility = Visibility.Visible;
+            // 主页的控件（带"2"后缀）- 隐藏其他模式的控件
             BtnRAGTest2.Visibility = Visibility.Collapsed;
             BtnDocumentManage2.Visibility = Visibility.Collapsed;
             BtnIELoad2.Visibility = Visibility.Collapsed;
@@ -236,9 +259,6 @@ public partial class MainWindow
             }
 
             // 主页的控件（带"2"后缀）- 显示IE控件，隐藏其他
-            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
-            LblQuickQADoc2.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
             BtnRAGTest2.Visibility = Visibility.Collapsed;
             BtnDocumentManage2.Visibility = Visibility.Collapsed;
             BtnIELoad2.Visibility = Visibility.Visible;
@@ -326,9 +346,6 @@ public partial class MainWindow
             DocumentExpander.IsExpanded = false; // 不自动展开，等用户点击按钮
 
             // 主页的控件（带"2"后缀）- 显示RAG控件，隐藏其他
-            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
-            LblQuickQADoc2.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
             BtnRAGTest2.Visibility = Visibility.Visible;
             BtnRAGTest2.IsEnabled = true;
             BtnDocumentManage2.Visibility = Visibility.Visible;
@@ -429,9 +446,6 @@ public partial class MainWindow
             BtnLLaVASend.IsEnabled = true;
 
             // 主页的控件（带"2"后缀）- 隐藏所有模式专用控件
-            BtnQuickQALoad2.Visibility = Visibility.Collapsed;
-            LblQuickQADoc2.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear2.Visibility = Visibility.Collapsed;
             BtnRAGTest2.Visibility = Visibility.Collapsed;
             BtnDocumentManage2.Visibility = Visibility.Collapsed;
             BtnIELoad2.Visibility = Visibility.Collapsed;

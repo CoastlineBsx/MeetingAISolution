@@ -134,5 +134,10 @@ public sealed partial class MainWindow : Window
     private SignalGenerator? _speakerTestGenerator;    // 扬声器测试信号生成器
     private bool _isSpeakerTestRunning;                // 扬声器测试运行状态
 
+    // ========== 模型加载状态 ==========
+    private bool _isGraniteEmbeddingLoaded = false;
+    private bool _isWhisperLoaded = false;
+    private bool _isLLaVALoaded = false;
+
     private const string PipeName = "MeetingAI_Pipe";
 }

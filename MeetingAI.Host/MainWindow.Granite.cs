@@ -27,10 +27,22 @@ public sealed partial class MainWindow : Window
     // 当前模式：single 或 multi
     private string _graniteMode = "single";
 
-    // 当前流式输出的消息
+    // 每个模式独立的流式输出消息
+    private ChatMessage? _normalStreamingMessage = null;    // Intelligent Chat 的流式消息
+    private ChatMessage? _quickQAStreamingMessage = null;   // Document Assistant 的流式消息
+    private ChatMessage? _ieStreamingMessage = null;        // IE模式的流式消息
+    private ChatMessage? _ragStreamingMessage = null;       // RAG模式的流式消息
+
+    // 当前流式输出的消息（保留为兼容旧代码，后续会逐步替换）
     private ChatMessage? _currentStreamingMessage = null;
 
-    // 滚动节流计数器（每N个token滚动一次）
+    // 每个模式独立的滚动节流计数器
+    private int _normalScrollThrottle = 0;      // Intelligent Chat 的滚动计数
+    private int _quickQAScrollThrottle = 0;     // Document Assistant 的滚动计数
+    private int _ieScrollThrottle = 0;          // IE模式的滚动计数
+    private int _ragScrollThrottle = 0;         // RAG模式的滚动计数
+
+    // 滚动节流计数器（保留为兼容）
     private int _scrollThrottleCounter = 0;
 
     // 缓存的 ScrollViewer（用于直接滚动到底部）
@@ -63,6 +75,121 @@ public sealed partial class MainWindow : Window
                 return result;
         }
         return null;
+    }
+
+    // ========== 获取当前模式的流式消息 ==========
+    private ChatMessage? GetCurrentModeStreamingMessage()
+    {
+        return _currentDialogMode switch
+        {
+            "normal" => _normalStreamingMessage,
+            "quickqa" => _quickQAStreamingMessage,
+            "ie" => _ieStreamingMessage,
+            "rag" => _ragStreamingMessage,
+            "visual" => _visualStreamingMessage,
+            _ => _normalStreamingMessage
+        };
+    }
+
+    // ========== 设置当前模式的流式消息 ==========
+    private void SetCurrentModeStreamingMessage(ChatMessage? message)
+    {
+        switch (_currentDialogMode)
+        {
+            case "normal":
+                _normalStreamingMessage = message;
+                break;
+            case "quickqa":
+                _quickQAStreamingMessage = message;
+                break;
+            case "ie":
+                _ieStreamingMessage = message;
+                break;
+            case "rag":
+                _ragStreamingMessage = message;
+                break;
+            case "visual":
+                _visualStreamingMessage = message;
+                break;
+            default:
+                _normalStreamingMessage = message;
+                break;
+        }
+
+        // 同时更新旧的兼容变量
+        _currentStreamingMessage = message;
+    }
+
+    // ========== 获取当前模式的滚动计数器 ==========
+    private int GetCurrentModeScrollThrottle()
+    {
+        return _currentDialogMode switch
+        {
+            "normal" => _normalScrollThrottle,
+            "quickqa" => _quickQAScrollThrottle,
+            "ie" => _ieScrollThrottle,
+            "rag" => _ragScrollThrottle,
+            "visual" => _visualScrollThrottle,
+            _ => _normalScrollThrottle
+        };
+    }
+
+    // ========== 设置当前模式的滚动计数器 ==========
+    private void SetCurrentModeScrollThrottle(int value)
+    {
+        switch (_currentDialogMode)
+        {
+            case "normal":
+                _normalScrollThrottle = value;
+                break;
+            case "quickqa":
+                _quickQAScrollThrottle = value;
+                break;
+            case "ie":
+                _ieScrollThrottle = value;
+                break;
+            case "rag":
+                _ragScrollThrottle = value;
+                break;
+            case "visual":
+                _visualScrollThrottle = value;
+                break;
+            default:
+                _normalScrollThrottle = value;
+                break;
+        }
+
+        // 同时更新旧的兼容变量
+        _scrollThrottleCounter = value;
+    }
+
+    // ========== 增加当前模式的滚动计数器 ==========
+    private void IncrementCurrentModeScrollThrottle()
+    {
+        switch (_currentDialogMode)
+        {
+            case "normal":
+                _normalScrollThrottle++;
+                break;
+            case "quickqa":
+                _quickQAScrollThrottle++;
+                break;
+            case "ie":
+                _ieScrollThrottle++;
+                break;
+            case "rag":
+                _ragScrollThrottle++;
+                break;
+            case "visual":
+                _visualScrollThrottle++;
+                break;
+            default:
+                _normalScrollThrottle++;
+                break;
+        }
+
+        // 同时更新旧的兼容变量
+        _scrollThrottleCounter++;
     }
 
     // ========== 获取系统提示词 ==========
@@ -309,16 +436,19 @@ public sealed partial class MainWindow : Window
             _chatHistory.Add(userMessage);
 
             // 创建 AI 消息占位符（用于流式追加）
-            _currentStreamingMessage = new ChatMessage
+            var streamingMessage = new ChatMessage
             {
                 Role = "assistant",
                 Content = "",
                 IsStreaming = true
             };
-            _chatHistory.Add(_currentStreamingMessage);
+            _chatHistory.Add(streamingMessage);
+
+            // 使用新的辅助函数设置当前模式的流式消息
+            SetCurrentModeStreamingMessage(streamingMessage);
 
             // 重置滚动计数器
-            _scrollThrottleCounter = 0;
+            SetCurrentModeScrollThrottle(0);
 
             // 自动滚动到底部
             var chatListView = isInChatPage ? ChatHistoryListChat : ChatHistoryList;
@@ -347,9 +477,13 @@ public sealed partial class MainWindow : Window
                     await AppendLineAsync($"[IE] {errorMessage}");
 
                     // 移除刚添加的用户消息和AI占位符
+                    var currentStreamMsg = GetCurrentModeStreamingMessage();
                     _chatHistory.Remove(userMessage);
-                    _chatHistory.Remove(_currentStreamingMessage);
-                    _currentStreamingMessage = null;
+                    if (currentStreamMsg != null)
+                    {
+                        _chatHistory.Remove(currentStreamMsg);
+                    }
+                    SetCurrentModeStreamingMessage(null);
                     return;
                 }
 
@@ -368,9 +502,13 @@ public sealed partial class MainWindow : Window
                     await AppendLineAsync($"[快速问答] {errorMessage}");
 
                     // 移除刚添加的用户消息和AI占位符
+                    var currentStreamMsg = GetCurrentModeStreamingMessage();
                     _chatHistory.Remove(userMessage);
-                    _chatHistory.Remove(_currentStreamingMessage);
-                    _currentStreamingMessage = null;
+                    if (currentStreamMsg != null)
+                    {
+                        _chatHistory.Remove(currentStreamMsg);
+                    }
+                    SetCurrentModeStreamingMessage(null);
                     return;
                 }
 
@@ -392,7 +530,11 @@ public sealed partial class MainWindow : Window
                     if (ragContext.Citations.Count > 0)
                     {
                         // 保存引用到当前消息
-                        _currentStreamingMessage.Citations = ragContext.Citations;
+                        var currentStreamMsg = GetCurrentModeStreamingMessage();
+                        if (currentStreamMsg != null)
+                        {
+                            currentStreamMsg.Citations = ragContext.Citations;
+                        }
 
                         // 构建包含上下文的 Prompt
                         promptToSend = BuildRAGPrompt(userInput, ragContext.ContextText);
@@ -476,11 +618,12 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Granite] 发送失败：{ex.Message}");
-            if (_currentStreamingMessage != null)
+            var currentStreamMsg = GetCurrentModeStreamingMessage();
+            if (currentStreamMsg != null)
             {
-                _currentStreamingMessage.Content = $"❌ 错误：{ex.Message}";
-                _currentStreamingMessage.IsStreaming = false;
-                _currentStreamingMessage = null;
+                currentStreamMsg.Content = $"❌ 错误：{ex.Message}";
+                currentStreamMsg.IsStreaming = false;
+                SetCurrentModeStreamingMessage(null);
             }
         }
     }
@@ -503,20 +646,21 @@ public sealed partial class MainWindow : Window
         }
 
         // ========== 正常聊天模式 ==========
-        if (_currentStreamingMessage == null)
+        var currentStreamMsg = GetCurrentModeStreamingMessage();
+        if (currentStreamMsg == null)
             return Task.CompletedTask;
 
         // 投递到 UI 线程
         _ = DispatcherQueue.TryEnqueue(() =>
         {
             // 直接修改 Content 属性，INotifyPropertyChanged 会自动通知 UI 更新
-            _currentStreamingMessage.Content += token;
+            currentStreamMsg.Content += token;
 
             // 滚动节流：每5个token滚动一次，减少性能消耗
-            _scrollThrottleCounter++;
-            if (_scrollThrottleCounter >= 5)
+            IncrementCurrentModeScrollThrottle();
+            if (GetCurrentModeScrollThrottle() >= 5)
             {
-                _scrollThrottleCounter = 0;
+                SetCurrentModeScrollThrottle(0);
                 ScrollToBottom();
             }
         });
@@ -558,9 +702,10 @@ public sealed partial class MainWindow : Window
         // 必须在 UI 线程执行，因为会触发 PropertyChanged
         _ = DispatcherQueue.TryEnqueue(() =>
         {
-            if (_currentStreamingMessage != null)
+            var currentStreamMsg = GetCurrentModeStreamingMessage();
+            if (currentStreamMsg != null)
             {
-                _currentStreamingMessage.IsStreaming = false;
+                currentStreamMsg.IsStreaming = false;
 
                 // 如果是快速问答模式，保存对话历史
                 if (_currentDialogMode == "quickqa" && _chatHistory.Count >= 2)
@@ -588,11 +733,11 @@ public sealed partial class MainWindow : Window
                     }
                 }
 
-                _currentStreamingMessage = null;
+                SetCurrentModeStreamingMessage(null);
             }
 
             // 重置滚动计数器，并确保最后一次滚动到底部
-            _scrollThrottleCounter = 0;
+            SetCurrentModeScrollThrottle(0);
             ScrollToBottom();
         });
     }
@@ -600,12 +745,18 @@ public sealed partial class MainWindow : Window
     // ========== 滚动到底部 ==========
     private void ScrollToBottom()
     {
-        if (_chatScrollViewer != null)
+        ScrollViewer? targetScrollViewer = _currentDialogMode switch
+        {
+            "visual" => ScrollViewerVisual,
+            _ => _chatScrollViewer
+        };
+
+        if (targetScrollViewer != null)
         {
             // 使用 ChangeView 直接滚动到最底部
             // 参数：horizontal offset, vertical offset, zoom factor
             // null = 保持当前值，double.MaxValue = 滚动到最大值（底部）
-            _chatScrollViewer.ChangeView(null, _chatScrollViewer.ScrollableHeight, null, disableAnimation: true);
+            targetScrollViewer.ChangeView(null, targetScrollViewer.ScrollableHeight, null, disableAnimation: true);
         }
     }
 

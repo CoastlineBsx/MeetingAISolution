@@ -19,6 +19,7 @@
 #include "granite/granite_genai.hpp"  // ← OpenVINO 头文件
 #include "embedding/embedding_genai.hpp"  // ← 新增：Embedding GenAI
 #include "llava/llava_genai.h"  // ← 新增：LLaVA GenAI
+#include "sd/sd_engine.hpp"  // ← 新增：Stable Diffusion
 #include "command_parser.h"
 #include "logging.h"
 #include "pipe_security.h"
@@ -26,11 +27,25 @@
 // OpenVINO Core for device enumeration
 #include <openvino/openvino.hpp>
 
+// Whisper context 外部声明（定义在 whisper_transcriber.cpp 中）
+extern struct whisper_context* g_whisper_ctx;
+extern void CleanupWhisper();  // Whisper 清理函数
 
-static std::once_flag g_model_once2; // ★ 新增：Worker 级只加载一次模型（Whisper）
-static std::once_flag g_granite_once; // ★ 新增：Granite 模型只加载一次
-static std::once_flag g_embedding_once; // ★ 新增：Embedding 模型只加载一次
-static std::once_flag g_llava_once; // ★ 新增：LLaVA 模型只加载一次
+// ========== 热拔插支持：使用 mutex + bool 替代 once_flag ==========
+static std::mutex g_whisper_mutex;
+static bool g_whisper_loaded = false;
+
+static std::mutex g_granite_mutex;
+static bool g_granite_loaded = false;
+
+static std::mutex g_embedding_mutex;
+static bool g_embedding_loaded = false;
+
+static std::mutex g_llava_mutex;
+static bool g_llava_loaded = false;
+
+static std::mutex g_sd_mutex;
+static bool g_sd_loaded = false;
 
 // ========== Granite GenAI 全局实例 ==========
 static std::unique_ptr<meetingai::granite::GraniteGenAI> g_granite;
@@ -44,10 +59,14 @@ static std::unique_ptr<meetingai::embedding::EmbeddingGenAI> g_embedding;
 // ========== LLaVA GenAI 全局实例 ==========
 static std::unique_ptr<llava::LLaVAGenAI> g_llava;
 
+// ========== Stable Diffusion 全局实例 ==========
+static std::unique_ptr<meetingai::sd::SDEngine> g_sd;
+
 // ========== 设备配置 ==========
 static std::string g_granite_device = "GPU";   // Granite LLM 使用的设备
 static std::string g_embedding_device = "GPU"; // Embedding 使用的设备
 static std::string g_llava_device = "NPU";     // LLaVA 使用的设备
+static std::string g_sd_device = "NPU";        // Stable Diffusion 使用的设备
 
 // ========== 工具函数：获取环境变量 ==========
 static std::string GetEnvOrDefault(const char* key, const char* fallback) {
@@ -214,10 +233,14 @@ static void handleLLaVACommand(HANDLE hPipe, const std::string& command) {
             std::string debug3 = "{\"type\":\"info\",\"message\":\"[Worker] 开始加载 LLaVA 模型（这可能需要 30-60 秒）...\"}\n";
             WriteFile(hPipe, debug3.data(), (DWORD)debug3.size(), &written, nullptr);
 
-            // 调用初始化函数（使用 call_once 确保只加载一次）
-            std::call_once(g_llava_once, [hPipe, device]() {
-                InitializeLLaVAGenAI(hPipe, device);
-            });
+            // 调用初始化函数（支持热拔插）
+            {
+                std::lock_guard<std::mutex> lock(g_llava_mutex);
+                if (!g_llava_loaded) {
+                    InitializeLLaVAGenAI(hPipe, device);
+                    g_llava_loaded = true;
+                }
+            }
 
             std::string debug4 = "{\"type\":\"info\",\"message\":\"[Worker] LLaVA 加载完成\"}\n";
             WriteFile(hPipe, debug4.data(), (DWORD)debug4.size(), &written, nullptr);
@@ -537,6 +560,176 @@ static void handleEmbeddingCommand(HANDLE hPipe, const std::string& command) {
     }
 }
 
+// ========== Stable Diffusion 初始化 ==========
+static void InitializeSDEngine(HANDLE hPipe, const std::string& device = "NPU") {
+    std::wcout << L"[Worker] 初始化 Stable Diffusion 引擎...\n";
+    try {
+        const std::string model_dir = GetEnvOrDefault(
+            "MEETINGAI_SD_MODEL",
+            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/stable-deffusion-1.5"
+        );
+
+        std::string info_msg = "{\"type\":\"info\",\"message\":\"[SD] 正在加载模型: " + model_dir + " (" + device + ")\"}\n";
+        DWORD written;
+        WriteFile(hPipe, info_msg.data(), (DWORD)info_msg.size(), &written, nullptr);
+
+        g_sd = std::make_unique<meetingai::sd::SDEngine>(model_dir, device);
+
+        if (g_sd->isInitialized()) {
+            std::wcout << L"[Worker] ✅ Stable Diffusion 初始化成功\n";
+            std::string success = "{\"type\":\"sd_ready\",\"message\":\"✅ SD 引擎已就绪\"}\n";
+            WriteFile(hPipe, success.data(), (DWORD)success.size(), &written, nullptr);
+        } else {
+            throw std::runtime_error("SD Engine initialization failed");
+        }
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Worker] ❌ SD 初始化失败: " << e.what() << L"\n";
+        std::string error = std::string("{\"type\":\"error\",\"message\":\"SD 初始化失败: ") +
+                           meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, error.data(), (DWORD)error.size(), &written, nullptr);
+    }
+}
+
+// ========== Stable Diffusion 命令处理 ==========
+static void handleSDCommand(HANDLE hPipe, const std::string& command) {
+    std::wcout << L"[Worker] 处理 SD 生成命令\n";
+    
+    try {
+        // 确保 SD 引擎已加载
+        if (!g_sd) {
+            std::string err = "{\"type\":\"error\",\"message\":\"❌ SD 引擎未加载\"}\n";
+            DWORD written;
+            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            return;
+        }
+
+        // 解析命令参数
+        meetingai::sd::GenerationConfig config;
+        
+        // 提取 mode (text2img / img2img)
+        std::string mode = "text2img";
+        size_t mode_pos = command.find("\"mode\":\"");
+        if (mode_pos != std::string::npos) {
+            size_t start = mode_pos + 8;
+            size_t end = command.find("\"", start);
+            if (end != std::string::npos) {
+                mode = command.substr(start, end - start);
+            }
+        }
+
+        // 提取 prompt
+        size_t prompt_pos = command.find("\"prompt\":\"");
+        if (prompt_pos != std::string::npos) {
+            size_t start = prompt_pos + 10;
+            size_t end = command.find("\"", start);
+            if (end != std::string::npos) {
+                config.prompt = command.substr(start, end - start);
+            }
+        }
+
+        // 提取 negative_prompt
+        size_t neg_pos = command.find("\"negative_prompt\":\"");
+        if (neg_pos != std::string::npos) {
+            size_t start = neg_pos + 19;
+            size_t end = command.find("\"", start);
+            if (end != std::string::npos) {
+                config.negative_prompt = command.substr(start, end - start);
+            }
+        }
+
+        // 提取数值参数
+        auto extract_int = [&](const std::string& key, int& value) {
+            size_t pos = command.find("\"" + key + "\":");
+            if (pos != std::string::npos) {
+                size_t start = pos + key.length() + 3;
+                size_t end = command.find_first_of(",}", start);
+                if (end != std::string::npos) {
+                    value = std::stoi(command.substr(start, end - start));
+                }
+            }
+        };
+
+        auto extract_float = [&](const std::string& key, float& value) {
+            size_t pos = command.find("\"" + key + "\":");
+            if (pos != std::string::npos) {
+                size_t start = pos + key.length() + 3;
+                size_t end = command.find_first_of(",}", start);
+                if (end != std::string::npos) {
+                    value = std::stof(command.substr(start, end - start));
+                }
+            }
+        };
+
+        extract_int("width", config.width);
+        extract_int("height", config.height);
+        extract_int("steps", config.num_inference_steps);
+        extract_float("cfg_scale", config.guidance_scale);
+        extract_int("seed", config.seed);
+
+        // img2img 专用参数
+        if (mode == "img2img") {
+            size_t img_pos = command.find("\"input_image\":\"");
+            if (img_pos != std::string::npos) {
+                size_t start = img_pos + 15;
+                size_t end = command.find("\"", start);
+                if (end != std::string::npos) {
+                    config.input_image_path = command.substr(start, end - start);
+                }
+            }
+            extract_float("strength", config.strength);
+        }
+
+        // 进度回调
+        auto progress_callback = [hPipe](int current, int total, const std::string& preview_path) {
+            std::string progress = "{\"type\":\"sd_progress\",\"current\":" +
+                                 std::to_string(current) +
+                                 ",\"total\":" + std::to_string(total);
+            
+            if (!preview_path.empty()) {
+                progress += ",\"preview\":\"" + meetingai::proto::jsonEscape(preview_path) + "\"";
+            }
+            progress += "}\n";
+
+            DWORD written;
+            WriteFile(hPipe, progress.data(), (DWORD)progress.size(), &written, nullptr);
+            FlushFileBuffers(hPipe);
+        };
+
+        // 生成图片
+        std::string output_path;
+        if (mode == "img2img") {
+            output_path = g_sd->generateImageToImage(config, progress_callback);
+        } else {
+            output_path = g_sd->generateTextToImage(config, progress_callback);
+        }
+
+        // 发送结果
+        if (!output_path.empty()) {
+            std::string result = "{\"type\":\"sd_complete\",\"image_path\":\"" +
+                               meetingai::proto::jsonEscape(output_path) + "\"}\n";
+            DWORD written;
+            WriteFile(hPipe, result.data(), (DWORD)result.size(), &written, nullptr);
+            FlushFileBuffers(hPipe);
+            
+            std::wcout << L"[Worker] ✅ SD 生成完成: " << output_path.c_str() << L"\n";
+        } else {
+            std::string error = "{\"type\":\"error\",\"message\":\"生成失败: " +
+                              meetingai::proto::jsonEscape(g_sd->getLastError()) + "\"}\n";
+            DWORD written;
+            WriteFile(hPipe, error.data(), (DWORD)error.size(), &written, nullptr);
+        }
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Worker] SD 命令处理异常: " << e.what() << L"\n";
+        std::string err = std::string("{\"type\":\"error\",\"message\":\"") +
+                         meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
+}
+
 // ========== Token 计数命令处理 ==========
 static void handleCountTokensCommand(HANDLE hPipe, const std::string& command) {
     try {
@@ -585,18 +778,22 @@ static void handleCountTokensCommand(HANDLE hPipe, const std::string& command) {
 static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
     std::wcout << L"[Worker] 处理转录命令\n";
 
-    // ★ 仅初始化一次模型（工业做法A）
-    std::call_once(g_model_once2, [&] {
-        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-        if (!InitWhisperOnce(modelPathOnce)) {
-            std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
-            DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    // ★ 仅初始化一次模型（支持热拔插）
+    {
+        std::lock_guard<std::mutex> lock(g_whisper_mutex);
+        if (!g_whisper_loaded) {
+            std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
+            if (!InitWhisperOnce(modelPathOnce)) {
+                std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
+                DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            }
+            else {
+                g_whisper_loaded = true;
+                const char* ok = "{\"type\":\"stage\",\"name\":\"model_ready\"}\n";
+                DWORD written; WriteFile(hPipe, ok, (DWORD)strlen(ok), &written, nullptr);
+            }
         }
-        else {
-            const char* ok = "{\"type\":\"stage\",\"name\":\"model_ready\"}\n";
-            DWORD written; WriteFile(hPipe, ok, (DWORD)strlen(ok), &written, nullptr);
-        }
-        });
+    }
 
 
     // 提取文件路径
@@ -888,20 +1085,28 @@ int wmain() {
                     std::string ack = "{\"type\":\"preload_started\"}\n";
                     WriteFile(hPipe, ack.data(), (DWORD)ack.size(), &written, nullptr);
 
-                    // 直接在主线程加载模型（使用 call_once 确保只加载一次）
+                    // 直接在主线程加载模型（支持热拔插）
                     std::string debug3 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载Granite...\"}\n";
                     WriteFile(hPipe, debug3.data(), (DWORD)debug3.size(), &written, nullptr);
 
-                    std::call_once(g_granite_once, [hPipe, graniteDeviceCmd]() {
-                        InitializeGraniteGenAI(hPipe, graniteDeviceCmd);
-                    });
+                    {
+                        std::lock_guard<std::mutex> lock(g_granite_mutex);
+                        if (!g_granite_loaded) {
+                            InitializeGraniteGenAI(hPipe, graniteDeviceCmd);
+                            g_granite_loaded = true;
+                        }
+                    }
 
                     std::string debug4 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载Embedding...\"}\n";
                     WriteFile(hPipe, debug4.data(), (DWORD)debug4.size(), &written, nullptr);
 
-                    std::call_once(g_embedding_once, [hPipe, embeddingDeviceCmd]() {
-                        InitializeEmbeddingGenAI(hPipe, embeddingDeviceCmd);
-                    });
+                    {
+                        std::lock_guard<std::mutex> lock(g_embedding_mutex);
+                        if (!g_embedding_loaded) {
+                            InitializeEmbeddingGenAI(hPipe, embeddingDeviceCmd);
+                            g_embedding_loaded = true;
+                        }
+                    }
 
                     // ---- 临时注释：测试 LLaVA 加载问题 ----
                     // std::string debug4_5 = "{\"type\":\"info\",\"message\":\"[Worker Debug] 开始加载LLaVA...\"}\n";
@@ -913,6 +1118,126 @@ int wmain() {
 
                     std::string debug5 = "{\"type\":\"info\",\"message\":\"[Worker Debug]预加载完成\"}\n";
                     WriteFile(hPipe, debug5.data(), (DWORD)debug5.size(), &written, nullptr);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：Whisper 加载命令 ----
+                if (buffer.find("\"load_whisper\"") != std::string::npos) {
+                    std::wcout << L"[Worker] 收到 load_whisper 命令\n";
+                    DWORD written;
+
+                    // 解析设备选择
+                    std::string device = "GPU";  // 默认使用 GPU
+                    auto devicePos = buffer.find("\"device\":\"");
+                    if (devicePos != std::string::npos) {
+                        auto start = devicePos + 10;
+                        auto end = buffer.find("\"", start);
+                        if (end != std::string::npos) {
+                            device = buffer.substr(start, end - start);
+                        }
+                    }
+
+                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] Whisper 设备: " + device + "\"}\n";
+                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+                    std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker] 开始加载 Whisper 模型...\"}\n";
+                    WriteFile(hPipe, debug2.data(), (DWORD)debug2.size(), &written, nullptr);
+
+                    // 加载 Whisper 模型（支持热拔插）
+                    {
+                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
+                        if (!g_whisper_loaded) {
+                            std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
+                            if (!InitWhisperOnce(modelPath)) {
+                                std::string err = "{\"type\":\"whisper_error\",\"message\":\"Whisper 模型加载失败\"}\n";
+                                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                            } else {
+                                g_whisper_loaded = true;
+                                std::string ready = "{\"type\":\"whisper_ready\",\"device\":\"" + device + "\"}\n";
+                                WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
+                            }
+                        } else {
+                            // 已经加载过，直接发送 ready 消息
+                            std::string ready = "{\"type\":\"whisper_ready\",\"device\":\"" + device + "\"}\n";
+                            WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
+                        }
+                    }
+
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：Whisper 卸载命令 ----
+                if (buffer.find("\"unload_whisper\"") != std::string::npos) {
+                    std::wcout << L"[Worker] 收到 unload_whisper 命令\n";
+                    DWORD written;
+
+                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] 正在卸载 Whisper 模型...\"}\n";
+                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+                    // 释放 Whisper 资源（支持热拔插）
+                    {
+                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
+                        CleanupWhisper();
+                        g_whisper_loaded = false;
+                    }
+
+                    std::string unloaded = "{\"type\":\"whisper_unloaded\"}\n";
+                    WriteFile(hPipe, unloaded.data(), (DWORD)unloaded.size(), &written, nullptr);
+
+                    std::wcout << L"[Worker] Whisper 模型已卸载\n";
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：LLaVA 卸载命令 ----
+                if (buffer.find("\"unload_llava\"") != std::string::npos) {
+                    std::wcout << L"[Worker] 收到 unload_llava 命令\n";
+                    DWORD written;
+
+                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] 正在卸载 LLaVA 模型...\"}\n";
+                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+                    // 释放 LLaVA 资源（支持热拔插）
+                    {
+                        std::lock_guard<std::mutex> lock(g_llava_mutex);
+                        g_llava.reset();
+                        g_llava_loaded = false;
+                    }
+
+                    std::string unloaded = "{\"type\":\"llava_unloaded\"}\n";
+                    WriteFile(hPipe, unloaded.data(), (DWORD)unloaded.size(), &written, nullptr);
+
+                    std::wcout << L"[Worker] LLaVA 模型已卸载\n";
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：Granite & Embedding 卸载命令 ----
+                if (buffer.find("\"unload_granite_embedding\"") != std::string::npos) {
+                    std::wcout << L"[Worker] 收到 unload_granite_embedding 命令\n";
+                    DWORD written;
+
+                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] 正在卸载 Granite & Embedding 模型...\"}\n";
+                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+                    // 释放 Granite 和 Embedding 资源（支持热拔插）
+                    {
+                        std::lock_guard<std::mutex> lock(g_granite_mutex);
+                        g_granite.reset();
+                        g_granite_loaded = false;
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(g_embedding_mutex);
+                        g_embedding.reset();
+                        g_embedding_loaded = false;
+                    }
+
+                    std::string unloaded = "{\"type\":\"granite_embedding_unloaded\"}\n";
+                    WriteFile(hPipe, unloaded.data(), (DWORD)unloaded.size(), &written, nullptr);
+
+                    std::wcout << L"[Worker] Granite & Embedding 模型已卸载\n";
                     buffer.clear();
                     continue;
                 }
@@ -938,6 +1263,36 @@ int wmain() {
                     continue;
                 }
 
+                // ---- 新增：Stable Diffusion 命令处理 ----
+                if (buffer.find("\"sd_") != std::string::npos || buffer.find("\"load_sd\"") != std::string::npos) {
+                    // 如果是加载命令
+                    if (buffer.find("\"load_sd\"") != std::string::npos) {
+                        std::string device = "NPU";  // 默认使用 NPU
+                        auto devicePos = buffer.find("\"device\":\"");
+                        if (devicePos != std::string::npos) {
+                            auto start = devicePos + 10;
+                            auto end = buffer.find("\"", start);
+                            if (end != std::string::npos) {
+                                device = buffer.substr(start, end - start);
+                            }
+                        }
+
+                        // 支持热拔插
+                        {
+                            std::lock_guard<std::mutex> lock(g_sd_mutex);
+                            if (!g_sd_loaded) {
+                                InitializeSDEngine(hPipe, device);
+                                g_sd_loaded = true;
+                            }
+                        }
+                    } else {
+                        // 其他 SD 命令
+                        handleSDCommand(hPipe, buffer);
+                    }
+                    buffer.clear();
+                    continue;
+                }
+
                 // ---- 新增：Token 计数命令处理 ----
                 if (buffer.find("\"count_tokens\"") != std::string::npos) {
                     handleCountTokensCommand(hPipe, buffer);
@@ -956,14 +1311,19 @@ int wmain() {
                 if (meetingai::proto::isStartStream(buffer)) {
                     std::wcout << L"[Worker] 处理 start_stream 命令\n";
 
-                    // 确保模型已加载
-                    std::call_once(g_model_once2, [&] {
-                        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-                        if (!InitWhisperOnce(modelPathOnce)) {
-                            std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
-                            DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                    // 确保模型已加载（支持热拔插）
+                    {
+                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
+                        if (!g_whisper_loaded) {
+                            std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
+                            if (!InitWhisperOnce(modelPathOnce)) {
+                                std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
+                                DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                            } else {
+                                g_whisper_loaded = true;
+                            }
                         }
-                    });
+                    }
 
                     std::string mode = meetingai::proto::extractMode(buffer);
                     std::string lang = meetingai::proto::extractLanguage(buffer);
@@ -1012,13 +1372,19 @@ int wmain() {
                 // ---- v2 多流：start_stream2 / stream_chunk2 / stop_stream2 ----
                 if (meetingai::proto::isStartStream2(buffer)) {
                     std::wcout << L"[Worker] 处理 start_stream2 命令\n";
-                    std::call_once(g_model_once2, [&] {
-                        std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-                        if (!InitWhisperOnce(modelPathOnce)) {
-                            std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
-                            DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                    // 确保模型已加载（支持热拔插）
+                    {
+                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
+                        if (!g_whisper_loaded) {
+                            std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
+                            if (!InitWhisperOnce(modelPathOnce)) {
+                                std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
+                                DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                            } else {
+                                g_whisper_loaded = true;
+                            }
                         }
-                    });
+                    }
                     std::string streamId = meetingai::proto::extractStreamId(buffer);
                     std::string source   = meetingai::proto::extractSource(buffer);
                     std::string mode     = meetingai::proto::extractMode(buffer);

@@ -52,16 +52,19 @@ public sealed partial class MainWindow : Window
             if (_microphoneTestCancellation?.Token.IsCancellationRequested == true)
                 return;
 
-            // Calculate RMS volume
-            float rms = CalculateRMS(args.Buffer, args.BytesRecorded, _microphoneTestCapture.WaveFormat);
+            // Calculate peak volume (more intuitive for users)
+            float peak = CalculatePeak(args.Buffer, args.BytesRecorded, _microphoneTestCapture.WaveFormat);
+
+            // Apply 5x gain for display (makes normal speech show 30-60%)
+            float displayValue = Math.Min(peak * 5.0f, 1.0f);
 
             // Update UI on UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (_isMicrophoneTestRunning)
                 {
-                    int percentage = (int)(rms * 100);
-                    MicrophoneVolumeBar.Value = Math.Min(percentage, 100);
+                    int percentage = (int)(displayValue * 100);
+                    MicrophoneVolumeBar.Value = percentage;
                     MicrophoneVolumeText.Text = $"{percentage}%";
                 }
             });
@@ -127,12 +130,11 @@ public sealed partial class MainWindow : Window
         _isSpeakerTestRunning = true;
         BtnSpeakerTest.Content = "Stop";
 
-        // Create 1kHz sine wave generator
+        // Create pink noise generator (softer, more pleasant than sine wave)
         _speakerTestGenerator = new SignalGenerator()
         {
-            Gain = 0.2,  // 20% volume - comfortable level
-            Frequency = 1000,  // 1kHz tone
-            Type = SignalGeneratorType.Sin
+            Gain = 0.15,  // 15% volume - comfortable level for pink noise
+            Type = SignalGeneratorType.Pink
         };
 
         // Take 3 seconds of audio
@@ -172,6 +174,34 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== Helper Functions ==========
+    private float CalculatePeak(byte[] buffer, int bytesRecorded, WaveFormat format)
+    {
+        float maxPeak = 0f;
+        int sampleCount = bytesRecorded / format.BlockAlign;  // Fixed: use BlockAlign for channels
+
+        if (format.Encoding == WaveFormatEncoding.IeeeFloat)
+        {
+            // 32-bit float samples
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float sample = Math.Abs(BitConverter.ToSingle(buffer, i * 4));
+                if (sample > maxPeak) maxPeak = sample;
+            }
+        }
+        else if (format.BitsPerSample == 16)
+        {
+            // 16-bit PCM samples
+            for (int i = 0; i < sampleCount; i++)
+            {
+                short sample = BitConverter.ToInt16(buffer, i * 2);
+                float normalized = Math.Abs(sample / 32768f);
+                if (normalized > maxPeak) maxPeak = normalized;
+            }
+        }
+
+        return maxPeak;
+    }
+
     private float CalculateRMS(byte[] buffer, int bytesRecorded, WaveFormat format)
     {
         // Convert bytes to samples

@@ -246,7 +246,8 @@ static void OnNewSegment(whisper_context* /*ctx*/, whisper_state* state, int n_n
 }
 
 // 全局 whisper 上下文（常驻，避免重复加载模型）
-static struct whisper_context* g_whisper_ctx = nullptr;
+// 移除 static 以便 main.cpp 可以访问
+struct whisper_context* g_whisper_ctx = nullptr;
 static std::once_flag g_model_once; // 只加载一次
 
 // ==================== 流式转录全局状态 ====================

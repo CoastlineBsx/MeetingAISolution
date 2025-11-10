@@ -157,11 +157,19 @@ public sealed partial class MainWindow : Window
             _currentDialogMode = "normal";
             _isRAGMode = false;
 
-            // 启用模式选择按钮（普通对话已迁移到导航）
+            // 启用模式选择按钮
             BtnQuickQA.IsEnabled = true;
             BtnIEMode.IsEnabled = true;
             BtnRAGMode.IsEnabled = true;
             BtnLLaVAMode.IsEnabled = true;
+
+            // 启用Startup页面的模型加载按钮
+            BtnPreloadModels.IsEnabled = true;
+            BtnLoadWhisper.IsEnabled = true;
+            BtnLoadLLaVA.IsEnabled = true;
+
+            // 启用Document Assistant页面的按钮
+            BtnQuickQALoad.IsEnabled = true;
 
             // 启用ChatPage的按钮
             BtnGraniteClearChat.IsEnabled = true;
@@ -181,9 +189,30 @@ public sealed partial class MainWindow : Window
 
     private async void BtnPreloadModels_Click(object sender, RoutedEventArgs e)
     {
+        if (_isGraniteEmbeddingLoaded)
+        {
+            // 卸载模型
+            await UnloadGraniteEmbeddingModels();
+        }
+        else
+        {
+            // 加载模型
+            await LoadGraniteEmbeddingModels();
+        }
+    }
+
+    private async Task LoadGraniteEmbeddingModels()
+    {
         try
         {
             await EnsurePipeAsync();
+
+            // 显示加载中状态
+            BtnPreloadModels.IsEnabled = false;
+            ProgressGraniteEmbedding.IsActive = true;
+            ProgressGraniteEmbedding.Visibility = Visibility.Visible;
+            CmbGraniteDevice.IsEnabled = false;
+            CmbEmbeddingDevice.IsEnabled = false;
 
             // 读取当前设备选择
             string graniteDevice = CmbGraniteDevice.SelectedIndex switch
@@ -199,7 +228,7 @@ public sealed partial class MainWindow : Window
                 _ => "GPU"
             };
 
-            await AppendLineAsync($"[Host] 开始预加载模型：Granite-{graniteDevice}, Embedding-{embeddingDevice}");
+            await AppendLineAsync($"[Startup] Loading models: Granite-{graniteDevice}, Embedding-{embeddingDevice}");
 
             // 发送预加载命令
             var cmd = new { type = "preload_models", granite_device = graniteDevice, embedding_device = embeddingDevice };
@@ -208,13 +237,50 @@ public sealed partial class MainWindow : Window
             await _pipe.WriteAsync(buf, 0, buf.Length);
             await _pipe.FlushAsync();
 
-            // 禁用按钮，避免重复点击
-            BtnPreloadModels.IsEnabled = false;
             LblStatus.Text = "模型加载中...";
         }
         catch (Exception ex)
         {
-            await AppendLineAsync($"[Host] 预加载模型失败：{ex.Message}");
+            await AppendLineAsync($"[Startup] Model preload failed: {ex.Message}");
+            ProgressGraniteEmbedding.IsActive = false;
+            ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+            BtnPreloadModels.IsEnabled = true;
+            CmbGraniteDevice.IsEnabled = true;
+            CmbEmbeddingDevice.IsEnabled = true;
+        }
+    }
+
+    private async Task UnloadGraniteEmbeddingModels()
+    {
+        try
+        {
+            await AppendLineAsync("[Startup] Unloading Granite & Embedding models...");
+
+            // 显示卸载中状态
+            BtnPreloadModels.IsEnabled = false;
+            ProgressGraniteEmbedding.IsActive = true;
+            ProgressGraniteEmbedding.Visibility = Visibility.Visible;
+
+            await EnsurePipeAsync();
+
+            // 发送卸载命令
+            var unloadCmd = new
+            {
+                type = "unload_granite_embedding"
+            };
+            var json = JsonSerializer.Serialize(unloadCmd) + "\n";
+            var buf = Encoding.UTF8.GetBytes(json);
+            await _pipe.WriteAsync(buf, 0, buf.Length);
+            await _pipe.FlushAsync();
+
+            await AppendLineAsync("[Startup] Unload command sent");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Startup] Unload failed: {ex.Message}");
+            ProgressGraniteEmbedding.IsActive = false;
+            ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+            BtnPreloadModels.IsEnabled = true;
         }
     }
 
@@ -265,271 +331,431 @@ public sealed partial class MainWindow : Window
 
                 await AppendLineAsync($"[Pipe] {line}");
 
-                // ========== Info 消息处理（设备枚举等） ==========
-                if (line.Contains("\"type\":\"info\""))
+                // Split concatenated JSON messages (e.g., "}{"type":"embedding_ready")
+                var jsonMessages = SplitJsonMessages(line);
+                foreach (var jsonMsg in jsonMessages)
                 {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-                        string msg = root.TryGetProperty("message", out var m) ? (m.GetString() ?? "") : "";
-                        if (!string.IsNullOrEmpty(msg))
-                        {
-                            await AppendLineAsync(msg);
-                        }
-                    }
-                    catch { }
-                    continue;
-                }
-
-                // ========== Granite 消息处理 ==========
-                if (line.Contains("\"type\":\"token\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-                        string token = root.TryGetProperty("text", out var t) ? (t.GetString() ?? "") : "";
-                        await HandleGraniteStreamToken(token);
-                    }
-                    catch { }
-                    continue;
-                }
-
-                if (line.Contains("\"type\":\"done\""))
-                {
-                    try
-                    {
-                        HandleGraniteStreamDone();
-                        await AppendLineAsync("[Granite] 生成完成");
-                    }
-                    catch (Exception ex)
-                    {
-                        await AppendLineAsync($"[Granite] 处理 done 消息异常：{ex.Message}");
-                    }
-                    continue;
-                }
-
-                if (line.Contains("\"type\":\"preload_started\""))
-                {
-                    await AppendLineAsync("[Worker] 后台加载已启动");
-                    continue;
-                }
-
-                if (line.Contains("\"type\":\"granite_chat_status\""))
-                {
-                    // 处理 Granite 聊天状态消息
-                    continue;
-                }
-
-                if (line.Contains("\"type\":\"granite_ready\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-                        string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
-                        await AppendLineAsync($"[Granite] ✅ 模型已就绪 (device={device})");
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            LblStatus.Text = "Granite 已就绪";
-                        });
-                    }
-                    catch { }
-                    continue;
-                }
-
-                // ========== Embedding 消息处理 ==========
-                if (line.Contains("\"type\":\"embedding_result\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-
-                        if (root.TryGetProperty("embedding", out var embeddingArray))
-                        {
-                            int dim = embeddingArray.GetArrayLength();
-
-                            // 解析向量
-                            var embedding = new float[dim];
-                            for (int i = 0; i < dim; i++)
-                            {
-                                embedding[i] = embeddingArray[i].GetSingle();
-                            }
-
-                            // 设置结果到等待的任务
-                            SetEmbeddingResult(embedding);
-
-                            await AppendLineAsync($"[Embedding] ✅ 收到向量 (dim={dim})");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        await AppendLineAsync($"[Embedding] 解析结果异常: {ex.Message}");
-                        SetEmbeddingError(ex);
-                    }
-                    continue;
-                }
-
-                // ========== Token 计数结果处理 ==========
-                if (line.Contains("\"type\":\"token_count_result\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-
-                        if (root.TryGetProperty("count", out var countProp))
-                        {
-                            int tokenCount = countProp.GetInt32();
-
-                            // 设置结果到等待的任务
-                            lock (_tokenCountLock)
-                            {
-                                _tokenCountTcs?.TrySetResult(tokenCount);
-                                _tokenCountTcs = null;
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        await AppendLineAsync($"[TokenCount] 解析结果异常: {ex.Message}");
-                        lock (_tokenCountLock)
-                        {
-                            _tokenCountTcs?.TrySetException(ex);
-                            _tokenCountTcs = null;
-                        }
-                    }
-                    continue;
-                }
-
-                if (line.Contains("\"type\":\"embedding_ready\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-                        string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
-                        int dim = root.TryGetProperty("dim", out var dimProp) ? dimProp.GetInt32() : 0;
-                        await AppendLineAsync($"[Embedding] ✅ 模型已就绪 (device={device}, dim={dim})");
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            LblStatus.Text = "模型加载完成 ✅";
-                        });
-                    }
-                    catch { }
-                    continue;
-                }
-
-                // ========== LLaVA 消息处理 ==========
-                if (line.Contains("\"type\":\"llava_ready\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-                        string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
-                        await AppendLineAsync($"[LLaVA] ✅ 模型已就绪 (device={device})");
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            LblStatus.Text = "LLaVA 已就绪";
-                            LblLLaVAStatus.Text = $"✅ 模型已加载 ({device})";
-                            LblLLaVAStatus.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green);
-
-                            // 启用所有 LLaVA 功能按钮
-                            BtnUploadImage.IsEnabled = true;
-                            BtnLLaVASingle.IsEnabled = false;  // 默认单轮模式
-                            BtnLLaVAMulti.IsEnabled = true;
-                            BtnLLaVAClear.IsEnabled = true;
-                            BtnLLaVASend.IsEnabled = true;
-
-                            _isLLaVALoaded = true;
-                        });
-                    }
-                    catch { }
-                    continue;
-                }
-
-                if (line.Contains("\"type\":\"llava_token\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-                        string token = root.TryGetProperty("token", out var t) ? (t.GetString() ?? "") : "";
-                        await HandleLLaVAStreamToken(token);
-                    }
-                    catch { }
-                    continue;
-                }
-
-                if (line.Contains("\"type\":\"llava_complete\""))
-                {
-                    try
-                    {
-                        HandleLLaVAStreamDone();
-                        await AppendLineAsync("[LLaVA] 生成完成");
-                    }
-                    catch (Exception ex)
-                    {
-                        await AppendLineAsync($"[LLaVA] 处理 complete 消息异常：{ex.Message}");
-                    }
-                    continue;
-                }
-
-                // ========== 相似度诊断测试结果 ==========
-                if (line.Contains("\"type\":\"similarity_test_result\""))
-                {
-                    try
-                    {
-                        using var jd = JsonDocument.Parse(line);
-                        var root = jd.RootElement;
-
-                        await AppendLineAsync("\n========== 相似度诊断结果 ==========");
-
-                        if (root.TryGetProperty("pairs", out var pairsArray))
-                        {
-                            for (int i = 0; i < pairsArray.GetArrayLength(); i++)
-                            {
-                                var pair = pairsArray[i];
-                                string text1 = pair.TryGetProperty("text1", out var t1) ? (t1.GetString() ?? "") : "";
-                                string text2 = pair.TryGetProperty("text2", out var t2) ? (t2.GetString() ?? "") : "";
-                                float similarity = pair.TryGetProperty("similarity", out var sim) ? sim.GetSingle() : 0f;
-
-                                await AppendLineAsync($"\n[对比 {i + 1}]");
-                                await AppendLineAsync($"  文本1: {text1}");
-                                await AppendLineAsync($"  文本2: {text2}");
-                                await AppendLineAsync($"  相似度: {similarity:F4} ({similarity * 100:F2}%)");
-                            }
-                        }
-
-                        await AppendLineAsync("\n====================================\n");
-                    }
-                    catch (Exception ex)
-                    {
-                        await AppendLineAsync($"[诊断] 解析结果异常: {ex.Message}");
-                    }
-                    continue;
-                }
-
-                // ========== Whisper 转录消息处理 ==========
-                if (line.Contains("\"type\":\"asr_segment\""))
-                {
-                    continue;
-                }
-                if (line.Contains("\"type\":\"transcribe_complete\"") ||
-                    line.Contains("\"type\":\"error\""))
-                {
-                    _transcribeTcs?.TrySetResult(true);
-                    _transcribeTcs = null;
-                    continue;
+                    await ProcessJsonMessage(jsonMsg);
                 }
             }
         }
         catch (Exception ex)
         {
-            await AppendLineAsync($"[Host] 读循环异常：{ex.Message}");
+            await AppendLineAsync($"[Pipe] Read loop error: {ex.Message}");
+        }
+    }
+
+    private List<string> SplitJsonMessages(string line)
+    {
+        var messages = new List<string>();
+
+        // Handle concatenated JSON objects like: {...}{...}
+        if (line.Contains("}{"))
+        {
+            // Split by }{ and reconstruct valid JSON objects
+            var parts = line.Split(new[] { "}{" }, StringSplitOptions.None);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var part = parts[i];
+                if (i > 0) part = "{" + part;  // Add opening brace
+                if (i < parts.Length - 1) part = part + "}";  // Add closing brace
+                messages.Add(part);
+            }
+        }
+        else
+        {
+            messages.Add(line);
+        }
+
+        return messages;
+    }
+
+    private async Task ProcessJsonMessage(string jsonMsg)
+    {
+        // ========== Info 消息处理（设备枚举等） ==========
+        if (jsonMsg.Contains("\"type\":\"info\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string msg = root.TryGetProperty("message", out var m) ? (m.GetString() ?? "") : "";
+                if (!string.IsNullOrEmpty(msg))
+                {
+                    await AppendLineAsync(msg);
+                }
+            }
+            catch { }
+            return;
+        }
+
+        // ========== Granite 消息处理 ==========
+        if (jsonMsg.Contains("\"type\":\"token\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string token = root.TryGetProperty("text", out var t) ? (t.GetString() ?? "") : "";
+                await HandleGraniteStreamToken(token);
+            }
+            catch { }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"done\""))
+        {
+            try
+            {
+                HandleGraniteStreamDone();
+                await AppendLineAsync("[Granite] 生成完成");
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[Granite] 处理 done 消息异常：{ex.Message}");
+            }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"preload_started\""))
+        {
+            await AppendLineAsync("[Worker] 后台加载已启动");
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"granite_chat_status\""))
+        {
+            // 处理 Granite 聊天状态消息
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"granite_ready\""))
+        {
+            await AppendLineAsync("[DEBUG] *** granite_ready 处理代码被执行 ***");
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
+                await AppendLineAsync($"[Granite] ✅ Model ready (device={device})");
+                await AppendLineAsync("[DEBUG] *** 现在会停止转圈了 ***");
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    LblStatus.Text = "Granite 已就绪";
+                    // Fix: Also stop the spinner for Granite
+                    ProgressGraniteEmbedding.IsActive = false;
+                    ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+                    BtnPreloadModels.IsEnabled = true;
+                });
+            }
+            catch { }
+            return;
+        }
+
+        // ========== Embedding 消息处理 ==========
+        if (jsonMsg.Contains("\"type\":\"embedding_result\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+
+                if (root.TryGetProperty("embedding", out var embeddingArray))
+                {
+                    int dim = embeddingArray.GetArrayLength();
+
+                    // 解析向量
+                    var embedding = new float[dim];
+                    for (int i = 0; i < dim; i++)
+                    {
+                        embedding[i] = embeddingArray[i].GetSingle();
+                    }
+
+                    // 设置结果到等待的任务
+                    SetEmbeddingResult(embedding);
+
+                    await AppendLineAsync($"[Embedding] ✅ 收到向量 (dim={dim})");
+                }
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[Embedding] 解析结果异常: {ex.Message}");
+                SetEmbeddingError(ex);
+            }
+            return;
+        }
+
+        // ========== Token 计数结果处理 ==========
+        if (jsonMsg.Contains("\"type\":\"token_count_result\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+
+                if (root.TryGetProperty("count", out var countProp))
+                {
+                    int tokenCount = countProp.GetInt32();
+
+                    // 设置结果到等待的任务
+                    lock (_tokenCountLock)
+                    {
+                        _tokenCountTcs?.TrySetResult(tokenCount);
+                        _tokenCountTcs = null;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[TokenCount] 解析结果异常: {ex.Message}");
+                lock (_tokenCountLock)
+                {
+                    _tokenCountTcs?.TrySetException(ex);
+                    _tokenCountTcs = null;
+                }
+            }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"embedding_ready\""))
+        {
+            await AppendLineAsync("[DEBUG] *** embedding_ready 处理代码被执行 ***");
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
+                int dim = root.TryGetProperty("dim", out var dimProp) ? dimProp.GetInt32() : 0;
+                await AppendLineAsync($"[Embedding] ✅ Model ready (device={device}, dim={dim})");
+                await AppendLineAsync("[DEBUG] *** 准备更新UI ***");
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    LblStatus.Text = "模型加载完成 ✅";
+
+                    // 更新Startup页面状态
+                    ProgressGraniteEmbedding.IsActive = false;
+                    ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+                    BtnPreloadModels.Content = "Unload Models";
+                    BtnPreloadModels.IsEnabled = true;
+                    _isGraniteEmbeddingLoaded = true;
+
+                    _ = AppendLineAsync("[DEBUG] *** UI更新已完成 ***");
+                });
+                await AppendLineAsync("[DEBUG] *** UI更新已提交到队列 ***");
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[DEBUG] *** embedding_ready 处理异常: {ex.Message} ***");
+            }
+            return;
+        }
+
+        // ========== Granite/Embedding 卸载响应 ==========
+        if (jsonMsg.Contains("\"type\":\"granite_embedding_unloaded\""))
+        {
+            await AppendLineAsync("[Startup] ✓ Granite & Embedding models unloaded");
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ProgressGraniteEmbedding.IsActive = false;
+                ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+                BtnPreloadModels.Content = "Load Models";
+                BtnPreloadModels.IsEnabled = true;
+                CmbGraniteDevice.IsEnabled = true;
+                CmbEmbeddingDevice.IsEnabled = true;
+                _isGraniteEmbeddingLoaded = false;
+            });
+            return;
+        }
+
+        // ========== LLaVA 消息处理 ==========
+        if (jsonMsg.Contains("\"type\":\"llava_ready\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
+                await AppendLineAsync($"[LLaVA] ✅ Model ready (device={device})");
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    LblStatus.Text = "LLaVA 已就绪";
+
+                    // 更新Startup页面状态
+                    ProgressLLaVA.IsActive = false;
+                    ProgressLLaVA.Visibility = Visibility.Collapsed;
+                    BtnLoadLLaVA.Content = "Unload Model";
+                    BtnLoadLLaVA.IsEnabled = true;
+
+                    // 启用所有 LLaVA 功能按钮
+                    BtnUploadImage.IsEnabled = true;
+                    BtnLLaVASingle.IsEnabled = false;  // 默认单轮模式
+                    BtnLLaVAMulti.IsEnabled = true;
+                    BtnLLaVAClear.IsEnabled = true;
+                    BtnLLaVASend.IsEnabled = true;
+
+                    _isLLaVALoaded = true;
+                });
+            }
+            catch { }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"llava_unloaded\""))
+        {
+            await AppendLineAsync("[DEBUG] *** llava_unloaded 处理代码被执行 ***");
+            await AppendLineAsync("[Startup] ✓ LLaVA model unloaded");
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ProgressLLaVA.IsActive = false;
+                ProgressLLaVA.Visibility = Visibility.Collapsed;
+                BtnLoadLLaVA.Content = "Load Model";
+                BtnLoadLLaVA.IsEnabled = true;
+                CmbLLaVADevice.IsEnabled = true;
+
+                // 禁用 LLaVA 功能按钮
+                BtnUploadImage.IsEnabled = false;
+                BtnLLaVASingle.IsEnabled = false;
+                BtnLLaVAMulti.IsEnabled = false;
+                BtnLLaVAClear.IsEnabled = false;
+                BtnLLaVASend.IsEnabled = false;
+
+                _isLLaVALoaded = false;
+            });
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"llava_token\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string token = root.TryGetProperty("token", out var t) ? (t.GetString() ?? "") : "";
+                await HandleLLaVAStreamToken(token);
+            }
+            catch { }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"llava_complete\""))
+        {
+            try
+            {
+                HandleLLaVAStreamDone();
+                await AppendLineAsync("[LLaVA] 生成完成");
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[LLaVA] 处理 complete 消息异常：{ex.Message}");
+            }
+            return;
+        }
+
+        // ========== Stable Diffusion 消息处理 ==========
+        if (jsonMsg.Contains("\"type\":\"sd_ready\"") ||
+            jsonMsg.Contains("\"type\":\"sd_progress\"") ||
+            jsonMsg.Contains("\"type\":\"sd_complete\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string type = root.GetProperty("type").GetString() ?? "";
+                HandleSDMessage(type, root);
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[SD] 处理消息异常: {ex.Message}");
+            }
+            return;
+        }
+
+        // ========== Whisper 消息处理 ==========
+        if (jsonMsg.Contains("\"type\":\"whisper_ready\""))
+        {
+            await AppendLineAsync("[DEBUG] *** whisper_ready 处理代码被执行 ***");
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
+                await AppendLineAsync($"[Whisper] ✅ Model ready (device={device})");
+                await AppendLineAsync("[DEBUG] *** 调用 HandleWhisperLoadResponse ***");
+                HandleWhisperLoadResponse(true, $"Model loaded on {device}");
+            }
+            catch { }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"whisper_error\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string message = root.TryGetProperty("message", out var m) ? (m.GetString() ?? "Unknown error") : "Unknown error";
+                await AppendLineAsync($"[Whisper] ✗ Error: {message}");
+                HandleWhisperLoadResponse(false, message);
+            }
+            catch { }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"whisper_unloaded\""))
+        {
+            await AppendLineAsync("[DEBUG] *** whisper_unloaded 处理代码被执行 ***");
+            await AppendLineAsync("[Startup] ✓ Whisper model unloaded");
+            await AppendLineAsync("[DEBUG] *** 调用 HandleWhisperUnloadResponse ***");
+            HandleWhisperUnloadResponse(true, "");
+            return;
+        }
+
+        // ========== 相似度诊断测试结果 ==========
+        if (jsonMsg.Contains("\"type\":\"similarity_test_result\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+
+                await AppendLineAsync("\n========== 相似度诊断结果 ==========");
+
+                if (root.TryGetProperty("pairs", out var pairsArray))
+                {
+                    for (int i = 0; i < pairsArray.GetArrayLength(); i++)
+                    {
+                        var pair = pairsArray[i];
+                        string text1 = pair.TryGetProperty("text1", out var t1) ? (t1.GetString() ?? "") : "";
+                        string text2 = pair.TryGetProperty("text2", out var t2) ? (t2.GetString() ?? "") : "";
+                        float similarity = pair.TryGetProperty("similarity", out var sim) ? sim.GetSingle() : 0f;
+
+                        await AppendLineAsync($"\n[对比 {i + 1}]");
+                        await AppendLineAsync($"  文本1: {text1}");
+                        await AppendLineAsync($"  文本2: {text2}");
+                        await AppendLineAsync($"  相似度: {similarity:F4} ({similarity * 100:F2}%)");
+                    }
+                }
+
+                await AppendLineAsync("\n====================================\n");
+            }
+            catch (Exception ex)
+            {
+                await AppendLineAsync($"[诊断] 解析结果异常: {ex.Message}");
+            }
+            return;
+        }
+
+        // ========== Whisper 转录消息处理 ==========
+        if (jsonMsg.Contains("\"type\":\"asr_segment\""))
+        {
+            return;
+        }
+        if (jsonMsg.Contains("\"type\":\"transcribe_complete\"") ||
+            jsonMsg.Contains("\"type\":\"error\""))
+        {
+            _transcribeTcs?.TrySetResult(true);
+            _transcribeTcs = null;
+            return;
         }
     }
 

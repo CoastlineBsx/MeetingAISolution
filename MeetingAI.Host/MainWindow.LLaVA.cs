@@ -31,9 +31,6 @@ public sealed partial class MainWindow : Window
     // 图片大小限制：15MB
     private const long MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 
-    // LLaVA 模型是否已加载
-    private bool _isLLaVALoaded = false;
-
     private void InitializeLLaVA()
     {
         // 初始化（如果需要）
@@ -42,23 +39,41 @@ public sealed partial class MainWindow : Window
     // ========== 加载 LLaVA 模型 ==========
     private async void BtnLoadLLaVA_Click(object sender, RoutedEventArgs e)
     {
+        if (_isLLaVALoaded)
+        {
+            // 卸载模型
+            await UnloadLLaVAModel();
+        }
+        else
+        {
+            // 加载模型
+            await LoadLLaVAModel();
+        }
+    }
+
+    private async Task LoadLLaVAModel()
+    {
         try
         {
-            await AppendLineAsync("[LLaVA] 开始加载 LLaVA 模型...");
+            await AppendLineAsync("[Startup] Loading LLaVA model...");
 
-            // 禁用加载按钮，防止重复点击
+            // 显示加载中状态
             BtnLoadLLaVA.IsEnabled = false;
-            LblLLaVAStatus.Text = "⏳ 正在加载模型...";
+            ProgressLLaVA.IsActive = true;
+            ProgressLLaVA.Visibility = Visibility.Visible;
+            CmbLLaVADevice.IsEnabled = false;
 
             await EnsurePipeAsync();
 
-            // 读取用户选择的设备
+            // 读取用户选择的设备（从Startup页面）
             string llaVADevice = CmbLLaVADevice.SelectedIndex switch
             {
                 0 => "CPU",
                 2 => "NPU",
                 _ => "GPU"
             };
+
+            await AppendLineAsync($"[Startup] LLaVA device: {llaVADevice}");
 
             // 发送加载 LLaVA 命令
             var loadCmd = new
@@ -69,12 +84,46 @@ public sealed partial class MainWindow : Window
             var json = JsonSerializer.Serialize(loadCmd) + "\n";
             await SendJsonAsync(json);
 
-            await AppendLineAsync("[LLaVA] 已发送加载命令，等待 Worker 响应...");
+            await AppendLineAsync("[Startup] LLaVA load command sent, waiting for Worker response...");
         }
         catch (Exception ex)
         {
-            await AppendLineAsync($"[LLaVA] 加载失败：{ex.Message}");
-            LblLLaVAStatus.Text = "❌ 加载失败";
+            await AppendLineAsync($"[Startup] LLaVA load failed: {ex.Message}");
+            ProgressLLaVA.IsActive = false;
+            ProgressLLaVA.Visibility = Visibility.Collapsed;
+            BtnLoadLLaVA.IsEnabled = true;
+            CmbLLaVADevice.IsEnabled = true;
+        }
+    }
+
+    private async Task UnloadLLaVAModel()
+    {
+        try
+        {
+            await AppendLineAsync("[Startup] Unloading LLaVA model...");
+
+            // 显示卸载中状态
+            BtnLoadLLaVA.IsEnabled = false;
+            ProgressLLaVA.IsActive = true;
+            ProgressLLaVA.Visibility = Visibility.Visible;
+
+            await EnsurePipeAsync();
+
+            // 发送卸载 LLaVA 命令
+            var unloadCmd = new
+            {
+                type = "unload_llava"
+            };
+            var json = JsonSerializer.Serialize(unloadCmd) + "\n";
+            await SendJsonAsync(json);
+
+            await AppendLineAsync("[Startup] LLaVA unload command sent");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Startup] LLaVA unload failed: {ex.Message}");
+            ProgressLLaVA.IsActive = false;
+            ProgressLLaVA.Visibility = Visibility.Collapsed;
             BtnLoadLLaVA.IsEnabled = true;
         }
     }
@@ -424,22 +473,45 @@ public sealed partial class MainWindow : Window
     // ========== 处理流式响应 ==========
     private Task HandleLLaVAStreamToken(string token)
     {
-        if (_currentStreamingMessage == null)
-            return Task.CompletedTask;
-
-        // 投递到 UI 线程
-        _ = DispatcherQueue.TryEnqueue(() =>
+        // Check if we're in Visual Understanding mode
+        if (_currentDialogMode == "visual")
         {
-            _currentStreamingMessage.Content += token;
+            if (_visualStreamingMessage == null)
+                return Task.CompletedTask;
 
-            // 滚动节流：每5个token滚动一次
-            _scrollThrottleCounter++;
-            if (_scrollThrottleCounter >= 5)
+            // Handle Visual Understanding streaming
+            _ = DispatcherQueue.TryEnqueue(() =>
             {
-                _scrollThrottleCounter = 0;
-                ScrollToBottomLLaVA();
-            }
-        });
+                _visualStreamingMessage.Content += token;
+
+                // Scroll throttling
+                _visualScrollThrottle++;
+                if (_visualScrollThrottle >= 5)
+                {
+                    _visualScrollThrottle = 0;
+                    ScrollToBottomVisual();
+                }
+            });
+        }
+        else
+        {
+            // Handle HomePage LLaVA streaming
+            if (_currentStreamingMessage == null)
+                return Task.CompletedTask;
+
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                _currentStreamingMessage.Content += token;
+
+                // 滚动节流：每5个token滚动一次
+                _scrollThrottleCounter++;
+                if (_scrollThrottleCounter >= 5)
+                {
+                    _scrollThrottleCounter = 0;
+                    ScrollToBottomLLaVA();
+                }
+            });
+        }
 
         return Task.CompletedTask;
     }
@@ -448,15 +520,32 @@ public sealed partial class MainWindow : Window
     {
         _ = DispatcherQueue.TryEnqueue(() =>
         {
-            if (_currentStreamingMessage != null)
+            // Check if we're in Visual Understanding mode
+            if (_currentDialogMode == "visual")
             {
-                _currentStreamingMessage.IsStreaming = false;
-                _currentStreamingMessage = null;
-            }
+                if (_visualStreamingMessage != null)
+                {
+                    _visualStreamingMessage.IsStreaming = false;
+                    _visualStreamingMessage = null;
+                }
 
-            // 确保最后一次滚动到底部
-            _scrollThrottleCounter = 0;
-            ScrollToBottomLLaVA();
+                // Final scroll to bottom
+                _visualScrollThrottle = 0;
+                ScrollToBottomVisual();
+            }
+            else
+            {
+                // Handle HomePage LLaVA
+                if (_currentStreamingMessage != null)
+                {
+                    _currentStreamingMessage.IsStreaming = false;
+                    _currentStreamingMessage = null;
+                }
+
+                // 确保最后一次滚动到底部
+                _scrollThrottleCounter = 0;
+                ScrollToBottomLLaVA();
+            }
         });
     }
 
