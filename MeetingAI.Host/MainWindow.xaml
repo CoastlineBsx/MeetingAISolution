@@ -929,7 +929,7 @@
                 </Grid>
 
                 <!-- 💬 智能对话页面 -->
-                <Grid x:Name="ChatPage" Padding="16" Visibility="Collapsed">
+                <Grid x:Name="ChatPage" Padding="32" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -938,58 +938,46 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- 标题 -->
-                    <TextBlock Text="智能对话" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
+                    <!-- Title -->
+                    <TextBlock Text="Intelligent Chat" FontSize="28" FontWeight="Bold" Margin="0,0,0,24"/>
 
-                    <!-- 配置面板 -->
-                    <Grid Grid.Row="1" Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- 对话轮数 -->
-                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                            <TextBlock Text="Conversation mode" FontSize="12" Margin="0,0,0,4"/>
-                            <ComboBox x:Name="CmbConversationModeChat" HorizontalAlignment="Stretch"
-                                      SelectionChanged="CmbConversationMode_SelectionChanged" SelectedIndex="0">
+                    <!-- Configuration Panel -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="24" Margin="0,0,0,24">
+                        <!-- Conversation mode -->
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="Conversation mode" FontSize="14" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="CmbConversationModeChat"
+                                      SelectionChanged="CmbConversationMode_SelectionChanged" SelectedIndex="0"
+                                      VerticalAlignment="Center">
                                 <ComboBoxItem Content="Single-turn" Tag="Single"/>
                                 <ComboBoxItem Content="Multi-turn" Tag="Multi"/>
                             </ComboBox>
                         </StackPanel>
 
-                        <!-- 答案模式 -->
-                        <StackPanel Grid.Column="1" Margin="0,0,8,0">
-                            <TextBlock Text="Answer style" FontSize="12" Margin="0,0,0,4"/>
-                            <ComboBox x:Name="CmbAnswerStyleChat" HorizontalAlignment="Stretch" SelectedIndex="1">
+                        <!-- Answer style -->
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="Answer style" FontSize="14" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="CmbAnswerStyleChat" SelectedIndex="1" VerticalAlignment="Center">
                                 <ComboBoxItem Content="Simple" Tag="Simple"/>
                                 <ComboBoxItem Content="Normal" Tag="Normal"/>
                                 <ComboBoxItem Content="Professional" Tag="Professional"/>
                             </ComboBox>
                         </StackPanel>
 
-                        <!-- 创造性 -->
-                        <StackPanel Grid.Column="2" Margin="0,0,8,0">
-                            <TextBlock Text="Creativity" FontSize="12" Margin="0,0,0,4"/>
-                            <ComboBox x:Name="CmbTemperatureChat" HorizontalAlignment="Stretch" SelectedIndex="1">
+                        <!-- Creativity -->
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="Creativity" FontSize="14" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="CmbTemperatureChat" SelectedIndex="1" VerticalAlignment="Center">
                                 <ComboBoxItem Content="Precise" Tag="0.1"/>
                                 <ComboBoxItem Content="Balanced" Tag="0.7"/>
                                 <ComboBoxItem Content="Creative" Tag="0.9"/>
                             </ComboBox>
                         </StackPanel>
 
-                        <!-- 长度 -->
-                        <StackPanel Grid.Column="3" Margin="0,0,8,0">
-                            <TextBlock Text="Length" FontSize="12" Margin="0,0,0,4"/>
-                            <ComboBox x:Name="CmbMaxTokensChat" HorizontalAlignment="Stretch" SelectedIndex="2">
+                        <!-- Length -->
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="Length" FontSize="14" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="CmbMaxTokensChat" SelectedIndex="2" VerticalAlignment="Center">
                                 <ComboBoxItem Content="Brief" Tag="512"/>
                                 <ComboBoxItem Content="Normal" Tag="1024"/>
                                 <ComboBoxItem Content="Detailed" Tag="2048"/>
@@ -997,15 +985,15 @@
                             </ComboBox>
                         </StackPanel>
 
-                        <!-- 清空历史按钮 -->
-                        <Button x:Name="BtnGraniteClearChat" Grid.Column="4"
+                        <!-- Clear history button -->
+                        <Button x:Name="BtnGraniteClearChat"
                                 Content="Clear history"
                                 Click="BtnGraniteClear_Click"
-                                VerticalAlignment="Bottom"
+                                VerticalAlignment="Center"
                                 IsEnabled="False"/>
-                    </Grid>
+                    </StackPanel>
 
-                    <!-- 对话历史（美化版） -->
+                    <!-- Chat History -->
                     <ListView x:Name="ChatHistoryListChat" Grid.Row="2"
                               ScrollViewer.VerticalScrollBarVisibility="Auto"
                               SelectionMode="None"
@@ -1018,7 +1006,7 @@
                                 <Setter Property="ContextFlyout">
                                     <Setter.Value>
                                         <MenuFlyout>
-                                            <MenuFlyoutItem Text="复制" Icon="Copy" Click="CopyMessage_Click"/>
+                                            <MenuFlyoutItem Text="Copy" Icon="Copy" Click="CopyMessage_Click"/>
                                         </MenuFlyout>
                                     </Setter.Value>
                                 </Setter>
@@ -1058,18 +1046,18 @@
                         </ListView.ItemTemplate>
                     </ListView>
 
-                    <!-- 输入框 -->
+                    <!-- Input Box -->
                     <TextBox x:Name="TxtGraniteInputChat" Grid.Row="3"
-                             PlaceholderText="输入问题（Ctrl+Enter 发送）..."
+                             PlaceholderText="Type your question (Ctrl+Enter to send)..."
                              TextWrapping="Wrap" AcceptsReturn="True"
                              PreviewKeyDown="TxtGraniteInput_PreviewKeyDown"/>
 
-                    <!-- 发送按钮 -->
+                    <!-- Send Button -->
                     <Button x:Name="BtnGraniteSendChat" Grid.Row="4"
                             Content="Send (Ctrl+Enter)"
                             Click="BtnGraniteSend_Click"
                             HorizontalAlignment="Stretch"
-                            Margin="0,8,0,0"
+                            Margin="0,24,0,0"
                             IsEnabled="False"/>
                 </Grid>
 
@@ -1163,8 +1151,8 @@
                 <!-- Settings Page (Windows 11 Settings Style) -->
                 <Grid x:Name="SettingsPage" Visibility="Collapsed">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <!-- 主内容容器：MaxWidth 1600px，超过后居中并留白 -->
-                        <Grid MaxWidth="1600" HorizontalAlignment="Center" Padding="48,32,48,32">
+                        <!-- Main content container: MaxWidth 1600px, centered beyond that -->
+                        <Grid MaxWidth="1600" HorizontalAlignment="Center" Padding="32">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
@@ -1209,7 +1197,8 @@
                                                       Foreground="{ThemeResource AccentFillColorDefaultBrush}"/>
 
                                             <!-- Title and Description -->
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"
+                                                        MaxWidth="480" Margin="0,0,32,0">
                                                 <TextBlock Text="App theme"
                                                            FontSize="16"
                                                            FontWeight="SemiBold"/>
@@ -1219,11 +1208,10 @@
                                                            TextWrapping="Wrap"/>
                                             </StackPanel>
 
-                                            <!-- ComboBox (缩小宽度) -->
+                                            <!-- ComboBox (Auto Width with MinWidth) -->
                                             <ComboBox x:Name="ThemeComboBox"
                                                       Grid.Column="2"
-                                                      MinWidth="200"
-                                                      MaxWidth="280"
+                                                      MinWidth="180"
                                                       HorizontalAlignment="Left"
                                                       VerticalAlignment="Center"
                                                       SelectionChanged="ThemeComboBox_SelectionChanged"
@@ -1258,7 +1246,8 @@
                                                       Foreground="{ThemeResource AccentFillColorDefaultBrush}"/>
 
                                             <!-- Title and Description -->
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"
+                                                        MaxWidth="480" Margin="0,0,32,0">
                                                 <TextBlock Text="Windows display language"
                                                            FontSize="16"
                                                            FontWeight="SemiBold"/>
@@ -1268,11 +1257,10 @@
                                                            TextWrapping="Wrap"/>
                                             </StackPanel>
 
-                                            <!-- ComboBox (缩小宽度) -->
+                                            <!-- ComboBox (Auto Width with MinWidth) -->
                                             <ComboBox x:Name="LanguageComboBox"
                                                       Grid.Column="2"
-                                                      MinWidth="200"
-                                                      MaxWidth="280"
+                                                      MinWidth="180"
                                                       HorizontalAlignment="Left"
                                                       VerticalAlignment="Center"
                                                       SelectedIndex="0">
