@@ -49,10 +49,12 @@ public partial class MainWindow
         try
         {
             // 获取选择的设备
-            string device = "NPU";
-            if (CmbSDDevice.SelectedIndex == 0) device = "CPU";
-            else if (CmbSDDevice.SelectedIndex == 1) device = "GPU";
-            else if (CmbSDDevice.SelectedIndex == 2) device = "NPU";
+            string device = CmbSDDevice.SelectedIndex switch
+            {
+                1 => "GPU",
+                2 => "NPU",
+                _ => "CPU"  // 默认 CPU
+            };
 
             var command = new
             {
@@ -266,6 +268,7 @@ public partial class MainWindow
         {
             try
             {
+                Debug.WriteLine($"[SD] 收到消息类型: {type}");
                 switch (type)
                 {
                     case "sd_ready":
@@ -301,24 +304,34 @@ public partial class MainWindow
 
                     case "sd_complete":
                         // 生成完成
+                        Debug.WriteLine($"[SD] sd_complete 消息处理开始, _currentSDGeneratingMessage != null: {_currentSDGeneratingMessage != null}");
                         if (_currentSDGeneratingMessage != null)
                         {
                             string imagePath = root.GetProperty("image_path").GetString() ?? "";
-                            
+                            Debug.WriteLine($"[SD] 图片路径: {imagePath}");
+
                             _currentSDGeneratingMessage.IsGenerating = false;
                             _currentSDGeneratingMessage.GenerationProgress = 100;
 
                             if (File.Exists(imagePath))
                             {
+                                Debug.WriteLine($"[SD] 图片文件存在，开始加载");
                                 await LoadImageAsync(_currentSDGeneratingMessage, imagePath);
                                 _currentSDGeneratingMessage.GenerationInfo = "✅ Generated successfully";
 
                                 // 保存上下文（用于多轮模式）
                                 _lastSDImagePath = imagePath;
                                 _lastSDPrompt = _currentSDGeneratingMessage.Content;
+
+                                // 启用图片操作按钮
+                                BtnSDSaveImage.IsEnabled = true;
+                                BtnSDCopyImage.IsEnabled = true;
+                                BtnSDRegenerate.IsEnabled = true;
+                                Debug.WriteLine($"[SD] 已启用保存/复制/重新生成按钮");
                             }
                             else
                             {
+                                Debug.WriteLine($"[SD] 图片文件不存在");
                                 _currentSDGeneratingMessage.Content = "❌ 图片文件未找到";
                             }
 
@@ -329,6 +342,11 @@ public partial class MainWindow
                             {
                                 SDChatList.ScrollIntoView(SDChatList.Items[^1]);
                             }
+                            Debug.WriteLine($"[SD] sd_complete 消息处理完成");
+                        }
+                        else
+                        {
+                            Debug.WriteLine($"[SD] 警告：收到 sd_complete 但 _currentSDGeneratingMessage 为 null");
                         }
                         break;
                 }
@@ -370,72 +388,73 @@ public partial class MainWindow
     // 保存图片
     private async void BtnSaveImage_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.Tag is ChatMessage message && message.Image != null)
+        if (string.IsNullOrEmpty(_lastSDImagePath) || !File.Exists(_lastSDImagePath))
         {
-            try
-            {
-                var picker = new FileSavePicker();
-                picker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
-                picker.FileTypeChoices.Add("PNG Image", new[] { ".png" });
-                picker.SuggestedFileName = $"sd_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+            Debug.WriteLine("[SD] 没有可保存的图片");
+            return;
+        }
 
-                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        try
+        {
+            var picker = new FileSavePicker();
+            picker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
+            picker.FileTypeChoices.Add("PNG Image", new[] { ".png" });
+            picker.SuggestedFileName = $"sd_{DateTime.Now:yyyyMMdd_HHmmss}.png";
 
-                var file = await picker.PickSaveFileAsync();
-                if (file != null && message.Image.FilePath != null)
-                {
-                    File.Copy(message.Image.FilePath, file.Path, true);
-                    Debug.WriteLine($"[SD] 图片已保存: {file.Path}");
-                }
-            }
-            catch (Exception ex)
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var file = await picker.PickSaveFileAsync();
+            if (file != null)
             {
-                Debug.WriteLine($"[SD] 保存图片失败: {ex.Message}");
-                await ShowErrorDialog("保存失败", ex.Message);
+                File.Copy(_lastSDImagePath, file.Path, true);
+                Debug.WriteLine($"[SD] 图片已保存: {file.Path}");
             }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SD] 保存图片失败: {ex.Message}");
+            await ShowErrorDialog("保存失败", ex.Message);
         }
     }
 
     // 复制图片
     private async void BtnCopyImage_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is AppBarButton btn && btn.Tag is ChatMessage message && message.Image != null)
+        if (string.IsNullOrEmpty(_lastSDImagePath) || !File.Exists(_lastSDImagePath))
         {
-            try
-            {
-                if (message.Image.FilePath != null && File.Exists(message.Image.FilePath))
-                {
-                    var file = await StorageFile.GetFileFromPathAsync(message.Image.FilePath);
-                    var dataPackage = new DataPackage();
-                    dataPackage.SetBitmap(Windows.Storage.Streams.RandomAccessStreamReference.CreateFromFile(file));
-                    Clipboard.SetContent(dataPackage);
-                    
-                    Debug.WriteLine("[SD] 图片已复制到剪贴板");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[SD] 复制图片失败: {ex.Message}");
-                await ShowErrorDialog("复制失败", ex.Message);
-            }
+            Debug.WriteLine("[SD] 没有可复制的图片");
+            return;
+        }
+
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(_lastSDImagePath);
+            var dataPackage = new DataPackage();
+            dataPackage.SetBitmap(Windows.Storage.Streams.RandomAccessStreamReference.CreateFromFile(file));
+            Clipboard.SetContent(dataPackage);
+
+            Debug.WriteLine("[SD] 图片已复制到剪贴板");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SD] 复制图片失败: {ex.Message}");
+            await ShowErrorDialog("复制失败", ex.Message);
         }
     }
 
     // 重新生成
     private async void BtnRegenerate_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is AppBarButton btn && btn.Tag is ChatMessage message)
+        if (string.IsNullOrEmpty(_lastSDPrompt))
         {
-            // 将该消息的提示词填回输入框
-            var userMessages = _sdChatHistory.Where(m => m.Role == "user").ToList();
-            if (userMessages.Count > 0)
-            {
-                var correspondingUserMsg = userMessages[^1]; // 取最后一条用户消息
-                TxtSDInput.Text = correspondingUserMsg.Content;
-                await GenerateSD();
-            }
+            Debug.WriteLine("[SD] 没有可重新生成的提示词");
+            return;
         }
+
+        // 将上次的提示词填回输入框并重新生成
+        TxtSDInput.Text = _lastSDPrompt;
+        await GenerateSD();
     }
 
     // 显示错误对话框的辅助方法

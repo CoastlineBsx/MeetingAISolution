@@ -9,6 +9,7 @@
 #include <chrono>
 #include <filesystem>
 #include <thread>
+#include <atomic>
 
 // OpenVINO GenAI
 #include <openvino/genai/image_generation/text2image_pipeline.hpp>
@@ -32,25 +33,58 @@ namespace meetingai::sd {
 
     SDEngine::SDEngine(const std::string& model_path, const std::string& device)
         : p_(std::make_unique<Impl>()) {
-        
+
+        std::string actual_device = device;
+        bool gpu_fallback_attempted = false;
+
         try {
-            std::cout << "[SD Engine] 🎨 Initializing Stable Diffusion on " << device << "..." << std::endl;
-            
-            p_->device = device;
+            std::cout << "[SD Engine] 🎨 Initializing Stable Diffusion on " << actual_device << "..." << std::endl;
+
+            p_->device = actual_device;
             p_->rng.seed(std::chrono::steady_clock::now().time_since_epoch().count());
-            
-            // 使用 OpenVINO GenAI Pipeline（一行搞定！）
-            std::cout << "[SD Engine] Loading Text2Image Pipeline..." << std::endl;
-            p_->text2img_pipe = std::make_unique<ov::genai::Text2ImagePipeline>(model_path, device);
-            
-            std::cout << "[SD Engine] Loading Image2Image Pipeline..." << std::endl;
-            p_->img2img_pipe = std::make_unique<ov::genai::Image2ImagePipeline>(model_path, device);
-            
+
+            // GPU 设备需要特殊配置
+            if (actual_device == "GPU" || actual_device == "GPU.0" || actual_device == "GPU.1") {
+                std::cout << "[SD Engine] Applying GPU optimizations..." << std::endl;
+                // OpenVINO GPU 配置：添加设备属性
+                ov::AnyMap config;
+                config["GPU_THROTTLE_LEVEL"] = "0";  // 禁用节流
+                config["CACHE_DIR"] = "";  // 禁用缓存以避免冲突
+
+                std::cout << "[SD Engine] Loading Text2Image Pipeline with GPU config..." << std::endl;
+                try {
+                    p_->text2img_pipe = std::make_unique<ov::genai::Text2ImagePipeline>(model_path, actual_device, config);
+                    std::cout << "[SD Engine] Loading Image2Image Pipeline with GPU config..." << std::endl;
+                    p_->img2img_pipe = std::make_unique<ov::genai::Image2ImagePipeline>(model_path, actual_device, config);
+                } catch (const std::exception& gpu_err) {
+                    std::cerr << "[SD Engine] ⚠️ GPU initialization failed: " << gpu_err.what() << std::endl;
+                    std::cerr << "[SD Engine] Falling back to CPU..." << std::endl;
+                    actual_device = "CPU";
+                    p_->device = actual_device;
+                    gpu_fallback_attempted = true;
+
+                    // 重试使用 CPU
+                    p_->text2img_pipe = std::make_unique<ov::genai::Text2ImagePipeline>(model_path, actual_device);
+                    p_->img2img_pipe = std::make_unique<ov::genai::Image2ImagePipeline>(model_path, actual_device);
+                }
+            } else {
+                // CPU/NPU 直接加载
+                std::cout << "[SD Engine] Loading Text2Image Pipeline..." << std::endl;
+                p_->text2img_pipe = std::make_unique<ov::genai::Text2ImagePipeline>(model_path, actual_device);
+
+                std::cout << "[SD Engine] Loading Image2Image Pipeline..." << std::endl;
+                p_->img2img_pipe = std::make_unique<ov::genai::Image2ImagePipeline>(model_path, actual_device);
+            }
+
             initialized_ = true;
-            std::cout << "[SD Engine] ✅ Initialization complete!" << std::endl;
-            
+            if (gpu_fallback_attempted) {
+                std::cout << "[SD Engine] ✅ Initialization complete on " << actual_device << " (fallback from GPU)" << std::endl;
+            } else {
+                std::cout << "[SD Engine] ✅ Initialization complete on " << actual_device << std::endl;
+            }
+
         } catch (const std::exception& e) {
-            last_error_ = std::string("Initialization failed: ") + e.what();
+            last_error_ = std::string("Initialization failed on ") + actual_device + ": " + e.what();
             std::cerr << "[SD Engine] ❌ " << last_error_ << std::endl;
             initialized_ = false;
         }
@@ -108,8 +142,27 @@ namespace meetingai::sd {
             if (mode == GenerationMode::TEXT_TO_IMAGE) {
                 // ========== Text-to-Image ==========
                 std::cout << "[SD Engine] Mode: Text-to-Image" << std::endl;
-                
-                // 使用 OpenVINO GenAI Pipeline（超简单！）
+
+                // 启动后台进度模拟线程
+                std::atomic<bool> generation_done{false};
+                std::thread progress_thread;
+
+                if (on_progress) {
+                    progress_thread = std::thread([&]() {
+                        int step = 0;
+                        while (!generation_done && step < config.num_inference_steps) {
+                            on_progress(step, config.num_inference_steps, "");
+                            step += 1;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                        }
+                        // 最后发送 100% 进度
+                        if (generation_done) {
+                            on_progress(config.num_inference_steps, config.num_inference_steps, "");
+                        }
+                    });
+                }
+
+                // 使用 OpenVINO GenAI Pipeline（在后台线程发送进度的同时生成）
                 result_image = p_->text2img_pipe->generate(
                     config.prompt,
                     ov::genai::width(config.width),
@@ -119,15 +172,11 @@ namespace meetingai::sd {
                     ov::genai::num_images_per_prompt(1)
                     // TODO: 如果 API 支持，添加 negative_prompt 和 seed
                 );
-                
-                // 模拟进度回调（因为 Pipeline 没有暴露中间步骤）
-                if (on_progress) {
-                    for (int step = 0; step <= config.num_inference_steps; step += 5) {
-                        on_progress(step, config.num_inference_steps, "");
-                        if (step < config.num_inference_steps) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        }
-                    }
+
+                // 生成完成，停止进度线程
+                generation_done = true;
+                if (progress_thread.joinable()) {
+                    progress_thread.join();
                 }
                 
             } else {
@@ -143,15 +192,23 @@ namespace meetingai::sd {
                 throw std::runtime_error("Image-to-Image mode not yet implemented");
             }
             
-            // 从 Tensor 提取图像数据
-            const float* data = result_image.data<float>();
+            // 从 Tensor 提取图像数据（工业标准：强断言方式）
+            auto element_type = result_image.get_element_type();
+            if (element_type != ov::element::u8) {
+                std::cerr << "[SD Engine] ❌ ERROR: Unexpected tensor type: "
+                          << element_type.to_string() << std::endl;
+                std::cerr << "[SD Engine] Expected: u8" << std::endl;
+                throw std::runtime_error("SD pipeline output wrong tensor type, expected u8 but got " + element_type.to_string());
+            }
+
+            const uint8_t* data = result_image.data<uint8_t>();
             auto shape = result_image.get_shape();
-            
+
             // shape 通常是 [1, height, width, 3] 或 [1, 3, height, width]
             int img_height = static_cast<int>(shape[1]);
             int img_width = static_cast<int>(shape[2]);
             int channels = static_cast<int>(shape[3]);
-            
+
             // 如果是 CHW 格式，需要转置
             bool is_chw = (channels != 3);
             if (is_chw) {
@@ -159,16 +216,12 @@ namespace meetingai::sd {
                 img_height = static_cast<int>(shape[2]);
                 img_width = static_cast<int>(shape[3]);
             }
-            
-            // 转换为 uint8 [0, 255]
+
+            // 直接使用 u8 数据，无需转换（已经是 0-255 范围）
             std::vector<uint8_t> image_data(img_height * img_width * 3);
-            
+
             for (int i = 0; i < img_height * img_width * channels; i++) {
-                float val = data[i];
-                // 假设输出范围是 [0, 1] 或 [-1, 1]
-                if (val < 0) val = (val + 1.0f) * 0.5f;  // [-1, 1] -> [0, 1]
-                val = std::clamp(val * 255.0f, 0.0f, 255.0f);
-                image_data[i] = static_cast<uint8_t>(val);
+                image_data[i] = data[i];
             }
             
             // 如果是 CHW 格式，需要转置为 HWC
@@ -198,8 +251,25 @@ namespace meetingai::sd {
             return output_path;
             
         } catch (const std::exception& e) {
-            last_error_ = std::string("Generation failed: ") + e.what();
+            std::string error_msg = e.what();
+            last_error_ = std::string("Generation failed: ") + error_msg;
             std::cerr << "[SD Engine] ❌ " << last_error_ << std::endl;
+
+            // 检查是否是 OpenCL GPU 错误
+            if (error_msg.find("CL_") != std::string::npos ||
+                error_msg.find("GPU") != std::string::npos ||
+                error_msg.find("ocl_memory") != std::string::npos) {
+
+                std::cerr << "\n[SD Engine] 💡 GPU 错误解决建议：" << std::endl;
+                std::cerr << "  1. 重新加载 SD 模型时选择 CPU 设备" << std::endl;
+                std::cerr << "  2. 减少图像尺寸（如 256x256 或 384x384）" << std::endl;
+                std::cerr << "  3. 减少推理步数（如 10-15 步）" << std::endl;
+                std::cerr << "  4. 更新 GPU 驱动程序" << std::endl;
+                std::cerr << "  5. 检查是否有其他程序占用 GPU" << std::endl;
+
+                last_error_ += "\n\n建议：重新加载 SD 模型时选择 CPU 设备，或减少图像尺寸/步数";
+            }
+
             return "";
         }
     }

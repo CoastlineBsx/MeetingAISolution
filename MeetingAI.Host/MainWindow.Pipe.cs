@@ -167,6 +167,7 @@ public sealed partial class MainWindow : Window
             BtnPreloadModels.IsEnabled = true;
             BtnLoadWhisper.IsEnabled = true;
             BtnLoadLLaVA.IsEnabled = true;
+            BtnLoadSD.IsEnabled = true;
 
             // 启用Document Assistant页面的按钮
             BtnQuickQALoad.IsEnabled = true;
@@ -217,15 +218,15 @@ public sealed partial class MainWindow : Window
             // 读取当前设备选择
             string graniteDevice = CmbGraniteDevice.SelectedIndex switch
             {
-                0 => "CPU",
+                1 => "GPU",
                 2 => "NPU",
-                _ => "GPU"
+                _ => "CPU"  // 默认 CPU
             };
             string embeddingDevice = CmbEmbeddingDevice.SelectedIndex switch
             {
-                0 => "CPU",
+                1 => "GPU",
                 2 => "NPU",
-                _ => "GPU"
+                _ => "CPU"  // 默认 CPU
             };
 
             await AppendLineAsync($"[Startup] Loading models: Granite-{graniteDevice}, Embedding-{embeddingDevice}");
@@ -439,6 +440,7 @@ public sealed partial class MainWindow : Window
                 string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
                 await AppendLineAsync($"[Granite] ✅ Model ready (device={device})");
                 await AppendLineAsync("[DEBUG] *** 现在会停止转圈了 ***");
+                _isGraniteLoaded = true;
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     LblStatus.Text = "Granite 已就绪";
@@ -446,6 +448,12 @@ public sealed partial class MainWindow : Window
                     ProgressGraniteEmbedding.IsActive = false;
                     ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
                     BtnPreloadModels.IsEnabled = true;
+
+                    // Update IE Chat UI to enable upload button
+                    UpdateIEChatUI();
+
+                    // Update RAG Chat 2 UI to enable send button
+                    UpdateRAGChat2UI();
                 });
             }
             catch { }
@@ -538,6 +546,9 @@ public sealed partial class MainWindow : Window
                     BtnPreloadModels.Content = "Unload Models";
                     BtnPreloadModels.IsEnabled = true;
                     _isGraniteEmbeddingLoaded = true;
+
+                    // Update RAG Chat 2 UI to enable upload button
+                    UpdateRAGChat2UI();
 
                     _ = AppendLineAsync("[DEBUG] *** UI更新已完成 ***");
                 });
@@ -658,10 +669,13 @@ public sealed partial class MainWindow : Window
         {
             try
             {
+                await AppendLineAsync($"[SD Handler] 开始处理消息: {jsonMsg.Substring(0, Math.Min(100, jsonMsg.Length))}...");
                 using var jd = JsonDocument.Parse(jsonMsg);
                 var root = jd.RootElement;
                 string type = root.GetProperty("type").GetString() ?? "";
+                await AppendLineAsync($"[SD Handler] 消息类型: {type}, 调用 HandleSDMessage");
                 HandleSDMessage(type, root);
+                await AppendLineAsync($"[SD Handler] HandleSDMessage 调用完成");
             }
             catch (Exception ex)
             {

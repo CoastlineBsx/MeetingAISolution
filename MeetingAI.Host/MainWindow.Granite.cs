@@ -85,7 +85,9 @@ public sealed partial class MainWindow : Window
             "normal" => _normalStreamingMessage,
             "quickqa" => _quickQAStreamingMessage,
             "ie" => _ieStreamingMessage,
+            "ie_chat" => _ieChatStreamingMessage,
             "rag" => _ragStreamingMessage,
+            "rag_chat2" => _ragChat2StreamingMessage,
             "visual" => _visualStreamingMessage,
             _ => _normalStreamingMessage
         };
@@ -105,8 +107,14 @@ public sealed partial class MainWindow : Window
             case "ie":
                 _ieStreamingMessage = message;
                 break;
+            case "ie_chat":
+                _ieChatStreamingMessage = message;
+                break;
             case "rag":
                 _ragStreamingMessage = message;
+                break;
+            case "rag_chat2":
+                _ragChat2StreamingMessage = message;
                 break;
             case "visual":
                 _visualStreamingMessage = message;
@@ -631,17 +639,31 @@ public sealed partial class MainWindow : Window
     // ========== 处理流式响应 ==========
     private Task HandleGraniteStreamToken(string token)
     {
-        // ========== IE文档类型识别 ==========
+        // ========== IE文档类型识别（主页IE模式） ==========
         if (_isIEDetecting && _ieDetectionBuffer != null)
         {
             _ieDetectionBuffer.Append(token);
             return Task.CompletedTask;
         }
 
-        // ========== IE信息提取 ==========
+        // ========== IE信息提取（主页IE模式） ==========
         if (_isIEExtracting && _ieExtractionBuffer != null)
         {
             _ieExtractionBuffer.Append(token);
+            return Task.CompletedTask;
+        }
+
+        // ========== IE Chat文档类型识别 ==========
+        if (_isChatDetecting && _ieChatDetectionBuffer != null)
+        {
+            _ieChatDetectionBuffer.Append(token);
+            return Task.CompletedTask;
+        }
+
+        // ========== IE Chat信息提取 ==========
+        if (_isChatExtracting && _ieChatExtractionBuffer != null)
+        {
+            _ieChatExtractionBuffer.Append(token);
             return Task.CompletedTask;
         }
 
@@ -670,7 +692,7 @@ public sealed partial class MainWindow : Window
 
     private void HandleGraniteStreamDone()
     {
-        // ========== IE文档类型识别完成 ==========
+        // ========== IE文档类型识别完成（主页IE模式） ==========
         if (_isIEDetecting && _ieDetectionBuffer != null)
         {
             _ = DispatcherQueue.TryEnqueue(async () =>
@@ -684,7 +706,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // ========== IE信息提取完成 ==========
+        // ========== IE信息提取完成（主页IE模式） ==========
         if (_isIEExtracting && _ieExtractionBuffer != null)
         {
             _ = DispatcherQueue.TryEnqueue(async () =>
@@ -694,6 +716,34 @@ public sealed partial class MainWindow : Window
                 _isIEExtracting = false;
 
                 await HandleIEExtractionResult(fullJson);
+            });
+            return;
+        }
+
+        // ========== IE Chat文档类型识别完成 ==========
+        if (_isChatDetecting && _ieChatDetectionBuffer != null)
+        {
+            _ = DispatcherQueue.TryEnqueue(async () =>
+            {
+                string typeId = _ieChatDetectionBuffer.ToString().Trim();
+                _ieChatDetectionBuffer = null;
+                _isChatDetecting = false;
+
+                await HandleIEChatDetectionResult(typeId);
+            });
+            return;
+        }
+
+        // ========== IE Chat信息提取完成 ==========
+        if (_isChatExtracting && _ieChatExtractionBuffer != null)
+        {
+            _ = DispatcherQueue.TryEnqueue(async () =>
+            {
+                string fullJson = _ieChatExtractionBuffer.ToString();
+                _ieChatExtractionBuffer = null;
+                _isChatExtracting = false;
+
+                await HandleIEChatExtractionResult(fullJson);
             });
             return;
         }

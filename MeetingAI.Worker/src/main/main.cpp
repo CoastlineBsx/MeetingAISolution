@@ -68,6 +68,41 @@ static std::string g_embedding_device = "GPU"; // Embedding 使用的设备
 static std::string g_llava_device = "NPU";     // LLaVA 使用的设备
 static std::string g_sd_device = "NPU";        // Stable Diffusion 使用的设备
 
+// ========== 工具函数：解码 JSON Unicode 转义序列 ==========
+static std::string decodeJsonUnicode(const std::string& str) {
+    std::string result;
+    result.reserve(str.length());
+
+    for (size_t i = 0; i < str.length(); i++) {
+        if (str[i] == '\\' && i + 5 < str.length() && str[i + 1] == 'u') {
+            // 解析 \uXXXX
+            std::string hex = str.substr(i + 2, 4);
+            try {
+                int code_point = std::stoi(hex, nullptr, 16);
+
+                // 将 Unicode 码点转换为 UTF-8
+                if (code_point <= 0x7F) {
+                    result += static_cast<char>(code_point);
+                } else if (code_point <= 0x7FF) {
+                    result += static_cast<char>(0xC0 | ((code_point >> 6) & 0x1F));
+                    result += static_cast<char>(0x80 | (code_point & 0x3F));
+                } else {
+                    result += static_cast<char>(0xE0 | ((code_point >> 12) & 0x0F));
+                    result += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
+                    result += static_cast<char>(0x80 | (code_point & 0x3F));
+                }
+                i += 5; // 跳过 \uXXXX
+            } catch (...) {
+                result += str[i]; // 解析失败，保留原字符
+            }
+        } else {
+            result += str[i];
+        }
+    }
+
+    return result;
+}
+
 // ========== 工具函数：获取环境变量 ==========
 static std::string GetEnvOrDefault(const char* key, const char* fallback) {
     char* buf = nullptr;
@@ -619,23 +654,25 @@ static void handleSDCommand(HANDLE hPipe, const std::string& command) {
             }
         }
 
-        // 提取 prompt
+        // 提取 prompt（解码 Unicode 转义序列）
         size_t prompt_pos = command.find("\"prompt\":\"");
         if (prompt_pos != std::string::npos) {
             size_t start = prompt_pos + 10;
             size_t end = command.find("\"", start);
             if (end != std::string::npos) {
-                config.prompt = command.substr(start, end - start);
+                std::string raw_prompt = command.substr(start, end - start);
+                config.prompt = decodeJsonUnicode(raw_prompt);
             }
         }
 
-        // 提取 negative_prompt
+        // 提取 negative_prompt（解码 Unicode 转义序列）
         size_t neg_pos = command.find("\"negative_prompt\":\"");
         if (neg_pos != std::string::npos) {
             size_t start = neg_pos + 19;
             size_t end = command.find("\"", start);
             if (end != std::string::npos) {
-                config.negative_prompt = command.substr(start, end - start);
+                std::string raw_neg = command.substr(start, end - start);
+                config.negative_prompt = decodeJsonUnicode(raw_neg);
             }
         }
 
@@ -710,9 +747,11 @@ static void handleSDCommand(HANDLE hPipe, const std::string& command) {
             std::string result = "{\"type\":\"sd_complete\",\"image_path\":\"" +
                                meetingai::proto::jsonEscape(output_path) + "\"}\n";
             DWORD written;
+            std::cout << "[Worker] 正在发送 sd_complete 消息: " << result << std::flush;
             WriteFile(hPipe, result.data(), (DWORD)result.size(), &written, nullptr);
             FlushFileBuffers(hPipe);
-            
+            std::cout << "[Worker] sd_complete 消息已发送, written=" << written << " bytes" << std::endl;
+
             std::wcout << L"[Worker] ✅ SD 生成完成: " << output_path.c_str() << L"\n";
         } else {
             std::string error = "{\"type\":\"error\",\"message\":\"生成失败: " +
@@ -874,6 +913,10 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
 
 
 int wmain() {
+    // ★ 设置控制台 UTF-8 编码（修复中文显示问题）
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
     // ★ 新增 1: 初始化数据库
     if (!InitDatabaseOnce()) {
         std::wcerr << L"[Worker] 数据库初始化失败！\n";

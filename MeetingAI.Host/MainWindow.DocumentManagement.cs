@@ -37,17 +37,20 @@ public sealed partial class MainWindow : Window
             _documentProcessor = new DocumentProcessor(tesseractDataPath);
             _documentChunker = new DocumentChunker(targetChunkSize: 500, maxChunkSize: 750, overlapSize: 100);
 
-            // 初始化文档列表
-            _documentList = new ObservableCollection<DocumentInfo>();
-            DocumentListView.ItemsSource = _documentList;
+            // 初始化文档列表（仅在UI控件可用时）
+            if (DocumentListView != null)
+            {
+                _documentList = new ObservableCollection<DocumentInfo>();
+                DocumentListView.ItemsSource = _documentList;
 
-            // 启用文档管理按钮
-            BtnUploadDocument.IsEnabled = true;
-            BtnRefreshDocuments.IsEnabled = true;
-            BtnDeleteAllDocuments.IsEnabled = true;
+                // 启用文档管理按钮
+                BtnUploadDocument.IsEnabled = true;
+                BtnRefreshDocuments.IsEnabled = true;
+                BtnDeleteAllDocuments.IsEnabled = true;
 
-            // 加载现有文档
-            _ = LoadDocumentsAsync();
+                // 加载现有文档
+                _ = LoadDocumentsAsync();
+            }
 
             _ = AppendLineAsync("[文档管理] ✅ 初始化完成");
         }
@@ -62,13 +65,35 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private async void BtnUploadDocument_Click(object sender, RoutedEventArgs e)
     {
+        // Write to file IMMEDIATELY before anything else
         try
         {
+            var logDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAI");
+            if (!System.IO.Directory.Exists(logDir))
+                System.IO.Directory.CreateDirectory(logDir);
+            var logPath = System.IO.Path.Combine(logDir, "mainpage_upload_debug.log");
+            System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} BtnUploadDocument_Click ENTRY\n");
+        }
+        catch { }
+
+        try
+        {
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAI", "mainpage_upload_debug.log");
+
+            try { System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} Checking services...\n"); } catch { }
+            try { System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} _vectorDb={((_vectorDb == null) ? "null" : "ok")}\n"); } catch { }
+            try { System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} _embeddingService={((_embeddingService == null) ? "null" : "ok")}\n"); } catch { }
+            try { System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} _documentProcessor={((_documentProcessor == null) ? "null" : "ok")}\n"); } catch { }
+            try { System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} _documentChunker={((_documentChunker == null) ? "null" : "ok")}\n"); } catch { }
+
             if (_vectorDb == null || _embeddingService == null || _documentProcessor == null || _documentChunker == null)
             {
+                try { System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} Services not initialized, showing error\n"); } catch { }
                 await AppendLineAsync("[文档管理] ❌ 请先初始化 RAG 系统");
                 return;
             }
+
+            try { System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} Services OK, creating picker\n"); } catch { }
 
             // 创建文件选择器
             var picker = new FileOpenPicker();

@@ -41,6 +41,23 @@ public sealed partial class MainWindow : Window
 
         // 初始化 SD 页面
         InitializeSDPage();
+
+        // 初始化 IE Chat 页面
+        InitializeIEChatPage();
+
+        // 初始化 RAG Chat 2 页面
+        InitializeRAGChat2Page();
+
+        // 创建调试日志文件
+        try
+        {
+            var logDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAI");
+            if (!System.IO.Directory.Exists(logDir))
+                System.IO.Directory.CreateDirectory(logDir);
+            var logPath = System.IO.Path.Combine(logDir, "ragchat_debug.log");
+            System.IO.File.WriteAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} APPLICATION STARTED\n");
+        }
+        catch { }
     }
 
     private void SetupTitleBar()
@@ -70,8 +87,25 @@ public sealed partial class MainWindow : Window
         var tcs = new TaskCompletionSource<bool>();
         DispatcherQueue.TryEnqueue(() =>
         {
-            OutputBox.Text += text + "\n";
-            tcs.SetResult(true);
+            try
+            {
+                if (OutputBox != null)
+                {
+                    OutputBox.Text += text + "\n";
+                }
+                tcs.SetResult(true);
+            }
+            catch (Exception ex)
+            {
+                // Log to file if OutputBox access fails
+                try
+                {
+                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAI", "ragchat_debug.log");
+                    System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [AppendLineAsync] EXCEPTION: {ex}\n");
+                }
+                catch { }
+                tcs.SetException(ex);
+            }
         });
         return tcs.Task;
     }
@@ -82,6 +116,8 @@ public sealed partial class MainWindow : Window
         ("主页", "home", new[] { "主页", "home", "worker", "启动", "录音", "转录", "麦克风" }),
         ("智能对话", "chat", new[] { "智能对话", "对话", "chat", "ai", "聊天", "问答", "普通" }),
         ("文档助手", "quickqa", new[] { "文档助手", "快速问答", "quickqa", "文档", "问答", "上传" }),
+        ("信息提取", "ie_chat", new[] { "信息提取", "ie_chat", "extraction", "提取", "解析", "模板", "json", "结构化" }),
+        ("Knowledge Base", "rag_chat", new[] { "knowledge base", "rag_chat", "知识库聊天", "检索", "rag", "向量", "文档管理", "知识检索" }),
         ("智能解析", "ie", new[] { "智能解析", "ie", "提取", "解析", "模板", "信息提取" }),
         ("知识库", "rag", new[] { "知识库", "rag", "检索", "文档管理", "向量" }),
         ("视觉理解", "llava", new[] { "视觉理解", "llava", "图片", "视觉", "图像", "看图" }),
@@ -137,6 +173,8 @@ public sealed partial class MainWindow : Window
         HomePage.Visibility = Visibility.Collapsed;
         ChatPage.Visibility = Visibility.Collapsed;
         QuickQAPage.Visibility = Visibility.Collapsed;
+        IEChatPage.Visibility = Visibility.Collapsed;
+        RAGChat2Page.Visibility = Visibility.Collapsed;
         IEPage.Visibility = Visibility.Collapsed;
         RAGPage.Visibility = Visibility.Collapsed;
         LLaVAPage.Visibility = Visibility.Collapsed;
@@ -160,6 +198,14 @@ public sealed partial class MainWindow : Window
             case "quickqa":
                 QuickQAPage.Visibility = Visibility.Visible;
                 SelectNavigationItem("quickqa");
+                break;
+            case "ie_chat":
+                IEChatPage.Visibility = Visibility.Visible;
+                SelectNavigationItem("ie_chat");
+                break;
+            case "rag_chat2":
+                RAGChat2Page.Visibility = Visibility.Visible;
+                SelectNavigationItem("rag_chat2");
                 break;
             case "ie":
                 IEPage.Visibility = Visibility.Visible;
@@ -236,6 +282,8 @@ public sealed partial class MainWindow : Window
         StartupPage.Visibility = Visibility.Collapsed;
         ChatPage.Visibility = Visibility.Collapsed;
         QuickQAPage.Visibility = Visibility.Collapsed;
+        IEChatPage.Visibility = Visibility.Collapsed;
+        RAGChat2Page.Visibility = Visibility.Collapsed;
         IEPage.Visibility = Visibility.Collapsed;
         RAGPage.Visibility = Visibility.Collapsed;
         LLaVAPage.Visibility = Visibility.Collapsed;
@@ -311,6 +359,47 @@ public sealed partial class MainWindow : Window
                         _ragStreamingMessage.IsStreaming = false;
                         _ragStreamingMessage = null;
                     }
+                    break;
+                case "ie_chat":
+                    IEChatPage.Visibility = Visibility.Visible;
+                    // Bind chat history to IE Chat mode
+                    ChatHistoryListIE.ItemsSource = _ieChatHistory;
+                    // Set to IE Chat mode
+                    _currentDialogMode = "ie_chat";
+                    _isRAGMode = false;
+                    // Update _chatHistory pointer
+                    _chatHistory = _ieChatHistory;
+                    // Clean up other modes' streaming messages
+                    if (_normalStreamingMessage != null)
+                    {
+                        _normalStreamingMessage.IsStreaming = false;
+                        _normalStreamingMessage = null;
+                    }
+                    if (_quickQAStreamingMessage != null)
+                    {
+                        _quickQAStreamingMessage.IsStreaming = false;
+                        _quickQAStreamingMessage = null;
+                    }
+                    if (_ieStreamingMessage != null)
+                    {
+                        _ieStreamingMessage.IsStreaming = false;
+                        _ieStreamingMessage = null;
+                    }
+                    if (_ragStreamingMessage != null)
+                    {
+                        _ragStreamingMessage.IsStreaming = false;
+                        _ragStreamingMessage = null;
+                    }
+                    if (_ragChatStreamingMessage != null)
+                    {
+                        _ragChatStreamingMessage.IsStreaming = false;
+                        _ragChatStreamingMessage = null;
+                    }
+                    break;
+                case "rag_chat2":
+                    RAGChat2Page.Visibility = Visibility.Visible;
+                    _currentDialogMode = "rag_chat2";
+                    _isRAGMode = false;
                     break;
                 case "ie":
                     IEPage.Visibility = Visibility.Visible;

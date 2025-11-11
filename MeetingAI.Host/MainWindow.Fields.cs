@@ -126,6 +126,22 @@ public sealed partial class MainWindow : Window
     private bool _isIEExtracting = false;              // 是否正在提取
     private StringBuilder? _ieExtractionBuffer;        // 提取响应收集器
 
+    // ========== IE Chat模式相关（独立页面，与主页IE完全隔离） ==========
+    private Models.ChatMessage? _ieChatStreamingMessage = null;
+    private string? _ieChatDocumentContent = null;     // 当前加载的文档内容
+    private string? _ieChatDocumentName = null;        // 文档名称
+    private long _ieChatDocumentSize = 0;              // 文档大小（字节）
+    private int _ieChatTokenCount = 0;                 // 文档token数
+    private string? _ieChatSelectedTemplateId = null;  // 选中的模板ID
+    private string? _ieChatExtractedJson = null;       // 提取的JSON结果
+    private bool _isChatExtracting = false;            // 是否正在提取
+    private bool _isChatDetecting = false;             // 是否正在识别文档类型
+    private StringBuilder? _ieChatDetectionBuffer = null;   // 识别响应收集器
+    private StringBuilder? _ieChatExtractionBuffer = null;  // 提取响应收集器
+
+    // ========== RAG Chat模式相关（独立页面，与主页RAG完全隔离） ==========
+    private Models.ChatMessage? _ragChatStreamingMessage = null;
+
     // ========== Audio Test 相关 ==========
     private WasapiCapture? _microphoneTestCapture;    // 麦克风测试捕获
     private bool _isMicrophoneTestRunning;             // 麦克风测试运行状态
@@ -135,6 +151,7 @@ public sealed partial class MainWindow : Window
     private bool _isSpeakerTestRunning;                // 扬声器测试运行状态
 
     // ========== 模型加载状态 ==========
+    private bool _isGraniteLoaded = false;
     private bool _isGraniteEmbeddingLoaded = false;
     private bool _isWhisperLoaded = false;
     private bool _isLLaVALoaded = false;

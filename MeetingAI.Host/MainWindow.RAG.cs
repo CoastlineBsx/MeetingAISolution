@@ -19,60 +19,99 @@ public sealed partial class MainWindow : Window
     /// </summary>
     public async Task InitializeRAGAsync()
     {
+        void LogToFile(string msg)
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MeetingAI", "ragchat_debug.log");
+                System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [InitializeRAGAsync] {msg}\n");
+            }
+            catch { }
+        }
+
+        LogToFile("Method entry");
+
         if (_isRAGInitialized)
         {
+            LogToFile("Already initialized, returning");
             await AppendLineAsync("[RAG] 已初始化，跳过");
             return;
         }
 
         try
         {
-            await AppendLineAsync("[RAG] 初始化中...");
+            LogToFile("Starting initialization");
+            LogToFile("About to call AppendLineAsync");
+            try
+            {
+                await AppendLineAsync("[RAG] 初始化中...");
+                LogToFile("AppendLineAsync completed");
+            }
+            catch (Exception ex)
+            {
+                LogToFile($"AppendLineAsync threw exception: {ex}");
+                throw;
+            }
 
+            LogToFile("Creating appDataPath");
             // 1. 初始化向量数据库
             var appDataPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "MeetingAI");
 
+            LogToFile("Checking if directory exists");
             if (!Directory.Exists(appDataPath))
             {
+                LogToFile("Creating directory");
                 Directory.CreateDirectory(appDataPath);
             }
 
+            LogToFile("Creating vector database");
             var dbPath = Path.Combine(appDataPath, "meeting_rag.db");
             _vectorDb = new SqliteVectorDatabase(dbPath);
+            LogToFile("Initializing vector database");
             await _vectorDb.InitializeAsync();
+            LogToFile("Vector database initialized");
 
             await AppendLineAsync($"[RAG] 向量库已就绪: {dbPath}");
 
+            LogToFile("Creating embedding service");
             // 2. 初始化 Embedding 服务（注入委托）
             _embeddingService = new EmbeddingNPUService(
                 async (text, ct) => await GetEmbeddingViaPipeAsync(text, ct)
             );
+            LogToFile("Embedding service created");
 
             await AppendLineAsync("[RAG] Embedding 服务已就绪（使用 Pipeline 适配器）");
 
+            LogToFile("Creating RAG service");
             // 3. 初始化 RAG 服务
             _ragService = new RAGService(
                 _vectorDb,
                 _embeddingService,
                 topK: 2  // 默认检索前2个最相关的文档块
             );
+            LogToFile("RAG service created");
 
             await AppendLineAsync("[RAG] RAG 服务已就绪");
 
             _isRAGInitialized = true;
             await AppendLineAsync("[RAG] ✅ 初始化完成");
 
+            LogToFile("Getting all documents");
             // 显示现有文档数量
             var docs = await _ragService.GetAllDocumentsAsync();
+            LogToFile($"Got {docs.Count} documents");
             await AppendLineAsync($"[RAG] 当前知识库文档数: {docs.Count}");
 
+            LogToFile("Calling InitializeDocumentManagement");
             // 初始化文档管理功能
             InitializeDocumentManagement();
+            LogToFile("InitializeDocumentManagement completed");
         }
         catch (Exception ex)
         {
+            LogToFile($"EXCEPTION: {ex}");
             await AppendLineAsync($"[RAG] ❌ 初始化失败: {ex.Message}");
             _isRAGInitialized = false;
             throw;

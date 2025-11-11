@@ -96,6 +96,24 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
+            <NavigationViewItem Content="Information Extraction" Tag="ie_chat">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE8FD;"/>
+                </NavigationViewItem.Icon>
+                <ToolTipService.ToolTip>
+                    <ToolTip Content="Extract structured information from documents with AI-powered analysis"/>
+                </ToolTipService.ToolTip>
+            </NavigationViewItem>
+
+            <NavigationViewItem Content="Knowledge Base" Tag="rag_chat2">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE8F1;"/>
+                </NavigationViewItem.Icon>
+                <ToolTipService.ToolTip>
+                    <ToolTip Content="Chat with your documents using RAG-powered knowledge retrieval"/>
+                </ToolTipService.ToolTip>
+            </NavigationViewItem>
+
             <NavigationViewItem Content="智能解析" Tag="ie">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE721;"/>
@@ -1394,6 +1412,271 @@
                             IsEnabled="False"/>
                 </Grid>
 
+                <!-- Information Extraction Chat Page -->
+                <Grid x:Name="IEChatPage" Padding="32" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="120"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Title -->
+                    <TextBlock Text="Information Extraction" FontSize="28" FontWeight="Bold" Margin="0,0,0,24"/>
+
+                    <!-- Configuration Panel -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="24" Margin="0,0,0,24">
+                        <!-- Document Type Selection -->
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="Document type" FontSize="14" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="CmbIEChatTemplate"
+                                      SelectionChanged="CmbIEChatTemplate_SelectionChanged"
+                                      MinWidth="150"
+                                      IsEnabled="False"
+                                      VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- Document Status -->
+                        <TextBlock x:Name="LblIEChatDocStatus"
+                                   Text="No document loaded"
+                                   FontSize="14"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                        <!-- Upload Document Button -->
+                        <Button x:Name="BtnIEChatUpload"
+                                Click="BtnIEChatUpload_Click"
+                                VerticalAlignment="Center"
+                                IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE8E5;" FontSize="16"/>
+                                <TextBlock Text="Upload Document"/>
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Extract Button -->
+                        <Button x:Name="BtnIEChatExtract"
+                                Click="BtnIEChatExtract_Click"
+                                IsEnabled="False"
+                                VerticalAlignment="Center"
+                                Style="{ThemeResource AccentButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE8B5;" FontSize="16"/>
+                                <TextBlock Text="Extract"/>
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Clear history button -->
+                        <Button x:Name="BtnIEChatClear"
+                                Content="Clear history"
+                                Click="BtnIEChatClear_Click"
+                                VerticalAlignment="Center"
+                                IsEnabled="False"/>
+                    </StackPanel>
+
+                    <!-- Chat History -->
+                    <ListView x:Name="ChatHistoryListIE" Grid.Row="2"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              SelectionMode="None"
+                              Margin="0,0,0,12">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="4"/>
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="ContextFlyout">
+                                    <Setter.Value>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Copy" Icon="Copy" Click="CopyIEChatMessage_Click"/>
+                                        </MenuFlyout>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="4,2">
+                                    <!-- User message (right-aligned) -->
+                                    <Border Visibility="{Binding IsUserVisible}"
+                                            Background="{ThemeResource UserBubbleBackground}"
+                                            CornerRadius="12"
+                                            Padding="12,8"
+                                            HorizontalAlignment="Right"
+                                            MaxWidth="600">
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{ThemeResource UserBubbleText}"
+                                                   IsTextSelectionEnabled="True"/>
+                                    </Border>
+
+                                    <!-- Assistant message (left-aligned) -->
+                                    <Border Visibility="{Binding IsAssistantVisible}"
+                                            Background="{ThemeResource AIBubbleBackground}"
+                                            CornerRadius="12"
+                                            Padding="12,8"
+                                            HorizontalAlignment="Left"
+                                            MaxWidth="600">
+                                        <StackPanel Spacing="8">
+                                            <!-- Text content -->
+                                            <TextBlock Text="{Binding Content}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{ThemeResource AIBubbleText}"
+                                                       IsTextSelectionEnabled="True"
+                                                       Visibility="{Binding ContentVisible}"/>
+
+                                            <!-- Generating indicator -->
+                                            <StackPanel Visibility="{Binding ProgressVisible}" Spacing="4">
+                                                <ProgressRing IsActive="True" Width="20" Height="20"/>
+                                                <TextBlock Text="Processing..." FontSize="12"
+                                                           Foreground="{ThemeResource AIBubbleText}"/>
+                                            </StackPanel>
+
+                                            <!-- JSON data display -->
+                                            <Border Visibility="{Binding JsonVisible}"
+                                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4"
+                                                    Padding="12"
+                                                    Margin="0,8,0,0">
+                                                <StackPanel Spacing="8">
+                                                    <TextBlock Text="Extracted Data" FontWeight="SemiBold" FontSize="12"/>
+                                                    <ScrollViewer MaxHeight="400" VerticalScrollBarVisibility="Auto">
+                                                        <TextBlock Text="{Binding JsonContent}"
+                                                                   TextWrapping="Wrap"
+                                                                   FontFamily="Consolas"
+                                                                   FontSize="11"
+                                                                   IsTextSelectionEnabled="True"/>
+                                                    </ScrollViewer>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Button Content="Copy JSON"
+                                                                Click="BtnCopyIEJson_Click"
+                                                                Tag="{Binding}"
+                                                                FontSize="12"
+                                                                Padding="8,4">
+                                                            <Button.Resources>
+                                                                <x:String x:Key="action">copy</x:String>
+                                                            </Button.Resources>
+                                                        </Button>
+                                                        <Button Content="Export JSON"
+                                                                Click="BtnExportIEJson_Click"
+                                                                Tag="{Binding}"
+                                                                FontSize="12"
+                                                                Padding="8,4">
+                                                            <Button.Resources>
+                                                                <x:String x:Key="action">export</x:String>
+                                                            </Button.Resources>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <!-- Input Box -->
+                    <TextBox x:Name="TxtIEChatInput" Grid.Row="3"
+                             PlaceholderText="Ask questions about the extracted data or document (Ctrl+Enter to send)..."
+                             TextWrapping="Wrap" AcceptsReturn="True"
+                             PreviewKeyDown="TxtIEChatInput_PreviewKeyDown"/>
+
+                    <!-- Send Button -->
+                    <Button x:Name="BtnIEChatSend" Grid.Row="4"
+                            Content="Send (Ctrl+Enter)"
+                            Click="BtnIEChatSend_Click"
+                            HorizontalAlignment="Right"
+                            Margin="0,12,0,0"
+                            IsEnabled="False"
+                            MinWidth="160"
+                            Style="{ThemeResource AccentButtonStyle}"/>
+                </Grid>
+
+                <!-- Knowledge Base Chat Page (V2 - Simplified) -->
+                <Grid x:Name="RAGChat2Page" Padding="32" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Title -->
+                    <TextBlock Text="Knowledge Base" FontSize="28" FontWeight="Bold" Margin="0,0,0,24"/>
+
+                    <!-- Status and Controls -->
+                    <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,24">
+                        <TextBlock x:Name="LblRAGChat2Status"
+                                   Text="Upload documents to start"
+                                   FontSize="14"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="BtnRAGChat2Upload" Content="Upload Document"
+                                    Click="BtnRAGChat2Upload_Click" IsEnabled="False"/>
+                            <Button x:Name="BtnRAGChat2Manage" Content="Manage Documents"
+                                    Click="BtnRAGChat2Manage_Click" IsEnabled="False"/>
+                            <Button x:Name="BtnRAGChat2Clear" Content="Clear Chat"
+                                    Click="BtnRAGChat2Clear_Click" IsEnabled="False"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Chat History -->
+                    <ListView x:Name="ChatHistoryRAGChat2" Grid.Row="2"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              SelectionMode="None"
+                              Margin="0,0,0,12">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="4"/>
+                                <Setter Property="Margin" Value="0"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="4,2">
+                                    <!-- User message -->
+                                    <Border Visibility="{Binding IsUserVisible}"
+                                            Background="{ThemeResource UserBubbleBackground}"
+                                            CornerRadius="12" Padding="12,8"
+                                            HorizontalAlignment="Right" MaxWidth="600">
+                                        <TextBlock Text="{Binding Content}" TextWrapping="Wrap"
+                                                   Foreground="{ThemeResource UserBubbleText}"/>
+                                    </Border>
+                                    <!-- AI message -->
+                                    <Border Visibility="{Binding IsAssistantVisible}"
+                                            Background="{ThemeResource AIBubbleBackground}"
+                                            CornerRadius="12" Padding="12,8"
+                                            HorizontalAlignment="Left" MaxWidth="600">
+                                        <TextBlock Text="{Binding Content}" TextWrapping="Wrap"
+                                                   Foreground="{ThemeResource AIBubbleText}"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <!-- Input Area -->
+                    <Grid Grid.Row="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TxtRAGChat2Input" Grid.Column="0"
+                                 PlaceholderText="Ask about your documents..."
+                                 Margin="0,0,12,0"/>
+                        <Button x:Name="BtnRAGChat2Send" Grid.Column="1"
+                                Content="Send" Click="BtnRAGChat2Send_Click"
+                                IsEnabled="False" MinWidth="100"
+                                Style="{ThemeResource AccentButtonStyle}"/>
+                    </Grid>
+                </Grid>
+
                 <!-- 🔍 智能解析页面 -->
                 <Grid x:Name="IEPage" Padding="16" Visibility="Collapsed">
                     <StackPanel VerticalAlignment="Top" Spacing="12">
@@ -1792,17 +2075,17 @@
 
                         <!-- Left: Image operation buttons (only visible when image selected) -->
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
-                            <AppBarButton Label="保存" Click="BtnSaveImage_Click" IsEnabled="False">
+                            <AppBarButton x:Name="BtnSDSaveImage" Label="保存" Click="BtnSaveImage_Click" IsEnabled="False">
                                 <AppBarButton.Icon>
                                     <FontIcon Glyph="&#xE74E;"/>
                                 </AppBarButton.Icon>
                             </AppBarButton>
-                            <AppBarButton Label="复制" Click="BtnCopyImage_Click" IsEnabled="False">
+                            <AppBarButton x:Name="BtnSDCopyImage" Label="复制" Click="BtnCopyImage_Click" IsEnabled="False">
                                 <AppBarButton.Icon>
                                     <FontIcon Glyph="&#xE8C8;"/>
                                 </AppBarButton.Icon>
                             </AppBarButton>
-                            <AppBarButton Label="重新生成" Click="BtnRegenerate_Click" IsEnabled="False">
+                            <AppBarButton x:Name="BtnSDRegenerate" Label="重新生成" Click="BtnRegenerate_Click" IsEnabled="False">
                                 <AppBarButton.Icon>
                                     <FontIcon Glyph="&#xE72C;"/>
                                 </AppBarButton.Icon>

@@ -45,9 +45,9 @@ public sealed partial class MainWindow : Window
             // 读取用户选择的设备
             string whisperDevice = CmbWhisperDevice.SelectedIndex switch
             {
-                0 => "CPU",
+                1 => "GPU",
                 2 => "NPU",
-                _ => "GPU"
+                _ => "CPU"  // 默认 CPU
             };
 
             await AppendLineAsync($"[Startup] Whisper device: {whisperDevice}");
