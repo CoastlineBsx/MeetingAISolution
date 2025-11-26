@@ -151,4 +151,144 @@ public sealed partial class MainWindow : Window
             }
         });
     }
+
+    // ========== 加载/卸载 OpenVINO Whisper 模型 ==========
+    private async void BtnLoadOpenVINOWhisper_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isOpenVINOWhisperLoaded)
+        {
+            // 卸载模型
+            await UnloadOpenVINOWhisperModel();
+        }
+        else
+        {
+            // 加载模型
+            await LoadOpenVINOWhisperModel();
+        }
+    }
+
+    private async Task LoadOpenVINOWhisperModel()
+    {
+        try
+        {
+            await AppendLineAsync("[Startup] Loading OpenVINO Whisper model...");
+
+            // 显示加载中状态
+            BtnLoadOpenVINOWhisper.IsEnabled = false;
+            ProgressOpenVINOWhisper.IsActive = true;
+            ProgressOpenVINOWhisper.Visibility = Visibility.Visible;
+            CmbOpenVINOWhisperDevice.IsEnabled = false;
+
+            await EnsurePipeAsync();
+
+            // 读取设备选择
+            string device = CmbOpenVINOWhisperDevice.SelectedIndex switch
+            {
+                1 => "GPU",
+                2 => "NPU",
+                _ => "CPU"
+            };
+
+            await AppendLineAsync($"[Startup] OpenVINO Whisper device: {device}");
+
+            // 发送加载 OpenVINO Whisper 命令
+            var loadCmd = new
+            {
+                type = "load_whisper_openvino",
+                model_path = "models/whisper_large_v3",
+                device = device
+            };
+            var json = JsonSerializer.Serialize(loadCmd) + "\n";
+            await SendJsonAsync(json);
+
+            await AppendLineAsync("[Startup] OpenVINO Whisper load command sent, waiting for Worker response...");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Startup] OpenVINO Whisper load failed: {ex.Message}");
+            ProgressOpenVINOWhisper.IsActive = false;
+            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+            BtnLoadOpenVINOWhisper.IsEnabled = true;
+            CmbOpenVINOWhisperDevice.IsEnabled = true;
+        }
+    }
+
+    private async Task UnloadOpenVINOWhisperModel()
+    {
+        try
+        {
+            await AppendLineAsync("[Startup] Unloading OpenVINO Whisper model...");
+
+            // 显示卸载中状态
+            BtnLoadOpenVINOWhisper.IsEnabled = false;
+            ProgressOpenVINOWhisper.IsActive = true;
+            ProgressOpenVINOWhisper.Visibility = Visibility.Visible;
+
+            await EnsurePipeAsync();
+
+            // 发送卸载 OpenVINO Whisper 命令
+            var unloadCmd = new
+            {
+                type = "unload_whisper_openvino"
+            };
+            var json = JsonSerializer.Serialize(unloadCmd) + "\n";
+            await SendJsonAsync(json);
+
+            await AppendLineAsync("[Startup] OpenVINO Whisper unload command sent");
+        }
+        catch (Exception ex)
+        {
+            await AppendLineAsync($"[Startup] OpenVINO Whisper unload failed: {ex.Message}");
+            ProgressOpenVINOWhisper.IsActive = false;
+            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+            BtnLoadOpenVINOWhisper.IsEnabled = true;
+        }
+    }
+
+    // ========== 处理 OpenVINO Whisper 响应 ==========
+    private void HandleOpenVINOWhisperLoadResponse(bool success, string message)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ProgressOpenVINOWhisper.IsActive = false;
+            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+
+            if (success)
+            {
+                _isOpenVINOWhisperLoaded = true;
+                BtnLoadOpenVINOWhisper.Content = "Unload OpenVINO Whisper";
+                BtnLoadOpenVINOWhisper.IsEnabled = true;
+                _ = AppendLineAsync($"[Startup] ✓ OpenVINO Whisper model loaded: {message}");
+            }
+            else
+            {
+                BtnLoadOpenVINOWhisper.IsEnabled = true;
+                CmbOpenVINOWhisperDevice.IsEnabled = true;
+                _ = AppendLineAsync($"[Startup] ✗ OpenVINO Whisper load failed: {message}");
+            }
+        });
+    }
+
+    private void HandleOpenVINOWhisperUnloadResponse(bool success, string message)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ProgressOpenVINOWhisper.IsActive = false;
+            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+
+            if (success)
+            {
+                _isOpenVINOWhisperLoaded = false;
+                BtnLoadOpenVINOWhisper.Content = "Load OpenVINO Whisper";
+                BtnLoadOpenVINOWhisper.IsEnabled = true;
+                CmbOpenVINOWhisperDevice.IsEnabled = true;
+                _ = AppendLineAsync($"[Startup] ✓ OpenVINO Whisper model unloaded");
+            }
+            else
+            {
+                BtnLoadOpenVINOWhisper.IsEnabled = true;
+                _ = AppendLineAsync($"[Startup] ✗ OpenVINO Whisper unload failed: {message}");
+            }
+        });
+    }
 }

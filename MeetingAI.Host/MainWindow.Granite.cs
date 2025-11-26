@@ -80,6 +80,16 @@ public sealed partial class MainWindow : Window
     // ========== 获取当前模式的流式消息 ==========
     private ChatMessage? GetCurrentModeStreamingMessage()
     {
+        // 优先查找正在生成的消息（IsStreaming = true）
+        // 这样即使切换页面，token 也会路由到正确的消息
+        if (_normalStreamingMessage?.IsStreaming == true) return _normalStreamingMessage;
+        if (_quickQAStreamingMessage?.IsStreaming == true) return _quickQAStreamingMessage;
+        if (_ieStreamingMessage?.IsStreaming == true) return _ieStreamingMessage;
+        if (_ieChatStreamingMessage?.IsStreaming == true) return _ieChatStreamingMessage;
+        if (_ragStreamingMessage?.IsStreaming == true) return _ragStreamingMessage;
+        if (_visualStreamingMessage?.IsStreaming == true) return _visualStreamingMessage;
+
+        // 如果都没有在生成，回退到当前模式的消息（向后兼容）
         return _currentDialogMode switch
         {
             "normal" => _normalStreamingMessage,
@@ -87,7 +97,6 @@ public sealed partial class MainWindow : Window
             "ie" => _ieStreamingMessage,
             "ie_chat" => _ieChatStreamingMessage,
             "rag" => _ragStreamingMessage,
-            "rag_chat2" => _ragChat2StreamingMessage,
             "visual" => _visualStreamingMessage,
             _ => _normalStreamingMessage
         };
@@ -112,9 +121,6 @@ public sealed partial class MainWindow : Window
                 break;
             case "rag":
                 _ragStreamingMessage = message;
-                break;
-            case "rag_chat2":
-                _ragChat2StreamingMessage = message;
                 break;
             case "visual":
                 _visualStreamingMessage = message;
@@ -755,7 +761,9 @@ public sealed partial class MainWindow : Window
             var currentStreamMsg = GetCurrentModeStreamingMessage();
             if (currentStreamMsg != null)
             {
+                // 同时关闭两个状态标志（兼容不同模式）
                 currentStreamMsg.IsStreaming = false;
+                currentStreamMsg.IsGenerating = false;
 
                 // 如果是快速问答模式，保存对话历史
                 if (_currentDialogMode == "quickqa" && _chatHistory.Count >= 2)
@@ -788,7 +796,16 @@ public sealed partial class MainWindow : Window
 
             // 重置滚动计数器，并确保最后一次滚动到底部
             SetCurrentModeScrollThrottle(0);
-            ScrollToBottom();
+
+            // 根据模式调用相应的滚动方法
+            if (_currentDialogMode == "ie_chat")
+            {
+                ScrollIEChatToBottom();
+            }
+            else
+            {
+                ScrollToBottom();
+            }
         });
     }
 

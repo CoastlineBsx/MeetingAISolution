@@ -308,7 +308,7 @@ static std::vector<unsigned char> base64_decode(const std::string& encoded_strin
 }
 
 // WAV 加载并转为 16kHz 单声道（Whisper 标准格式）
-static bool LoadWavFile(const std::string& filename, std::vector<float>& audio_data) {
+bool LoadWavFile(const std::string& filename, std::vector<float>& audio_data) {
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "[Whisper] 无法打开音频文件: " << filename << std::endl;

@@ -293,7 +293,7 @@ Output only one type ID, no other text.";
             {
                 Role = "assistant",
                 Content = "",
-                IsGenerating = true,
+                IsStreaming = true,
                 Timestamp = DateTime.Now
             };
             _ieChatHistory.Add(aiMsg);
@@ -507,7 +507,7 @@ Output only one type ID, no other text.";
             {
                 Role = "assistant",
                 Content = "",
-                IsGenerating = true,
+                IsStreaming = true,
                 Timestamp = DateTime.Now
             };
             _ieChatHistory.Add(aiMsg);

@@ -53,6 +53,12 @@ namespace meetingai::proto {
             t.find("\"transcribe_file\"") != std::string::npos;
     }
 
+    bool isTranscribeOpenVINO(const std::string& s) {
+        auto t = trim(s);
+        return t.find("\"type\"") != std::string::npos &&
+            t.find("\"transcribe_openvino\"") != std::string::npos;
+    }
+
     std::string extractPath(const std::string& json) {
         size_t start = json.find("\"path\":");
         if (start == std::string::npos) return "";

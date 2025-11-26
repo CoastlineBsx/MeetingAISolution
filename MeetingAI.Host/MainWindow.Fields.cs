@@ -154,7 +154,11 @@ public sealed partial class MainWindow : Window
     private bool _isGraniteLoaded = false;
     private bool _isGraniteEmbeddingLoaded = false;
     private bool _isWhisperLoaded = false;
+    private bool _isOpenVINOWhisperLoaded = false;
     private bool _isLLaVALoaded = false;
+
+    // ========== OpenVINO Whisper 消息处理器 ==========
+    public Action<string>? OpenVINOWhisperMessageHandler { get; set; }
 
     private const string PipeName = "MeetingAI_Pipe";
 }

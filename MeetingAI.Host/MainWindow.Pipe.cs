@@ -114,14 +114,16 @@ public sealed partial class MainWindow : Window
             string graniteDevice = CmbGraniteDevice.SelectedIndex switch
             {
                 0 => "CPU",
+                1 => "GPU",
                 2 => "NPU",
-                _ => "GPU"
+                _ => "GPU"  // 默认 GPU
             };
             string embeddingDevice = CmbEmbeddingDevice.SelectedIndex switch
             {
                 0 => "CPU",
+                1 => "GPU",
                 2 => "NPU",
-                _ => "GPU"
+                _ => "GPU"  // 默认 GPU
             };
 
             await AppendLineAsync($"[Host] 设备配置: Granite={graniteDevice}, Embedding={embeddingDevice}");
@@ -166,6 +168,7 @@ public sealed partial class MainWindow : Window
             // 启用Startup页面的模型加载按钮
             BtnPreloadModels.IsEnabled = true;
             BtnLoadWhisper.IsEnabled = true;
+            BtnLoadOpenVINOWhisper.IsEnabled = true;
             BtnLoadLLaVA.IsEnabled = true;
             BtnLoadSD.IsEnabled = true;
 
@@ -451,9 +454,6 @@ public sealed partial class MainWindow : Window
 
                     // Update IE Chat UI to enable upload button
                     UpdateIEChatUI();
-
-                    // Update RAG Chat 2 UI to enable send button
-                    UpdateRAGChat2UI();
                 });
             }
             catch { }
@@ -546,9 +546,6 @@ public sealed partial class MainWindow : Window
                     BtnPreloadModels.Content = "Unload Models";
                     BtnPreloadModels.IsEnabled = true;
                     _isGraniteEmbeddingLoaded = true;
-
-                    // Update RAG Chat 2 UI to enable upload button
-                    UpdateRAGChat2UI();
 
                     _ = AppendLineAsync("[DEBUG] *** UI更新已完成 ***");
                 });
@@ -724,6 +721,46 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // ========== OpenVINO Whisper 响应 ==========
+        if (jsonMsg.Contains("\"type\":\"whisper_openvino_ready\""))
+        {
+            await AppendLineAsync("[DEBUG] *** whisper_openvino_ready 处理代码被执行 ***");
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string modelPath = root.TryGetProperty("model_path", out var mp) ? (mp.GetString() ?? "unknown") : "unknown";
+                await AppendLineAsync($"[OpenVINO Whisper] ✅ Model ready (path={modelPath})");
+                await AppendLineAsync("[DEBUG] *** 调用 HandleOpenVINOWhisperLoadResponse ***");
+                HandleOpenVINOWhisperLoadResponse(true, $"Model loaded from {modelPath}");
+            }
+            catch { }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"whisper_openvino_error\""))
+        {
+            try
+            {
+                using var jd = JsonDocument.Parse(jsonMsg);
+                var root = jd.RootElement;
+                string message = root.TryGetProperty("message", out var m) ? (m.GetString() ?? "Unknown error") : "Unknown error";
+                await AppendLineAsync($"[OpenVINO Whisper] ✗ Error: {message}");
+                HandleOpenVINOWhisperLoadResponse(false, message);
+            }
+            catch { }
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"whisper_openvino_unloaded\""))
+        {
+            await AppendLineAsync("[DEBUG] *** whisper_openvino_unloaded 处理代码被执行 ***");
+            await AppendLineAsync("[Startup] ✓ OpenVINO Whisper model unloaded");
+            await AppendLineAsync("[DEBUG] *** 调用 HandleOpenVINOWhisperUnloadResponse ***");
+            HandleOpenVINOWhisperUnloadResponse(true, "");
+            return;
+        }
+
         // ========== 相似度诊断测试结果 ==========
         if (jsonMsg.Contains("\"type\":\"similarity_test_result\""))
         {
@@ -762,13 +799,26 @@ public sealed partial class MainWindow : Window
         // ========== Whisper 转录消息处理 ==========
         if (jsonMsg.Contains("\"type\":\"asr_segment\""))
         {
+            // 转发给 OpenVINO Whisper 页面（如果有处理器）
+            OpenVINOWhisperMessageHandler?.Invoke(jsonMsg);
             return;
         }
         if (jsonMsg.Contains("\"type\":\"transcribe_complete\"") ||
             jsonMsg.Contains("\"type\":\"error\""))
         {
+            // 转发给 OpenVINO Whisper 页面（如果有处理器）
+            OpenVINOWhisperMessageHandler?.Invoke(jsonMsg);
+
             _transcribeTcs?.TrySetResult(true);
             _transcribeTcs = null;
+            return;
+        }
+
+        // ========== 进度消息处理（OpenVINO Whisper）==========
+        if (jsonMsg.Contains("\"type\":\"progress\""))
+        {
+            // 转发给 OpenVINO Whisper 页面（如果有处理器）
+            OpenVINOWhisperMessageHandler?.Invoke(jsonMsg);
             return;
         }
     }
@@ -874,10 +924,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task SendJsonAsync(string json)
+    public async Task SendJsonAsync(string json)
     {
+        if (_pipe == null || !_pipe.IsConnected)
+        {
+            throw new InvalidOperationException("Worker 未连接。请先启动 Worker。");
+        }
         var buf = Encoding.UTF8.GetBytes(json);
-        await _pipe!.WriteAsync(buf, 0, buf.Length);
+        await _pipe.WriteAsync(buf, 0, buf.Length);
         await _pipe.FlushAsync();
     }
 }

@@ -14,6 +14,9 @@ namespace meetingai::proto {
 	// 判断是否是 {"type":"transcribe_file"}（宽松匹配）
 	bool isTranscribe(const std::string& s);
 
+	// 判断是否是 {"type":"transcribe_openvino"}（宽松匹配）
+	bool isTranscribeOpenVINO(const std::string& s);
+
 	// 从 {"path":"..."} 提取 path；失败返回空
 	std::string extractPath(const std::string& json);
 

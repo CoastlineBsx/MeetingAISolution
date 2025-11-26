@@ -187,6 +187,12 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="src\main\test_whisper_openvino.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
@@ -202,6 +208,7 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="src\transcribe\whisper_transcriber.cpp" />
+    <ClCompile Include="src\transcribe\whisper_openvino_transcriber.cpp" />
     <ClCompile Include="src\util\logging.cpp" />
     <ClCompile Include="src\util\paths.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
@@ -269,6 +276,7 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
     <ClInclude Include="include\meetingai\rag\text_chunker.hpp" />
     <ClInclude Include="include\meetingai\storage\database.hpp" />
     <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
+    <ClInclude Include="include\meetingai\transcribe\whisper_openvino_transcriber.hpp" />
     <ClInclude Include="include\meetingai\util\logging.h" />
     <ClInclude Include="include\meetingai\util\paths.h" />
     <ClInclude Include="src\llava\image_processor.h" />

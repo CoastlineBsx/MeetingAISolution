@@ -40,7 +40,13 @@
       "Bash(timeout /t 30 /nobreak)",
       "Bash(find:*)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" MeetingAISolution.sln /p:Configuration=Debug /p:Platform=x64 /t:MeetingAI_Host)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"C:\\VisualStudio\\MeetingAISolution\\MeetingAI.Worker\\MeetingAI.Worker.vcxproj\" /p:Configuration=Debug /p:Platform=x64 /v:minimal)",
+      "Bash(.artifactsbinDebugx64MeetingAI.WorkerMeetingAI.Worker.exe)",
+      "Bash(echo:*)",
+      "Bash(git checkout:*)",
+      "Bash(where:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

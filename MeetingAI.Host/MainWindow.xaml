@@ -78,6 +78,15 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
+            <NavigationViewItem Content="OpenVINO Whisper" Tag="openvino_whisper">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE8AB;"/>
+                </NavigationViewItem.Icon>
+                <ToolTipService.ToolTip>
+                    <ToolTip Content="High-performance speech recognition with OpenVINO GenAI and DTW timestamps"/>
+                </ToolTipService.ToolTip>
+            </NavigationViewItem>
+
             <NavigationViewItem Content="Intelligent Chat" Tag="chat">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE8F2;"/>
@@ -102,33 +111,6 @@
                 </NavigationViewItem.Icon>
                 <ToolTipService.ToolTip>
                     <ToolTip Content="Extract structured information from documents with AI-powered analysis"/>
-                </ToolTipService.ToolTip>
-            </NavigationViewItem>
-
-            <NavigationViewItem Content="Knowledge Base" Tag="rag_chat2">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE8F1;"/>
-                </NavigationViewItem.Icon>
-                <ToolTipService.ToolTip>
-                    <ToolTip Content="Chat with your documents using RAG-powered knowledge retrieval"/>
-                </ToolTipService.ToolTip>
-            </NavigationViewItem>
-
-            <NavigationViewItem Content="智能解析" Tag="ie">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE721;"/>
-                </NavigationViewItem.Icon>
-                <ToolTipService.ToolTip>
-                    <ToolTip Content="从文档中提取结构化信息（合同、发票等）"/>
-                </ToolTipService.ToolTip>
-            </NavigationViewItem>
-
-            <NavigationViewItem Content="知识库" Tag="rag">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE8F1;"/>
-                </NavigationViewItem.Icon>
-                <ToolTipService.ToolTip>
-                    <ToolTip Content="基于向量检索的知识库问答系统"/>
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
@@ -1046,6 +1028,67 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- OpenVINO Whisper Model Group -->
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="20"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                <StackPanel Spacing="16">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="OpenVINO Whisper (High Performance)"
+                                                   FontSize="18"
+                                                   FontWeight="SemiBold"/>
+                                        <TextBlock Text="Intel GenAI accelerated speech recognition with DTW timestamps"
+                                                   FontSize="12"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    </StackPanel>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Device Selection -->
+                                        <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,12,0">
+                                            <TextBlock Text="Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                            <ComboBox x:Name="CmbOpenVINOWhisperDevice"
+                                                      SelectedIndex="0"
+                                                      HorizontalAlignment="Stretch">
+                                                <ComboBoxItem Content="CPU"/>
+                                                <ComboBoxItem Content="GPU"/>
+                                                <ComboBoxItem Content="NPU"/>
+                                            </ComboBox>
+                                        </StackPanel>
+
+                                        <!-- Model Path -->
+                                        <StackPanel Grid.Column="1" Spacing="8" Margin="12,0,0,0">
+                                            <TextBlock Text="Model Path" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                            <TextBlock Text="models/whisper_large_v3"
+                                                       FontSize="12"
+                                                       FontFamily="Consolas"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <Button x:Name="BtnLoadOpenVINOWhisper"
+                                                Content="Load OpenVINO Whisper"
+                                                Click="BtnLoadOpenVINOWhisper_Click"
+                                                MinWidth="200"
+                                                IsEnabled="False"
+                                                Style="{ThemeResource AccentButtonStyle}"/>
+                                        <ProgressRing x:Name="ProgressOpenVINOWhisper"
+                                                      Width="24"
+                                                      Height="24"
+                                                      IsActive="False"
+                                                      Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <!-- LLaVA Model Group -->
                             <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                     BorderThickness="1"
@@ -1596,139 +1639,27 @@
                             Style="{ThemeResource AccentButtonStyle}"/>
                 </Grid>
 
-                <!-- Knowledge Base Chat Page (V2 - Simplified) -->
-                <Grid x:Name="RAGChat2Page" Padding="32" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
 
-                    <!-- Title -->
-                    <TextBlock Text="Knowledge Base" FontSize="28" FontWeight="Bold" Margin="0,0,0,24"/>
-
-                    <!-- Status and Controls -->
-                    <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,24">
-                        <TextBlock x:Name="LblRAGChat2Status"
-                                   Text="Upload documents to start"
-                                   FontSize="14"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-
-                        <StackPanel Orientation="Horizontal" Spacing="12">
-                            <Button x:Name="BtnRAGChat2Upload" Content="Upload Document"
-                                    Click="BtnRAGChat2Upload_Click" IsEnabled="False"/>
-                            <Button x:Name="BtnRAGChat2Manage" Content="Manage Documents"
-                                    Click="BtnRAGChat2Manage_Click" IsEnabled="False"/>
-                            <Button x:Name="BtnRAGChat2Clear" Content="Clear Chat"
-                                    Click="BtnRAGChat2Clear_Click" IsEnabled="False"/>
-                        </StackPanel>
-                    </StackPanel>
-
-                    <!-- Chat History -->
-                    <ListView x:Name="ChatHistoryRAGChat2" Grid.Row="2"
-                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                              SelectionMode="None"
-                              Margin="0,0,0,12">
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                <Setter Property="Padding" Value="4"/>
-                                <Setter Property="Margin" Value="0"/>
-                            </Style>
-                        </ListView.ItemContainerStyle>
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="4,2">
-                                    <!-- User message -->
-                                    <Border Visibility="{Binding IsUserVisible}"
-                                            Background="{ThemeResource UserBubbleBackground}"
-                                            CornerRadius="12" Padding="12,8"
-                                            HorizontalAlignment="Right" MaxWidth="600">
-                                        <TextBlock Text="{Binding Content}" TextWrapping="Wrap"
-                                                   Foreground="{ThemeResource UserBubbleText}"/>
-                                    </Border>
-                                    <!-- AI message -->
-                                    <Border Visibility="{Binding IsAssistantVisible}"
-                                            Background="{ThemeResource AIBubbleBackground}"
-                                            CornerRadius="12" Padding="12,8"
-                                            HorizontalAlignment="Left" MaxWidth="600">
-                                        <TextBlock Text="{Binding Content}" TextWrapping="Wrap"
-                                                   Foreground="{ThemeResource AIBubbleText}"/>
-                                    </Border>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-
-                    <!-- Input Area -->
-                    <Grid Grid.Row="3">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="TxtRAGChat2Input" Grid.Column="0"
-                                 PlaceholderText="Ask about your documents..."
-                                 Margin="0,0,12,0"/>
-                        <Button x:Name="BtnRAGChat2Send" Grid.Column="1"
-                                Content="Send" Click="BtnRAGChat2Send_Click"
-                                IsEnabled="False" MinWidth="100"
-                                Style="{ThemeResource AccentButtonStyle}"/>
-                    </Grid>
-                </Grid>
-
-                <!-- 🔍 智能解析页面 -->
+                <!-- 🔍 智能解析页面（已弃用）-->
                 <Grid x:Name="IEPage" Padding="16" Visibility="Collapsed">
-                    <StackPanel VerticalAlignment="Top" Spacing="12">
-                        <TextBlock Text="🔍 智能解析" FontSize="20" FontWeight="Bold"/>
-
-                        <!-- IE 控制按钮 -->
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="BtnIELoad" Content="📎 加载文件"
-                                    Click="BtnIELoad_Click" IsEnabled="False"/>
-                            <ComboBox x:Name="CmbIETemplate"
-                                      SelectionChanged="CmbIETemplate_SelectionChanged"
-                                      IsEnabled="False"
-                                      MinWidth="150">
-                                <!-- 模板选项会在代码中动态填充 -->
-                            </ComboBox>
-                            <TextBlock x:Name="LblIEDoc" Text="未加载文档"
-                                       VerticalAlignment="Center" Foreground="Gray"/>
-                            <Button x:Name="BtnIEExtract" Content="▶️ 开始提取"
-                                    Click="BtnIEExtract_Click" IsEnabled="False"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock x:Name="LblIEStatus" Text=""
-                                       VerticalAlignment="Center" Foreground="Gray"/>
-                            <Button x:Name="BtnIECopyJSON" Content="📋 复制JSON"
-                                    Click="BtnIECopyJSON_Click" IsEnabled="False"/>
-                            <Button x:Name="BtnIEExport" Content="💾 导出"
-                                    Click="BtnIEExport_Click" IsEnabled="False"/>
-                            <Button x:Name="BtnIEReExtract" Content="🔄 重新提取"
-                                    Click="BtnIEReExtract_Click" IsEnabled="False"/>
-                            <Button x:Name="BtnIEContinueDialog" Content="💬 继续提问"
-                                    Click="BtnIEContinueDialog_Click" IsEnabled="False"/>
-                        </StackPanel>
-
-                        <TextBlock Text="从文档中提取结构化信息..." Foreground="Gray"/>
+                    <StackPanel>
+                        <TextBlock x:Name="LblIEDoc" Text=""/>
+                        <TextBlock x:Name="LblIEStatus" Text=""/>
+                        <Button x:Name="BtnIELoad" Click="BtnIELoad_Click" Visibility="Collapsed"/>
+                        <Button x:Name="BtnIEExtract" Click="BtnIEExtract_Click" Visibility="Collapsed"/>
+                        <Button x:Name="BtnIECopyJSON" Click="BtnIECopyJSON_Click" Visibility="Collapsed"/>
+                        <Button x:Name="BtnIEExport" Click="BtnIEExport_Click" Visibility="Collapsed"/>
+                        <Button x:Name="BtnIEReExtract" Click="BtnIEReExtract_Click" Visibility="Collapsed"/>
+                        <Button x:Name="BtnIEContinueDialog" Click="BtnIEContinueDialog_Click" Visibility="Collapsed"/>
+                        <ComboBox x:Name="CmbIETemplate" SelectionChanged="CmbIETemplate_SelectionChanged"/>
                     </StackPanel>
                 </Grid>
 
-                <!-- 📚 知识库页面 -->
+                <!-- 📚 知识库页面（已弃用）-->
                 <Grid x:Name="RAGPage" Padding="16" Visibility="Collapsed">
-                    <StackPanel VerticalAlignment="Top" Spacing="12">
-                        <TextBlock Text="📚 知识库" FontSize="20" FontWeight="Bold"/>
-
-                        <!-- RAG 控制按钮 -->
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="BtnRAGTest" Content="🧪 添加测试文档"
-                                    Click="BtnRAGTest_Click" IsEnabled="False"/>
-                            <Button x:Name="BtnDocumentManage" Content="📚 文档管理"
-                                    Click="BtnDocumentManage_Click" IsEnabled="False"/>
-                        </StackPanel>
-
-                        <TextBlock Text="基于向量检索的知识库问答..." Foreground="Gray"/>
+                    <StackPanel>
+                        <Button x:Name="BtnRAGTest" Click="BtnRAGTest_Click" Visibility="Collapsed"/>
+                        <Button x:Name="BtnDocumentManage" Click="BtnDocumentManage_Click" Visibility="Collapsed"/>
                     </StackPanel>
                 </Grid>
 
@@ -2108,6 +2039,11 @@
                         <TextBlock Text="📚 帮助中心" FontSize="32" FontWeight="Bold" HorizontalAlignment="Center"/>
                         <TextBlock Text="帮助内容待添加..." FontSize="16" Foreground="Gray" HorizontalAlignment="Center"/>
                     </StackPanel>
+                </Grid>
+
+                <!-- OpenVINO Whisper Page -->
+                <Grid x:Name="OpenVINOWhisperPageContainer" Visibility="Collapsed">
+                    <Frame x:Name="OpenVINOWhisperFrame"/>
                 </Grid>
 
                 <!-- Settings Page (Windows 11 Settings Style) -->

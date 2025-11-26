@@ -45,9 +45,6 @@ public sealed partial class MainWindow : Window
         // 初始化 IE Chat 页面
         InitializeIEChatPage();
 
-        // 初始化 RAG Chat 2 页面
-        InitializeRAGChat2Page();
-
         // 创建调试日志文件
         try
         {
@@ -117,7 +114,6 @@ public sealed partial class MainWindow : Window
         ("智能对话", "chat", new[] { "智能对话", "对话", "chat", "ai", "聊天", "问答", "普通" }),
         ("文档助手", "quickqa", new[] { "文档助手", "快速问答", "quickqa", "文档", "问答", "上传" }),
         ("信息提取", "ie_chat", new[] { "信息提取", "ie_chat", "extraction", "提取", "解析", "模板", "json", "结构化" }),
-        ("Knowledge Base", "rag_chat", new[] { "knowledge base", "rag_chat", "知识库聊天", "检索", "rag", "向量", "文档管理", "知识检索" }),
         ("智能解析", "ie", new[] { "智能解析", "ie", "提取", "解析", "模板", "信息提取" }),
         ("知识库", "rag", new[] { "知识库", "rag", "检索", "文档管理", "向量" }),
         ("视觉理解", "llava", new[] { "视觉理解", "llava", "图片", "视觉", "图像", "看图" }),
@@ -174,9 +170,6 @@ public sealed partial class MainWindow : Window
         ChatPage.Visibility = Visibility.Collapsed;
         QuickQAPage.Visibility = Visibility.Collapsed;
         IEChatPage.Visibility = Visibility.Collapsed;
-        RAGChat2Page.Visibility = Visibility.Collapsed;
-        IEPage.Visibility = Visibility.Collapsed;
-        RAGPage.Visibility = Visibility.Collapsed;
         LLaVAPage.Visibility = Visibility.Collapsed;
         HelpPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
@@ -202,18 +195,6 @@ public sealed partial class MainWindow : Window
             case "ie_chat":
                 IEChatPage.Visibility = Visibility.Visible;
                 SelectNavigationItem("ie_chat");
-                break;
-            case "rag_chat2":
-                RAGChat2Page.Visibility = Visibility.Visible;
-                SelectNavigationItem("rag_chat2");
-                break;
-            case "ie":
-                IEPage.Visibility = Visibility.Visible;
-                SelectNavigationItem("ie");
-                break;
-            case "rag":
-                RAGPage.Visibility = Visibility.Visible;
-                SelectNavigationItem("rag");
                 break;
             case "llava":
                 LLaVAPage.Visibility = Visibility.Visible;
@@ -280,12 +261,10 @@ public sealed partial class MainWindow : Window
         // 隐藏所有页面
         HomePage.Visibility = Visibility.Collapsed;
         StartupPage.Visibility = Visibility.Collapsed;
+        OpenVINOWhisperPageContainer.Visibility = Visibility.Collapsed;
         ChatPage.Visibility = Visibility.Collapsed;
         QuickQAPage.Visibility = Visibility.Collapsed;
         IEChatPage.Visibility = Visibility.Collapsed;
-        RAGChat2Page.Visibility = Visibility.Collapsed;
-        IEPage.Visibility = Visibility.Collapsed;
-        RAGPage.Visibility = Visibility.Collapsed;
         LLaVAPage.Visibility = Visibility.Collapsed;
         SDPage.Visibility = Visibility.Collapsed;
         HelpPage.Visibility = Visibility.Collapsed;
@@ -307,6 +286,13 @@ public sealed partial class MainWindow : Window
                     break;
                 case "startup":
                     StartupPage.Visibility = Visibility.Visible;
+                    break;
+                case "openvino_whisper":
+                    OpenVINOWhisperPageContainer.Visibility = Visibility.Visible;
+                    if (OpenVINOWhisperFrame.Content == null)
+                    {
+                        OpenVINOWhisperFrame.Navigate(typeof(Pages.OpenVINOWhisperPage));
+                    }
                     break;
                 case "chat":
                     ChatPage.Visibility = Visibility.Visible;
@@ -395,17 +381,6 @@ public sealed partial class MainWindow : Window
                         _ragChatStreamingMessage.IsStreaming = false;
                         _ragChatStreamingMessage = null;
                     }
-                    break;
-                case "rag_chat2":
-                    RAGChat2Page.Visibility = Visibility.Visible;
-                    _currentDialogMode = "rag_chat2";
-                    _isRAGMode = false;
-                    break;
-                case "ie":
-                    IEPage.Visibility = Visibility.Visible;
-                    break;
-                case "rag":
-                    RAGPage.Visibility = Visibility.Visible;
                     break;
                 case "llava":
                     LLaVAPage.Visibility = Visibility.Visible;

@@ -16,6 +16,7 @@
 #include "paths.h"
 #include "sqlite3.h"
 #include "transcriber.hpp"
+#include "whisper_openvino_transcriber.hpp"  // ← 新增：OpenVINO Whisper
 #include "granite/granite_genai.hpp"  // ← OpenVINO 头文件
 #include "embedding/embedding_genai.hpp"  // ← 新增：Embedding GenAI
 #include "llava/llava_genai.h"  // ← 新增：LLaVA GenAI
@@ -890,10 +891,93 @@ static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
     }
     
     // 发送完成信号
-    std::string complete = "{\"type\":\"transcribe_complete\",\"segments\":" + 
+    std::string complete = "{\"type\":\"transcribe_complete\",\"segments\":" +
         std::to_string(segments.size()) + "}\n";
     DWORD written;
     WriteFile(hPipe, complete.data(), static_cast<DWORD>(complete.size()), &written, nullptr);
+}
+
+// 新增：处理 OpenVINO Whisper 转录命令
+static void handleTranscribeOpenVINOCommand(HANDLE hPipe, const std::string& command) {
+    std::wcout << L"[Worker] 处理 OpenVINO Whisper 转录命令\n";
+
+    // 检查模型是否已加载
+    if (!meetingai::transcribe::IsWhisperOpenVINOModelLoaded()) {
+        std::string error = "{\"type\":\"error\",\"message\":\"OpenVINO Whisper 模型未加载。请先在 Startup 页面加载模型。\"}\n";
+        DWORD written;
+        WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
+        std::wcerr << L"[Worker] 错误：模型未加载\n";
+        return;
+    }
+
+    // 提取文件路径
+    std::string audioPath = meetingai::proto::extractPath(command);
+    if (audioPath.empty()) {
+        std::string error = "{\"type\":\"error\",\"message\":\"无法解析音频文件路径\"}\n";
+        DWORD written;
+        WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
+        return;
+    }
+
+    std::wcout << L"[Worker] 音频文件路径: " << audioPath.c_str() << L"\n";
+
+    // 提取language参数
+    std::string language = meetingai::proto::extractLanguage(command);
+    std::cout << "[Worker] 语言设置: " << language << std::endl;
+
+    // OpenVINO 模型路径（从已加载的模型获取）
+    std::string modelPath = "models/whisper_large_v3";
+    std::cout << "[Worker] 使用已加载的模型\n";
+
+    // 定义进度回调函数
+    auto progressCallback = [hPipe](int progress) {
+        std::string progressMsg = "{\"type\":\"progress\",\"value\":" +
+            std::to_string(progress) + "}\n";
+        DWORD written;
+        WriteFile(hPipe, progressMsg.data(), static_cast<DWORD>(progressMsg.size()), &written, nullptr);
+    };
+
+    // 执行转录
+    std::vector<meetingai::transcribe::WhisperOpenVINOSegment> segments;
+    bool success = meetingai::transcribe::TranscribeAudioFileOpenVINO(
+        modelPath,
+        audioPath,
+        segments,
+        language,
+        progressCallback
+    );
+
+    if (!success) {
+        std::string error = "{\"type\":\"error\",\"message\":\"转录失败\"}\n";
+        DWORD written;
+        WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
+        return;
+    }
+
+    // 发送每个转录片段
+    for (const auto& segment : segments) {
+        // 插入数据库
+        InsertTranscript("Unknown", segment.text, segment.start_ts);
+
+        // 发送给 Host（使用与whisper.cpp相同的格式保持兼容）
+        std::string response = std::string("{\"type\":\"asr_segment\",\"text\":\"") +
+            meetingai::proto::jsonEscape(segment.text) +
+            "\",\"t0_ms\":" + std::to_string((int)(segment.start_ts * 1000)) +
+            ",\"t1_ms\":" + std::to_string((int)(segment.end_ts * 1000)) + "}\n";
+
+        DWORD written;
+        WriteFile(hPipe, response.data(), static_cast<DWORD>(response.size()), &written, nullptr);
+
+        std::wcout << L"[Worker] 发送片段: " << segment.text.c_str() << L"\n";
+    }
+
+    // 发送完成信号
+    std::string complete = "{\"type\":\"transcribe_complete\",\"segments\":" +
+        std::to_string(segments.size()) + "}\n";
+    DWORD written;
+    WriteFile(hPipe, complete.data(), static_cast<DWORD>(complete.size()), &written, nullptr);
+
+    std::wcout << L"[Worker] OpenVINO Whisper 转录完成\n";
 }
 
 // 处理控制台关闭/注销/关机等信号，优雅退出
@@ -1234,6 +1318,78 @@ int wmain() {
                     continue;
                 }
 
+                // ---- 新增：OpenVINO Whisper 加载命令 ----
+                if (buffer.find("\"load_whisper_openvino\"") != std::string::npos) {
+                    std::wcout << L"[Worker] 收到 load_whisper_openvino 命令\n";
+                    DWORD written;
+
+                    // 解析模型路径
+                    std::string modelPath = "models/whisper_large_v3";  // 默认路径
+                    auto pathPos = buffer.find("\"model_path\":\"");
+                    if (pathPos != std::string::npos) {
+                        auto start = pathPos + 14;
+                        auto end = buffer.find("\"", start);
+                        if (end != std::string::npos) {
+                            modelPath = buffer.substr(start, end - start);
+                        }
+                    }
+
+                    // 解析设备选择
+                    std::string device = "CPU";  // 默认使用 CPU
+                    auto devicePos = buffer.find("\"device\":\"");
+                    if (devicePos != std::string::npos) {
+                        auto start = devicePos + 10;
+                        auto end = buffer.find("\"", start);
+                        if (end != std::string::npos) {
+                            device = buffer.substr(start, end - start);
+                        }
+                    }
+
+                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] OpenVINO Whisper 模型路径: " + modelPath + "\"}\n";
+                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+                    std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker] OpenVINO Whisper 设备: " + device + "\"}\n";
+                    WriteFile(hPipe, debug2.data(), (DWORD)debug2.size(), &written, nullptr);
+
+                    std::string debug3 = "{\"type\":\"info\",\"message\":\"[Worker] 开始加载 OpenVINO Whisper 模型...\"}\n";
+                    WriteFile(hPipe, debug3.data(), (DWORD)debug3.size(), &written, nullptr);
+
+                    // 加载 OpenVINO Whisper 模型（支持热拔插）
+                    bool success = meetingai::transcribe::LoadWhisperOpenVINOModel(modelPath, device);
+                    if (success) {
+                        std::string ready = "{\"type\":\"whisper_openvino_ready\",\"model_path\":\"" + modelPath + "\",\"device\":\"" + device + "\"}\n";
+                        WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
+                        std::wcout << L"[Worker] OpenVINO Whisper 模型加载成功\n";
+                    }
+                    else {
+                        std::string err = "{\"type\":\"whisper_openvino_error\",\"message\":\"模型加载失败\"}\n";
+                        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                        std::wcerr << L"[Worker] OpenVINO Whisper 加载失败\n";
+                    }
+
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：OpenVINO Whisper 卸载命令 ----
+                if (buffer.find("\"unload_whisper_openvino\"") != std::string::npos) {
+                    std::wcout << L"[Worker] 收到 unload_whisper_openvino 命令\n";
+                    DWORD written;
+
+                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] 正在卸载 OpenVINO Whisper 模型...\"}\n";
+                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+
+                    // 释放 OpenVINO Whisper 资源（支持热拔插）
+                    meetingai::transcribe::UnloadWhisperOpenVINOModel();
+
+                    std::string unloaded = "{\"type\":\"whisper_openvino_unloaded\"}\n";
+                    WriteFile(hPipe, unloaded.data(), (DWORD)unloaded.size(), &written, nullptr);
+
+                    std::wcout << L"[Worker] OpenVINO Whisper 模型已卸载\n";
+                    buffer.clear();
+                    continue;
+                }
+
                 // ---- 新增：LLaVA 卸载命令 ----
                 if (buffer.find("\"unload_llava\"") != std::string::npos) {
                     std::wcout << L"[Worker] 收到 unload_llava 命令\n";
@@ -1346,6 +1502,13 @@ int wmain() {
                 // ---- 新增：转录命令处理 ----
                 if (meetingai::proto::isTranscribe(buffer)) {
                     handleTranscribeCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：OpenVINO Whisper 转录命令处理 ----
+                if (meetingai::proto::isTranscribeOpenVINO(buffer)) {
+                    handleTranscribeOpenVINOCommand(hPipe, buffer);
                     buffer.clear();
                     continue;
                 }
