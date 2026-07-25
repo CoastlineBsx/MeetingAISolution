@@ -87,17 +87,20 @@ public sealed partial class StreamingMeetingPage : Page
     // 当前正在累积的段落。多个 utterance 会合并进同一条字幕，直到封口。
     private StreamingCaption? _currentParagraph;
     private string _confirmedText = "";        // 该段落里已定稿的部分
+    private bool _hasActivePartial;             // 当前条目是否正在显示尚未定稿的 partial
     private DateTime _lastFinalTime = DateTime.MinValue;
     private DateTime _lastScrollTime = DateTime.MinValue;
 
     // ========== 音频捕获 ==========
     // 采集回调只负责把数据塞进缓冲区，重采样和发送都在单个泵任务里做：
     // 重采样器全程复用（滤波器状态连续），且只有一个任务写管道（天然串行）。
-    private WasapiCapture? _microphone;
+    private IWaveIn? _audioCapture;
     private BufferedWaveProvider? _captureBuffer;
     private ISampleProvider? _monoResampled;
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
+    private bool _isLoopbackSource;
+    private string _activeAudioSourceName = "Microphone";
 
     private MainWindow? _mainWindow;
 
@@ -149,6 +152,7 @@ public sealed partial class StreamingMeetingPage : Page
             }
 
             BtnStartMeeting.IsEnabled = false;
+            CmbAudioSource.IsEnabled = false;
             SetStatus("Connecting…");
 
             await _mainWindow.EnsurePipeAsync();
@@ -170,6 +174,7 @@ public sealed partial class StreamingMeetingPage : Page
             {
                 _mainWindow.StreamingMessageHandler = null;
                 BtnStartMeeting.IsEnabled = true;
+                CmbAudioSource.IsEnabled = true;
                 SetStatus("Failed");
                 await ShowErrorAsync("等待 Worker 启动流式会话超时（3 分钟）。请检查日志窗口里 [Worker] 开头的输出。");
                 return;
@@ -179,6 +184,7 @@ public sealed partial class StreamingMeetingPage : Page
                 // 具体错误已由 streaming_error 分支写进状态栏
                 _mainWindow.StreamingMessageHandler = null;
                 BtnStartMeeting.IsEnabled = true;
+                CmbAudioSource.IsEnabled = true;
                 return;
             }
 
@@ -186,8 +192,9 @@ public sealed partial class StreamingMeetingPage : Page
             {
                 _mainWindow.StreamingMessageHandler = null;
                 BtnStartMeeting.IsEnabled = true;
+                CmbAudioSource.IsEnabled = true;
                 SetStatus("Failed");
-                await ShowErrorAsync("麦克风初始化失败，请检查音频设备。");
+                await ShowErrorAsync("音频源初始化失败，请检查所选麦克风或系统播放设备。");
                 return;
             }
 
@@ -198,9 +205,10 @@ public sealed partial class StreamingMeetingPage : Page
             // 上一场会议可能留着没封口的段落，新会议不该续写它
             _currentParagraph = null;
             _confirmedText = "";
+            _hasActivePartial = false;
             _lastFinalTime = DateTime.MinValue;
 
-            _microphone!.StartRecording();
+            _audioCapture!.StartRecording();
 
             _pumpCts = new CancellationTokenSource();
             _pumpTask = Task.Run(() => AudioPumpAsync(_pumpCts.Token));
@@ -210,14 +218,16 @@ public sealed partial class StreamingMeetingPage : Page
             BtnStopMeeting.IsEnabled = true;
             BtnExport.IsEnabled = false;
             BtnClear.IsEnabled = false;
-            SetStatus("Listening");
+            SetStatus($"Listening · {_activeAudioSourceName}");
 
             Debug.WriteLine("[StreamingMeeting] Meeting started");
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[StreamingMeeting] Start failed: {ex.Message}");
+            CleanupResources();
             BtnStartMeeting.IsEnabled = true;
+            CmbAudioSource.IsEnabled = true;
             SetStatus("Failed");
             await ShowErrorAsync($"启动失败：{ex.Message}");
         }
@@ -234,7 +244,7 @@ public sealed partial class StreamingMeetingPage : Page
             SetStatus("Finalizing…");
 
             // 先停采集和发送泵，再发 stop，避免 stop 之后还有音频包排在后面
-            try { _microphone?.StopRecording(); } catch { }
+            try { _audioCapture?.StopRecording(); } catch { }
 
             _pumpCts?.Cancel();
             if (_pumpTask != null)
@@ -263,6 +273,7 @@ public sealed partial class StreamingMeetingPage : Page
             CleanupResources();
 
             BtnStartMeeting.IsEnabled = true;
+            CmbAudioSource.IsEnabled = true;
             BtnExport.IsEnabled = _captions.Count > 0;
             BtnClear.IsEnabled = _captions.Count > 0;
             SetStatus("Idle");
@@ -272,7 +283,9 @@ public sealed partial class StreamingMeetingPage : Page
         catch (Exception ex)
         {
             Debug.WriteLine($"[StreamingMeeting] Stop failed: {ex.Message}");
+            CleanupResources();
             BtnStartMeeting.IsEnabled = true;
+            CmbAudioSource.IsEnabled = true;
             SetStatus("Idle");
             await ShowErrorAsync($"停止失败：{ex.Message}");
         }
@@ -283,21 +296,35 @@ public sealed partial class StreamingMeetingPage : Page
     {
         try
         {
-            var enumerator = new MMDeviceEnumerator();
-            var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+            _isLoopbackSource = CmbAudioSource.SelectedIndex == 1;
 
-            _microphone = new WasapiCapture(device);
+            if (_isLoopbackSource)
+            {
+                // 与 TMSpeech 相同，捕获默认播放设备的系统内部声音。
+                // 保留设备原始格式，后面统一降混并重采样，兼容性比强制设备
+                // 直接输出 16kHz 单声道更好。
+                _audioCapture = new WasapiLoopbackCapture();
+                _activeAudioSourceName = "System audio";
+            }
+            else
+            {
+                var enumerator = new MMDeviceEnumerator();
+                var device = enumerator.GetDefaultAudioEndpoint(
+                    DataFlow.Capture, Role.Communications);
+                _audioCapture = new WasapiCapture(device);
+                _activeAudioSourceName = $"Microphone ({device.FriendlyName})";
+            }
 
             // 采集线程只做入队，任何耗时操作都会拖累 WASAPI
-            _captureBuffer = new BufferedWaveProvider(_microphone.WaveFormat)
+            _captureBuffer = new BufferedWaveProvider(_audioCapture.WaveFormat)
             {
                 BufferDuration = TimeSpan.FromSeconds(5),
                 DiscardOnBufferOverflow = true,
                 ReadFully = false   // 缓冲区空时返回 0，让泵按真实速率走，不然会疯狂发静音
             };
 
-            _microphone.DataAvailable += OnAudioDataAvailable;
-            _microphone.RecordingStopped += (s, e) => Debug.WriteLine("[StreamingMeeting] Recording stopped");
+            _audioCapture.DataAvailable += OnAudioDataAvailable;
+            _audioCapture.RecordingStopped += OnAudioRecordingStopped;
 
             // 先降混再重采样（省一半计算量），整条链路全程复用
             ISampleProvider chain = _captureBuffer.ToSampleProvider();
@@ -317,8 +344,8 @@ public sealed partial class StreamingMeetingPage : Page
 
             _monoResampled = chain;
 
-            Debug.WriteLine($"[StreamingMeeting] Capture: {device.FriendlyName}, " +
-                            $"{_microphone.WaveFormat} -> {TargetSampleRate}Hz mono");
+            Debug.WriteLine($"[StreamingMeeting] Capture: {_activeAudioSourceName}, " +
+                            $"{_audioCapture.WaveFormat} -> {TargetSampleRate}Hz mono");
             return true;
         }
         catch (Exception ex)
@@ -343,6 +370,19 @@ public sealed partial class StreamingMeetingPage : Page
         }
     }
 
+    private void OnAudioRecordingStopped(object? sender, StoppedEventArgs e)
+    {
+        if (e.Exception != null)
+        {
+            Debug.WriteLine($"[StreamingMeeting] Recording stopped with error: {e.Exception.Message}");
+            DispatcherQueue.TryEnqueue(() => SetStatus($"Audio error: {e.Exception.Message}"));
+        }
+        else
+        {
+            Debug.WriteLine("[StreamingMeeting] Recording stopped");
+        }
+    }
+
     // ========== 音频发送泵（单任务，保证管道写入串行且有序）==========
     private async Task AudioPumpAsync(CancellationToken ct)
     {
@@ -354,11 +394,21 @@ public sealed partial class StreamingMeetingPage : Page
             while (!ct.IsCancellationRequested)
             {
                 int got = 0;
+                var chunkTimer = Stopwatch.StartNew();
                 while (got < ChunkSamples && !ct.IsCancellationRequested)
                 {
                     int n = _monoResampled?.Read(samples, got, ChunkSamples - got) ?? 0;
                     if (n <= 0)
                     {
+                        // WASAPI Loopback 在系统完全无声时可能不触发 DataAvailable。
+                        // 按实时节拍补静音，让 Sherpa 能收到尾部静音并触发 endpoint。
+                        if (_isLoopbackSource && chunkTimer.ElapsedMilliseconds >= 100)
+                        {
+                            Array.Clear(samples, got, ChunkSamples - got);
+                            got = ChunkSamples;
+                            break;
+                        }
+
                         await Task.Delay(10, ct).ConfigureAwait(false);
                         continue;
                     }
@@ -506,8 +556,23 @@ public sealed partial class StreamingMeetingPage : Page
 
     private void UpdatePartialTranscript(string text, int speakerId)
     {
+        var now = DateTime.Now;
+
+        // 如果当前段已经包含上一句的定稿文本，并且中间停顿较长，
+        // 要在写入“新一句的 partial”之前先封口。
+        //
+        // 不能等 final 到来时再封口：那时当前条目已经显示了新一句的
+        // partial，先 CloseParagraph() 会把 partial 留成一条记录，随后
+        // final 又新建一条，从而出现“无标点 partial + 有标点 final”
+        // 两条内容近似重复的字幕。
+        if (ShouldStartNewParagraph(now))
+        {
+            CloseParagraph();
+        }
+
         var para = EnsureParagraph(speakerId);
         para.Text = JoinText(_confirmedText, text);
+        _hasActivePartial = true;
 
         ScrollToLatest(force: false);  // partial 每秒约 10 条，节流
     }
@@ -516,10 +581,12 @@ public sealed partial class StreamingMeetingPage : Page
     {
         var now = DateTime.Now;
 
-        // 距上一句间隔过大，说明上一段其实已经说完了，先封口再开新段
-        if (_currentParagraph != null
-            && _lastFinalTime != DateTime.MinValue
-            && (now - _lastFinalTime).TotalSeconds > ParagraphGapSeconds)
+        // 正常情况下，当前 final 应当覆盖/提交同一句已经显示的 partial，
+        // 不能把 partial 封口后再新建一条 final。
+        //
+        // 只有当前段确实含有“上一句的已定稿文本”，且这次 final 前没有
+        // 收到 partial 帮我们提前分段时，才在这里兜底封口。
+        if (!_hasActivePartial && ShouldStartNewParagraph(now))
         {
             CloseParagraph();
         }
@@ -529,6 +596,7 @@ public sealed partial class StreamingMeetingPage : Page
         _confirmedText = JoinText(_confirmedText, text);
         para.Text = _confirmedText;
         para.TextOpacity = 1.0;
+        _hasActivePartial = false;
         _lastFinalTime = now;
 
         _segmentCount++;
@@ -546,6 +614,14 @@ public sealed partial class StreamingMeetingPage : Page
         Debug.WriteLine($"[StreamingMeeting] Final: {text}");
     }
 
+    private bool ShouldStartNewParagraph(DateTime now)
+    {
+        return _currentParagraph != null
+            && !string.IsNullOrWhiteSpace(_confirmedText)
+            && _lastFinalTime != DateTime.MinValue
+            && (now - _lastFinalTime).TotalSeconds > ParagraphGapSeconds;
+    }
+
     private void CloseParagraph()
     {
         if (_currentParagraph != null)
@@ -554,6 +630,7 @@ public sealed partial class StreamingMeetingPage : Page
             _currentParagraph = null;
         }
         _confirmedText = "";
+        _hasActivePartial = false;
     }
 
     /// <summary>
@@ -680,6 +757,7 @@ public sealed partial class StreamingMeetingPage : Page
 
         _currentParagraph = null;
         _confirmedText = "";
+        _hasActivePartial = false;
         _lastFinalTime = DateTime.MinValue;
 
         TxtDuration.Text = "00:00:00";
@@ -699,11 +777,12 @@ public sealed partial class StreamingMeetingPage : Page
             _pumpCts?.Dispose();
             _pumpCts = null;
 
-            if (_microphone != null)
+            if (_audioCapture != null)
             {
-                _microphone.DataAvailable -= OnAudioDataAvailable;
-                _microphone.Dispose();
-                _microphone = null;
+                _audioCapture.DataAvailable -= OnAudioDataAvailable;
+                _audioCapture.RecordingStopped -= OnAudioRecordingStopped;
+                _audioCapture.Dispose();
+                _audioCapture = null;
             }
 
             _monoResampled = null;

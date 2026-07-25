@@ -116,7 +116,10 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
     // 端点检测配置
     config.rule1_min_trailing_silence = 2.4f;
     config.rule2_min_trailing_silence = 1.2f;
-    config.rule3_min_utterance_length = 20.0f;
+    // 规则 3 只是保护超长流，不能拿它当字幕切句器。原来的 20 秒会在
+    // 连续讲话时无条件从句子中间切断；提高到 60 秒后，最终显示层再用
+    // 标点模型的一段前瞻做语义切句。
+    config.rule3_min_utterance_length = 60.0f;
 
     // 创建识别器
     m_impl->recognizer = SherpaOnnxCreateOnlineRecognizer(&config);
@@ -187,15 +190,16 @@ bool SherpaStreamingTranscriber::AcceptWaveform(const float* samples,
     const SherpaOnnxOnlineRecognizerResult* result =
         SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, m_impl->stream);
 
-    if (result != nullptr && result->text != nullptr && strlen(result->text) > 0) {
-        SherpaStreamResult partialResult;
-        partialResult.text = result->text;
-        partialResult.is_final = false;
-        partialResult.speaker_id = -1;
-        partialResult.confidence = 0.0f; // Sherpa-ONNX 不提供置信度
+    if (result != nullptr) {
+        if (result->text != nullptr && strlen(result->text) > 0) {
+            SherpaStreamResult partialResult;
+            partialResult.text = result->text;
+            partialResult.is_final = false;
+            partialResult.speaker_id = -1;
+            partialResult.confidence = 0.0f; // Sherpa-ONNX 不提供置信度
 
-        results.push_back(partialResult);
-
+            results.push_back(partialResult);
+        }
         SherpaOnnxDestroyOnlineRecognizerResult(result);
     }
 
@@ -205,17 +209,22 @@ bool SherpaStreamingTranscriber::AcceptWaveform(const float* samples,
         const SherpaOnnxOnlineRecognizerResult* finalResult =
             SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, m_impl->stream);
 
-        if (finalResult != nullptr && finalResult->text != nullptr && strlen(finalResult->text) > 0) {
-            SherpaStreamResult finalStreamResult;
-            finalStreamResult.text = finalResult->text;
-            finalStreamResult.is_final = true;
-            finalStreamResult.speaker_id = -1;
-            finalStreamResult.confidence = 1.0f;
+        SherpaStreamResult endpointResult;
+        endpointResult.is_final = true;
+        endpointResult.endpoint_detected = true;
+        endpointResult.speaker_id = -1;
+        endpointResult.confidence = 1.0f;
 
-            results.push_back(finalStreamResult);
-
+        if (finalResult != nullptr) {
+            if (finalResult->text != nullptr && strlen(finalResult->text) > 0) {
+                endpointResult.text = finalResult->text;
+            }
             SherpaOnnxDestroyOnlineRecognizerResult(finalResult);
         }
+
+        // 即使 endpoint 没有文字也要上报。它表示 reset 后又经历了 rule1
+        // 的长静音，Worker 用这个信号把仍在等待语义前瞻的文本强制收尾。
+        results.push_back(std::move(endpointResult));
 
         // 重置流以准备下一句话
         SherpaOnnxOnlineStreamReset(m_impl->recognizer, m_impl->stream);
@@ -252,6 +261,7 @@ bool SherpaStreamingTranscriber::EndSession(std::vector<SherpaStreamResult>& fin
             SherpaStreamResult finalResult;
             finalResult.text = result->text;
             finalResult.is_final = true;
+            finalResult.endpoint_detected = true;
             finalResult.speaker_id = -1;
             finalResult.confidence = 1.0f;
 

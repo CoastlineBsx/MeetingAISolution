@@ -213,6 +213,7 @@ xcopy /Y /D "$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-s
     <ClCompile Include="src\transcribe\whisper_openvino_transcriber.cpp" />
     <ClCompile Include="src\transcribe\sherpa_streaming_transcriber.cpp" />
     <ClCompile Include="src\transcribe\punctuator.cpp" />
+    <ClCompile Include="src\transcribe\transcript_text_normalizer.cpp" />
     <ClCompile Include="src\util\base64.cpp" />
     <ClCompile Include="src\util\logging.cpp" />
     <ClCompile Include="src\util\paths.cpp">
@@ -283,6 +284,7 @@ xcopy /Y /D "$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-s
     <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
     <ClInclude Include="include\meetingai\transcribe\whisper_openvino_transcriber.hpp" />
     <ClInclude Include="include\meetingai\transcribe\punctuator.hpp" />
+    <ClInclude Include="include\meetingai\transcribe\transcript_text_normalizer.hpp" />
     <ClInclude Include="include\meetingai\util\logging.h" />
     <ClInclude Include="include\meetingai\util\paths.h" />
     <ClInclude Include="src\llava\image_processor.h" />

@@ -24,6 +24,7 @@
 #include "sd/sd_engine.hpp"  // ← 新增：Stable Diffusion
 #include "sherpa_streaming_transcriber.h"  // ← 新增：Sherpa 流式转录
 #include "punctuator.hpp"                  // ← 新增：中英标点恢复
+#include "transcript_text_normalizer.hpp"
 #include "base64.h"  // ← 新增：Base64 解码
 #include "command_parser.h"
 #include "logging.h"
@@ -75,6 +76,9 @@ static std::unique_ptr<meetingai::transcribe::SherpaStreamingTranscriber> g_sher
 // 标点模型：可选，缺失时转录照常工作，只是不加标点（受 g_sherpa_mutex 保护）
 static std::unique_ptr<meetingai::transcribe::Punctuator> g_punct;
 static bool g_punct_attempted = false;
+// Sherpa endpoint 只是声学分段，不等于一句话。保留尚未获得足够语义前瞻的
+// 原始文本，直到标点模型确认句界或检测到长静音/停止。
+static std::string g_streaming_pending_raw;
 
 // ========== 设备配置 ==========
 static std::string g_granite_device = "GPU";   // Granite LLM 使用的设备
@@ -995,6 +999,32 @@ static void handleTranscribeOpenVINOCommand(HANDLE hPipe, const std::string& com
 
 // 新增：处理 Sherpa-ONNX 流式转录命令
 static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& command) {
+    auto sendTranscript = [hPipe](
+        const char* type,
+        const std::string& text) {
+        if (text.empty()) {
+            return;
+        }
+        std::string response = "{\"type\":\"" + std::string(type) +
+            "\",\"text\":\"" + meetingai::proto::jsonEscape(text) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
+    };
+
+    auto flushPendingTranscript = [&sendTranscript]() {
+        if (g_streaming_pending_raw.empty()) {
+            return;
+        }
+
+        std::string text = g_punct
+            ? g_punct->AddPunctuation(g_streaming_pending_raw)
+            : meetingai::transcribe::NormalizeBilingualTranscript(
+                g_streaming_pending_raw);
+        sendTranscript("streaming_final", text);
+        std::cout << "[Worker] semantic final: " << text << std::endl;
+        g_streaming_pending_raw.clear();
+    };
+
     try {
         // ==================== start_streaming ====================
         if (meetingai::proto::isStartStreaming(command)) {
@@ -1097,6 +1127,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
                 return;
             }
+            g_streaming_pending_raw.clear();
 
             // 发送成功响应
             const char* ok = "{\"type\":\"streaming_started\"}\n";
@@ -1151,24 +1182,63 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 return;
             }
 
-            // 发送转录结果（如果有）
+            // Partial 始终实时显示，但只做轻量规则大小写，不在 100ms
+            // 热路径里调用标点模型。Sherpa 的 final 先视为“声学稳定片段”，
+            // 缓存并等待下一片段提供语义前瞻后才提交到 UI。
             for (const auto& result : results) {
-                std::string type = result.is_final ? "streaming_final" : "streaming_partial";
+                if (!result.is_final) {
+                    const std::string combined =
+                        meetingai::transcribe::JoinTranscriptFragments(
+                            g_streaming_pending_raw,
+                            result.text);
+                    sendTranscript(
+                        "streaming_partial",
+                        meetingai::transcribe::NormalizeBilingualTranscript(combined));
+                    continue;
+                }
 
-                // 只给定稿结果加标点：partial 每 100ms 变一次，加标点既费 CPU
-                // 又会让已显示的文字反复跳动
-                std::string text = (result.is_final && g_punct)
-                    ? g_punct->AddPunctuation(result.text)
-                    : result.text;
+                if (!result.text.empty()) {
+                    g_streaming_pending_raw =
+                        meetingai::transcribe::JoinTranscriptFragments(
+                            g_streaming_pending_raw,
+                            result.text);
 
-                std::string response = "{\"type\":\"" + type + "\",\"text\":\"" +
-                    meetingai::proto::jsonEscape(text) + "\"}\n";
+                    // 没有标点模型时无法可靠判断语义边界，保持旧的声学
+                    // endpoint 行为，但仍进行大小写归一化。
+                    if (!g_punct) {
+                        flushPendingTranscript();
+                        continue;
+                    }
 
-                DWORD written;
-                WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
+                    const std::string punctuated =
+                        g_punct->AddPunctuation(g_streaming_pending_raw);
+                    meetingai::transcribe::StableTranscriptPrefix stable;
+                    if (meetingai::transcribe::TryExtractStableTranscriptPrefix(
+                        g_streaming_pending_raw,
+                        punctuated,
+                        stable)) {
+                        sendTranscript("streaming_final", stable.finalizedText);
+                        std::cout << "[Worker] semantic final: "
+                                  << stable.finalizedText << std::endl;
+                        g_streaming_pending_raw =
+                            std::move(stable.remainingRawText);
 
-                if (result.is_final) {
-                    std::cout << "[Worker] final: " << text << std::endl;
+                        // final 会替换当前 partial；若还有尚未定稿的后半句，
+                        // 立即作为下一条 partial 显示，画面不会丢字。
+                        if (!g_streaming_pending_raw.empty()) {
+                            sendTranscript(
+                                "streaming_partial",
+                                meetingai::transcribe::NormalizeBilingualTranscript(
+                                    g_streaming_pending_raw));
+                        }
+                    }
+                    continue;
+                }
+
+                // reset 后再次触发空 endpoint，表示已经持续静音约
+                // rule1 的时长；此时没有更多前瞻，强制提交剩余文本。
+                if (result.endpoint_detected) {
+                    flushPendingTranscript();
                 }
             }
         }
@@ -1194,15 +1264,16 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 return;
             }
 
-            // 发送最终结果（如果有）
+            // 把停止前仍在当前 Sherpa stream 中的文字并入语义缓冲。
             for (const auto& result : finalResults) {
-                std::string text = g_punct ? g_punct->AddPunctuation(result.text) : result.text;
-                std::string response = "{\"type\":\"streaming_final\",\"text\":\"" +
-                    meetingai::proto::jsonEscape(text) + "\"}\n";
-                DWORD written;
-                WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
-                std::cout << "[Worker] final: " << text << std::endl;
+                if (!result.text.empty()) {
+                    g_streaming_pending_raw =
+                        meetingai::transcribe::JoinTranscriptFragments(
+                            g_streaming_pending_raw,
+                            result.text);
+                }
             }
+            flushPendingTranscript();
 
             // 发送完成信号
             const char* complete = "{\"type\":\"streaming_stopped\"}\n";

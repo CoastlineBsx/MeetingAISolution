@@ -31,6 +31,7 @@ add_executable(MeetingAIWorker
     
     # Speech transcription module
     src/transcribe/whisper_transcriber.cpp
+    src/transcribe/transcript_text_normalizer.cpp
     
     # Utility modules
     src/util/logging.cpp

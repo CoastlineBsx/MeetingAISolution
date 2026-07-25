@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "punctuator.hpp"
+#include "transcript_text_normalizer.hpp"
 #include <sherpa-onnx/c-api/c-api.h>
 #include <cstring>
 #include <iostream>
@@ -85,7 +86,7 @@ std::string Punctuator::AddPunctuation(const std::string& text) const
     std::string result(out);
     SherpaOfflinePunctuationFreeText(out);
 
-    return result.empty() ? text : result;
+    return result.empty() ? text : NormalizeBilingualTranscript(result);
 }
 
 } // namespace meetingai::transcribe

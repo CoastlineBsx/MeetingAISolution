@@ -11,11 +11,13 @@ namespace meetingai::transcribe {
 struct SherpaStreamResult {
     std::string text;           // 转录文本
     bool is_final;              // 是否是最终结果（true=final, false=partial）
+    bool endpoint_detected;     // 是否由 Sherpa endpoint 触发（空文本表示长静音）
     int speaker_id;             // 说话人ID（-1表示未识别）
     float confidence;           // 置信度（0.0-1.0）
 
     SherpaStreamResult()
-        : text(""), is_final(false), speaker_id(-1), confidence(0.0f) {}
+        : text(""), is_final(false), endpoint_detected(false),
+          speaker_id(-1), confidence(0.0f) {}
 };
 
 /// <summary>
