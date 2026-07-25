@@ -88,24 +88,24 @@ public partial class MainWindow
             // 切换到普通模式的聊天历史
             SwitchChatHistory(_normalChatHistory);
 
-            // 隐藏所有模式特定控件
-            BtnRAGTest.Visibility = Visibility.Collapsed;
-            BtnDocumentManage.Visibility = Visibility.Collapsed;
+            // 隐藏所有模式特定控件 - TODO: These controls are now in Pages
+            // BtnRAGTest.Visibility = Visibility.Collapsed;
+            // BtnDocumentManage.Visibility = Visibility.Collapsed;
             DocumentExpander.Visibility = Visibility.Collapsed;
 
-            BtnQuickQALoad.Visibility = Visibility.Collapsed;
-            LblQuickQADoc.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear.Visibility = Visibility.Collapsed;
+            // BtnQuickQALoad.Visibility = Visibility.Collapsed;
+            // LblQuickQADoc.Visibility = Visibility.Collapsed;
+            // BtnQuickQAClear.Visibility = Visibility.Collapsed;
 
-            BtnIELoad.Visibility = Visibility.Collapsed;
-            CmbIETemplate.Visibility = Visibility.Collapsed;
-            LblIEDoc.Visibility = Visibility.Collapsed;
-            BtnIEExtract.Visibility = Visibility.Collapsed;
-            LblIEStatus.Visibility = Visibility.Collapsed;
-            BtnIECopyJSON.Visibility = Visibility.Collapsed;
-            BtnIEExport.Visibility = Visibility.Collapsed;
-            BtnIEReExtract.Visibility = Visibility.Collapsed;
-            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
+            // BtnIELoad.Visibility = Visibility.Collapsed;
+            // CmbIETemplate.Visibility = Visibility.Collapsed;
+            // LblIEDoc.Visibility = Visibility.Collapsed;
+            // BtnIEExtract.Visibility = Visibility.Collapsed;
+            // LblIEStatus.Visibility = Visibility.Collapsed;
+            // BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            // BtnIEExport.Visibility = Visibility.Collapsed;
+            // BtnIEReExtract.Visibility = Visibility.Collapsed;
+            // BtnIEContinueDialog.Visibility = Visibility.Collapsed;
 
             // 主页的控件（带"2"后缀）也要隐藏
             BtnRAGTest2.Visibility = Visibility.Collapsed;
@@ -149,27 +149,27 @@ public partial class MainWindow
             // 切换到快速问答模式的聊天历史
             SwitchChatHistory(_quickQAChatHistory);
 
-            // 隐藏 RAG 控件
-            BtnRAGTest.Visibility = Visibility.Collapsed;
-            BtnDocumentManage.Visibility = Visibility.Collapsed;
+            // 隐藏 RAG 控件 - TODO: These controls are now in Pages
+            // BtnRAGTest.Visibility = Visibility.Collapsed;
+            // BtnDocumentManage.Visibility = Visibility.Collapsed;
             DocumentExpander.Visibility = Visibility.Collapsed;
 
-            // 隐藏 IE 控件
-            BtnIELoad.Visibility = Visibility.Collapsed;
-            CmbIETemplate.Visibility = Visibility.Collapsed;
-            LblIEDoc.Visibility = Visibility.Collapsed;
-            BtnIEExtract.Visibility = Visibility.Collapsed;
-            LblIEStatus.Visibility = Visibility.Collapsed;
-            BtnIECopyJSON.Visibility = Visibility.Collapsed;
-            BtnIEExport.Visibility = Visibility.Collapsed;
-            BtnIEReExtract.Visibility = Visibility.Collapsed;
-            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
+            // 隐藏 IE 控件 - TODO: These controls are now in Pages
+            // BtnIELoad.Visibility = Visibility.Collapsed;
+            // CmbIETemplate.Visibility = Visibility.Collapsed;
+            // LblIEDoc.Visibility = Visibility.Collapsed;
+            // BtnIEExtract.Visibility = Visibility.Collapsed;
+            // LblIEStatus.Visibility = Visibility.Collapsed;
+            // BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            // BtnIEExport.Visibility = Visibility.Collapsed;
+            // BtnIEReExtract.Visibility = Visibility.Collapsed;
+            // BtnIEContinueDialog.Visibility = Visibility.Collapsed;
 
-            // 显示 QuickQA 控件
-            BtnQuickQALoad.Visibility = Visibility.Visible;
-            BtnQuickQALoad.IsEnabled = true;
-            LblQuickQADoc.Visibility = Visibility.Visible;
-            BtnQuickQAClear.Visibility = Visibility.Visible;
+            // 显示 QuickQA 控件 - TODO: These controls are now in Pages
+            // BtnQuickQALoad.Visibility = Visibility.Visible;
+            // BtnQuickQALoad.IsEnabled = true;
+            // LblQuickQADoc.Visibility = Visibility.Visible;
+            // BtnQuickQAClear.Visibility = Visibility.Visible;
             // BtnQuickQAClear.IsEnabled 由 UpdateQuickQAUI() 控制
 
             // 主页的控件（带"2"后缀）- 隐藏其他模式的控件
@@ -218,45 +218,45 @@ public partial class MainWindow
             // 切换到IE模式的聊天历史
             SwitchChatHistory(_ieChatHistory);
 
-            // 隐藏其他模式控件
-            BtnRAGTest.Visibility = Visibility.Collapsed;
-            BtnDocumentManage.Visibility = Visibility.Collapsed;
+            // 隐藏其他模式控件 - TODO: These controls are now in Pages
+            // BtnRAGTest.Visibility = Visibility.Collapsed;
+            // BtnDocumentManage.Visibility = Visibility.Collapsed;
             DocumentExpander.Visibility = Visibility.Collapsed;
 
-            BtnQuickQALoad.Visibility = Visibility.Collapsed;
-            LblQuickQADoc.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear.Visibility = Visibility.Collapsed;
+            // BtnQuickQALoad.Visibility = Visibility.Collapsed;
+            // LblQuickQADoc.Visibility = Visibility.Collapsed;
+            // BtnQuickQAClear.Visibility = Visibility.Collapsed;
 
-            // 显示 IE 控件
-            BtnIELoad.Visibility = Visibility.Visible;
-            BtnIELoad.IsEnabled = true;
-            CmbIETemplate.Visibility = Visibility.Visible;
-            CmbIETemplate.IsEnabled = true;
-            LblIEDoc.Visibility = Visibility.Visible;
-            BtnIEExtract.Visibility = Visibility.Visible;
-            LblIEStatus.Visibility = Visibility.Visible;
-            BtnIECopyJSON.Visibility = Visibility.Visible;
-            BtnIEExport.Visibility = Visibility.Visible;
-            BtnIEReExtract.Visibility = Visibility.Visible;
-            BtnIEContinueDialog.Visibility = Visibility.Visible;
+            // 显示 IE 控件 - TODO: These controls are now in Pages
+            // BtnIELoad.Visibility = Visibility.Visible;
+            // BtnIELoad.IsEnabled = true;
+            // CmbIETemplate.Visibility = Visibility.Visible;
+            // CmbIETemplate.IsEnabled = true;
+            // LblIEDoc.Visibility = Visibility.Visible;
+            // BtnIEExtract.Visibility = Visibility.Visible;
+            // LblIEStatus.Visibility = Visibility.Visible;
+            // BtnIECopyJSON.Visibility = Visibility.Visible;
+            // BtnIEExport.Visibility = Visibility.Visible;
+            // BtnIEReExtract.Visibility = Visibility.Visible;
+            // BtnIEContinueDialog.Visibility = Visibility.Visible;
 
-            // 填充模板下拉菜单
-            CmbIETemplate.Items.Clear();
-            foreach (var template in IETemplates.AllTemplates)
-            {
-                var item = new ComboBoxItem
-                {
-                    Content = $"{template.Icon} {template.Name}",
-                    Tag = template.Id
-                };
-                CmbIETemplate.Items.Add(item);
-            }
+            // 填充模板下拉菜单 - TODO: Control is now in Page
+            // CmbIETemplate.Items.Clear();
+            // foreach (var template in IETemplates.AllTemplates)
+            // {
+            //     var item = new ComboBoxItem
+            //     {
+            //         Content = $"{template.Icon} {template.Name}",
+            //         Tag = template.Id
+            //     };
+            //     CmbIETemplate.Items.Add(item);
+            // }
 
-            // 默认选择通用模板（最后一个）
-            if (CmbIETemplate.Items.Count > 0)
-            {
-                CmbIETemplate.SelectedIndex = CmbIETemplate.Items.Count - 1;
-            }
+            // 默认选择通用模板（最后一个） - TODO: Control is now in Page
+            // if (CmbIETemplate.Items.Count > 0)
+            // {
+            //     CmbIETemplate.SelectedIndex = CmbIETemplate.Items.Count - 1;
+            // }
 
             // 主页的控件（带"2"后缀）- 显示IE控件，隐藏其他
             BtnRAGTest2.Visibility = Visibility.Collapsed;
@@ -321,27 +321,27 @@ public partial class MainWindow
             // 切换到RAG模式的聊天历史
             SwitchChatHistory(_ragChatHistory);
 
-            // 隐藏 QuickQA 控件
-            BtnQuickQALoad.Visibility = Visibility.Collapsed;
-            LblQuickQADoc.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear.Visibility = Visibility.Collapsed;
+            // 隐藏 QuickQA 控件 - TODO: These controls are now in Pages, need to access via helper
+            // BtnQuickQALoad.Visibility = Visibility.Collapsed;
+            // LblQuickQADoc.Visibility = Visibility.Collapsed;
+            // BtnQuickQAClear.Visibility = Visibility.Collapsed;
 
-            // 隐藏 IE 控件
-            BtnIELoad.Visibility = Visibility.Collapsed;
-            CmbIETemplate.Visibility = Visibility.Collapsed;
-            LblIEDoc.Visibility = Visibility.Collapsed;
-            BtnIEExtract.Visibility = Visibility.Collapsed;
-            LblIEStatus.Visibility = Visibility.Collapsed;
-            BtnIECopyJSON.Visibility = Visibility.Collapsed;
-            BtnIEExport.Visibility = Visibility.Collapsed;
-            BtnIEReExtract.Visibility = Visibility.Collapsed;
-            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
+            // 隐藏 IE 控件 - TODO: These controls are now in Pages, need to access via helper
+            // BtnIELoad.Visibility = Visibility.Collapsed;
+            // CmbIETemplate.Visibility = Visibility.Collapsed;
+            // LblIEDoc.Visibility = Visibility.Collapsed;
+            // BtnIEExtract.Visibility = Visibility.Collapsed;
+            // LblIEStatus.Visibility = Visibility.Collapsed;
+            // BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            // BtnIEExport.Visibility = Visibility.Collapsed;
+            // BtnIEReExtract.Visibility = Visibility.Collapsed;
+            // BtnIEContinueDialog.Visibility = Visibility.Collapsed;
 
-            // 显示RAG专用控件
-            BtnRAGTest.Visibility = Visibility.Visible;
-            BtnRAGTest.IsEnabled = true;
-            BtnDocumentManage.Visibility = Visibility.Visible;
-            BtnDocumentManage.IsEnabled = true;
+            // 显示RAG专用控件 - TODO: These controls are now in Pages, need to access via helper
+            // BtnRAGTest.Visibility = Visibility.Visible;
+            // BtnRAGTest.IsEnabled = true;
+            // BtnDocumentManage.Visibility = Visibility.Visible;
+            // BtnDocumentManage.IsEnabled = true;
             DocumentExpander.Visibility = Visibility.Visible;
             DocumentExpander.IsExpanded = false; // 不自动展开，等用户点击按钮
 
@@ -416,24 +416,24 @@ public partial class MainWindow
 
             LLaVAPanel.Visibility = Visibility.Visible;
 
-            // 隐藏其他模式控件
-            BtnRAGTest.Visibility = Visibility.Collapsed;
-            BtnDocumentManage.Visibility = Visibility.Collapsed;
+            // 隐藏其他模式控件 - TODO: These controls are now in Pages, need to access via helper
+            // BtnRAGTest.Visibility = Visibility.Collapsed;
+            // BtnDocumentManage.Visibility = Visibility.Collapsed;
             DocumentExpander.Visibility = Visibility.Collapsed;
 
-            BtnQuickQALoad.Visibility = Visibility.Collapsed;
-            LblQuickQADoc.Visibility = Visibility.Collapsed;
-            BtnQuickQAClear.Visibility = Visibility.Collapsed;
+            // BtnQuickQALoad.Visibility = Visibility.Collapsed;
+            // LblQuickQADoc.Visibility = Visibility.Collapsed;
+            // BtnQuickQAClear.Visibility = Visibility.Collapsed;
 
-            BtnIELoad.Visibility = Visibility.Collapsed;
-            CmbIETemplate.Visibility = Visibility.Collapsed;
-            LblIEDoc.Visibility = Visibility.Collapsed;
-            BtnIEExtract.Visibility = Visibility.Collapsed;
-            LblIEStatus.Visibility = Visibility.Collapsed;
-            BtnIECopyJSON.Visibility = Visibility.Collapsed;
-            BtnIEExport.Visibility = Visibility.Collapsed;
-            BtnIEReExtract.Visibility = Visibility.Collapsed;
-            BtnIEContinueDialog.Visibility = Visibility.Collapsed;
+            // BtnIELoad.Visibility = Visibility.Collapsed;
+            // CmbIETemplate.Visibility = Visibility.Collapsed;
+            // LblIEDoc.Visibility = Visibility.Collapsed;
+            // BtnIEExtract.Visibility = Visibility.Collapsed;
+            // LblIEStatus.Visibility = Visibility.Collapsed;
+            // BtnIECopyJSON.Visibility = Visibility.Collapsed;
+            // BtnIEExport.Visibility = Visibility.Collapsed;
+            // BtnIEReExtract.Visibility = Visibility.Collapsed;
+            // BtnIEContinueDialog.Visibility = Visibility.Collapsed;
 
             // 更新 LLaVA 聊天列表绑定
             LLaVAChatList.ItemsSource = _llavaChatHistory;

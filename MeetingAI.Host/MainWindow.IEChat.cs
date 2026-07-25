@@ -24,6 +24,9 @@ namespace MeetingAI.Host;
 /// </summary>
 public sealed partial class MainWindow
 {
+    // Helper method to get IEChatPage
+    private Pages.IEChatPage? GetIEChatPage() => IEChatFrame?.Content as Pages.IEChatPage;
+
     // ========== IE Chat 模式常量 ==========
     private const int MAX_IE_CHAT_TOKENS = 50000;  // 最大 50K tokens
     private const int MAX_IE_CHAT_TURNS = 10;      // 最多 10 轮对话
@@ -36,7 +39,10 @@ public sealed partial class MainWindow
         // Populate template combo box
         DispatcherQueue.TryEnqueue(() =>
         {
-            CmbIEChatTemplate.Items.Clear();
+            var page = GetIEChatPage();
+            if (page == null) return;
+
+            page.CmbIEChatTemplate.Items.Clear();
             foreach (var template in IETemplates.AllTemplates)
             {
                 var item = new ComboBoxItem
@@ -44,7 +50,18 @@ public sealed partial class MainWindow
                     Content = template.Name,
                     Tag = template.Id
                 };
-                CmbIEChatTemplate.Items.Add(item);
+                page.CmbIEChatTemplate.Items.Add(item);
+            }
+
+            // Default select first template (usually "general")
+            if (page.CmbIEChatTemplate.Items.Count > 0)
+            {
+                page.CmbIEChatTemplate.SelectedIndex = 0;
+                // Set the template ID (SelectionChanged event will also set it, but we do it here to be safe)
+                if (page.CmbIEChatTemplate.Items[0] is ComboBoxItem firstItem && firstItem.Tag is string templateId)
+                {
+                    _ieChatSelectedTemplateId = templateId;
+                }
             }
 
             // Enable upload button when Granite is loaded
@@ -55,7 +72,7 @@ public sealed partial class MainWindow
     /// <summary>
     /// Upload document button click event
     /// </summary>
-    private async void BtnIEChatUpload_Click(object sender, RoutedEventArgs e)
+    public async void BtnIEChatUpload_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -240,11 +257,14 @@ Output only one type ID, no other text.";
             // Update dropdown selection
             DispatcherQueue.TryEnqueue(() =>
             {
-                for (int i = 0; i < CmbIEChatTemplate.Items.Count; i++)
+                var page = GetIEChatPage();
+                if (page == null) return;
+
+                for (int i = 0; i < page.CmbIEChatTemplate.Items.Count; i++)
                 {
-                    if (CmbIEChatTemplate.Items[i] is ComboBoxItem item && item.Tag is string tag && tag == typeId)
+                    if (page.CmbIEChatTemplate.Items[i] is ComboBoxItem item && item.Tag is string tag && tag == typeId)
                     {
-                        CmbIEChatTemplate.SelectedIndex = i;
+                        page.CmbIEChatTemplate.SelectedIndex = i;
                         break;
                     }
                 }
@@ -263,7 +283,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Extract button click event
     /// </summary>
-    private async void BtnIEChatExtract_Click(object sender, RoutedEventArgs e)
+    public async void BtnIEChatExtract_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -450,7 +470,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Send message button click event
     /// </summary>
-    private async void BtnIEChatSend_Click(object sender, RoutedEventArgs e)
+    public async void BtnIEChatSend_Click(object sender, RoutedEventArgs e)
     {
         await SendIEChatMessageAsync();
     }
@@ -458,7 +478,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Input box key down event
     /// </summary>
-    private async void TxtIEChatInput_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    public async void TxtIEChatInput_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Enter)
         {
@@ -483,7 +503,10 @@ Output only one type ID, no other text.";
     {
         try
         {
-            string userInput = TxtIEChatInput.Text.Trim();
+            var page = GetIEChatPage();
+            if (page == null) return;
+
+            string userInput = page.TxtIEChatInput.Text.Trim();
             if (string.IsNullOrEmpty(userInput))
             {
                 return;
@@ -497,7 +520,7 @@ Output only one type ID, no other text.";
             }
 
             // Clear input box
-            TxtIEChatInput.Text = "";
+            page.TxtIEChatInput.Text = "";
 
             // Add user message
             AddIEChatUserMessage(userInput);
@@ -564,7 +587,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Clear history button click event
     /// </summary>
-    private void BtnIEChatClear_Click(object sender, RoutedEventArgs e)
+    public void BtnIEChatClear_Click(object sender, RoutedEventArgs e)
     {
         _ieChatHistory.Clear();
         _ieChatDocumentContent = null;
@@ -579,7 +602,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Template selection changed event
     /// </summary>
-    private void CmbIEChatTemplate_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    public void CmbIEChatTemplate_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is ComboBox combo && combo.SelectedItem is ComboBoxItem item && item.Tag is string templateId)
         {
@@ -592,7 +615,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Copy message context menu click event
     /// </summary>
-    private void CopyIEChatMessage_Click(object sender, RoutedEventArgs e)
+    public void CopyIEChatMessage_Click(object sender, RoutedEventArgs e)
     {
         if (sender is MenuFlyoutItem menuItem && menuItem.DataContext is ChatMessage message)
         {
@@ -605,7 +628,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Copy JSON button click event
     /// </summary>
-    private void BtnCopyIEJson_Click(object sender, RoutedEventArgs e)
+    public void BtnCopyIEJson_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -626,7 +649,7 @@ Output only one type ID, no other text.";
     /// <summary>
     /// Export JSON button click event
     /// </summary>
-    private async void BtnExportIEJson_Click(object sender, RoutedEventArgs e)
+    public async void BtnExportIEJson_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -662,31 +685,34 @@ Output only one type ID, no other text.";
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            var page = GetIEChatPage();
+            if (page == null) return;
+
             // Enable upload button when Granite is loaded
-            BtnIEChatUpload.IsEnabled = _isGraniteLoaded;
+            page.BtnIEChatUpload.IsEnabled = _isGraniteLoaded;
 
             // Enable template selection when document is loaded
-            CmbIEChatTemplate.IsEnabled = !string.IsNullOrEmpty(_ieChatDocumentContent);
+            page.CmbIEChatTemplate.IsEnabled = !string.IsNullOrEmpty(_ieChatDocumentContent);
 
             // Enable extract button when document and template are ready
-            BtnIEChatExtract.IsEnabled = !string.IsNullOrEmpty(_ieChatDocumentContent) &&
+            page.BtnIEChatExtract.IsEnabled = !string.IsNullOrEmpty(_ieChatDocumentContent) &&
                                          !string.IsNullOrEmpty(_ieChatSelectedTemplateId);
 
             // Enable send button when extraction is completed
-            BtnIEChatSend.IsEnabled = !string.IsNullOrEmpty(_ieChatExtractedJson);
+            page.BtnIEChatSend.IsEnabled = !string.IsNullOrEmpty(_ieChatExtractedJson);
 
             // Enable clear button when there's history
-            BtnIEChatClear.IsEnabled = _ieChatHistory.Count > 0 || !string.IsNullOrEmpty(_ieChatDocumentContent);
+            page.BtnIEChatClear.IsEnabled = _ieChatHistory.Count > 0 || !string.IsNullOrEmpty(_ieChatDocumentContent);
 
             // Update document status
             if (!string.IsNullOrEmpty(_ieChatDocumentName))
             {
                 string sizeStr = FormatFileSize(_ieChatDocumentSize);
-                LblIEChatDocStatus.Text = $"{_ieChatDocumentName} ({sizeStr}, {_ieChatTokenCount} tokens)";
+                page.LblIEChatDocStatus.Text = $"{_ieChatDocumentName} ({sizeStr}, {_ieChatTokenCount} tokens)";
             }
             else
             {
-                LblIEChatDocStatus.Text = "No document loaded";
+                page.LblIEChatDocStatus.Text = "No document loaded";
             }
         });
     }
@@ -729,11 +755,12 @@ Output only one type ID, no other text.";
     /// </summary>
     private void ScrollIEChatToBottom()
     {
+        var page = GetIEChatPage();
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (ChatHistoryListIE.Items.Count > 0)
+            if (page != null && page.ChatHistoryListIE.Items.Count > 0)
             {
-                ChatHistoryListIE.ScrollIntoView(ChatHistoryListIE.Items[^1]);
+                page.ChatHistoryListIE.ScrollIntoView(page.ChatHistoryListIE.Items[^1]);
             }
         });
     }

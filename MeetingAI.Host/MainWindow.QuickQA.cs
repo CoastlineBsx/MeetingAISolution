@@ -18,13 +18,16 @@ namespace MeetingAI.Host;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    // Helper method to get QuickQAPage
+    private Pages.QuickQAPage? GetQuickQAPage() => QuickQAFrame?.Content as Pages.QuickQAPage;
+
     private const int MAX_TOKENS = 50000;  // 最大 50K tokens
     private const int MAX_TURNS = 10;      // 最多 10 轮对话
 
     /// <summary>
     /// 加载文档按钮点击事件
     /// </summary>
-    private async void BtnQuickQALoad_Click(object sender, RoutedEventArgs e)
+    public async void BtnQuickQALoad_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -111,7 +114,7 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// 清除文档按钮点击事件
     /// </summary>
-    private async void BtnQuickQAClear_Click(object sender, RoutedEventArgs e)
+    public async void BtnQuickQAClear_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -136,25 +139,28 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void UpdateQuickQAUI()
     {
+        var page = GetQuickQAPage();
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (page == null) return;
+
             if (string.IsNullOrEmpty(_quickQADocumentName))
             {
                 // 未加载文档
-                LblQuickQADoc.Text = "No document loaded";
-                BtnQuickQAClear.IsEnabled = false;
-                BtnQuickQASend.IsEnabled = false;
-                BtnQuickQAClearHistory.IsEnabled = false;
+                page.LblQuickQADoc.Text = "No document loaded";
+                page.BtnQuickQAClear.IsEnabled = false;
+                page.BtnQuickQASend.IsEnabled = false;
+                page.BtnQuickQAClearHistory.IsEnabled = false;
             }
             else
             {
                 // 已加载文档
                 string sizeStr = FormatFileSize(_quickQADocumentSize);
                 int currentTurn = _quickQAHistory.Count;
-                LblQuickQADoc.Text = $"File: {_quickQADocumentName} ({sizeStr}, {_quickQATokenCount} tokens, {currentTurn}/{MAX_TURNS} turns)";
-                BtnQuickQAClear.IsEnabled = true;
-                BtnQuickQASend.IsEnabled = true;
-                BtnQuickQAClearHistory.IsEnabled = true;
+                page.LblQuickQADoc.Text = $"File: {_quickQADocumentName} ({sizeStr}, {_quickQATokenCount} tokens, {currentTurn}/{MAX_TURNS} turns)";
+                page.BtnQuickQAClear.IsEnabled = true;
+                page.BtnQuickQASend.IsEnabled = true;
+                page.BtnQuickQAClearHistory.IsEnabled = true;
             }
         });
     }
@@ -172,8 +178,9 @@ public sealed partial class MainWindow : Window
         var sb = new StringBuilder();
 
         // 获取当前对话模式（从QuickQA页面的ComboBox）
+        var page = GetQuickQAPage();
         string mode = "single";
-        if (CmbConversationModeQuickQA?.SelectedItem is ComboBoxItem selectedItem)
+        if (page?.CmbConversationModeQuickQA?.SelectedItem is ComboBoxItem selectedItem)
         {
             mode = selectedItem.Tag?.ToString() ?? "single";
         }
@@ -264,7 +271,7 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// 清空快速问答聊天历史按钮点击事件
     /// </summary>
-    private void BtnQuickQAClearHistory_Click(object sender, RoutedEventArgs e)
+    public void BtnQuickQAClearHistory_Click(object sender, RoutedEventArgs e)
     {
         _quickQAChatHistory.Clear();
         _quickQAHistory.Clear();
@@ -275,7 +282,7 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// QuickQA输入框键盘事件（Ctrl+Enter发送）
     /// </summary>
-    private void TxtQuickQAInput_PreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    public void TxtQuickQAInput_PreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Enter)
         {
@@ -292,11 +299,14 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// QuickQA发送按钮点击事件
     /// </summary>
-    private async void BtnQuickQASend_Click(object sender, RoutedEventArgs e)
+    public async void BtnQuickQASend_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            var userInput = TxtQuickQAInput.Text.Trim();
+            var page = GetQuickQAPage();
+            if (page == null) return;
+
+            var userInput = page.TxtQuickQAInput.Text.Trim();
             if (string.IsNullOrWhiteSpace(userInput))
                 return;
 
@@ -333,11 +343,11 @@ public sealed partial class MainWindow : Window
             // 滚动到底部
             if (_quickQAChatHistory.Count > 0)
             {
-                ChatHistoryListQuickQA.ScrollIntoView(_quickQAChatHistory[_quickQAChatHistory.Count - 1]);
+                page.ChatHistoryListQuickQA.ScrollIntoView(_quickQAChatHistory[_quickQAChatHistory.Count - 1]);
             }
 
             // 清空输入框
-            TxtQuickQAInput.Text = "";
+            page.TxtQuickQAInput.Text = "";
 
             // 构建QuickQA Prompt
             string promptToSend = BuildQuickQAPrompt(userInput);
@@ -358,10 +368,11 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private string GetQuickQASystemPrompt()
     {
+        var page = GetQuickQAPage();
         string basePrompt = "You are a helpful document Q&A assistant. ";
 
         // 获取Answer Style设置
-        if (CmbAnswerStyleQuickQA?.SelectedItem is ComboBoxItem selectedItem)
+        if (page?.CmbAnswerStyleQuickQA?.SelectedItem is ComboBoxItem selectedItem)
         {
             var tag = selectedItem.Tag?.ToString();
             return basePrompt + (tag switch
@@ -388,8 +399,11 @@ public sealed partial class MainWindow : Window
             float temperature = 0.7f;  // 默认值
             int maxTokens = 2048;      // 默认值
 
+            var page = GetQuickQAPage();
+            if (page == null) return;
+
             // 读取Temperature设置
-            if (CmbTemperatureQuickQA?.SelectedItem is ComboBoxItem tempItem)
+            if (page.CmbTemperatureQuickQA?.SelectedItem is ComboBoxItem tempItem)
             {
                 if (float.TryParse(tempItem.Tag?.ToString(), out float temp))
                 {
@@ -398,7 +412,7 @@ public sealed partial class MainWindow : Window
             }
 
             // 读取MaxTokens设置
-            if (CmbMaxTokensQuickQA?.SelectedItem is ComboBoxItem tokenItem)
+            if (page.CmbMaxTokensQuickQA?.SelectedItem is ComboBoxItem tokenItem)
             {
                 if (int.TryParse(tokenItem.Tag?.ToString(), out int tokens))
                 {

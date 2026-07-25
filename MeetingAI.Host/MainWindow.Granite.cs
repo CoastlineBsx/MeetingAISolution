@@ -15,6 +15,9 @@ namespace MeetingAI.Host;
 
 public sealed partial class MainWindow : Window
 {
+    // Helper method to get ChatPage
+    private Pages.ChatPage? GetChatPage() => ChatFrame?.Content as Pages.ChatPage;
+
     // 四个模式各自独立的对话历史
     private ObservableCollection<ChatMessage> _normalChatHistory = new();
     private ObservableCollection<ChatMessage> _quickQAChatHistory = new();
@@ -59,6 +62,48 @@ public sealed partial class MainWindow : Window
         {
             _chatScrollViewer = FindScrollViewer(ChatHistoryList);
         };
+
+        // 绑定各个Page的聊天列表到对应的数据源
+        // 注意：这需要在 LoadAllPages() 之后调用
+        BindPageChatHistories();
+    }
+
+    private void BindPageChatHistories()
+    {
+        // 绑定 ChatPage 的聊天列表到 normal 模式的历史
+        var chatPage = GetChatPage();
+        if (chatPage != null)
+        {
+            chatPage.ChatHistoryListChat.ItemsSource = _normalChatHistory;
+        }
+
+        // 绑定 QuickQAPage 的聊天列表到 quickqa 模式的历史
+        var quickQAPage = GetQuickQAPage();
+        if (quickQAPage != null)
+        {
+            quickQAPage.ChatHistoryListQuickQA.ItemsSource = _quickQAChatHistory;
+        }
+
+        // 绑定 IEChatPage 的聊天列表到 ie 模式的历史
+        var ieChatPage = GetIEChatPage();
+        if (ieChatPage != null)
+        {
+            ieChatPage.ChatHistoryListIE.ItemsSource = _ieChatHistory;
+        }
+
+        // 绑定 LLaVAPage 的聊天列表到 VisualChatHistory
+        var llaVAPage = GetLLaVAPage();
+        if (llaVAPage != null)
+        {
+            llaVAPage.ChatHistoryVisual.ItemsSource = VisualChatHistory;
+        }
+
+        // 绑定 SDPage 的聊天列表到 _sdChatHistory
+        var sdPage = GetSDPage();
+        if (sdPage != null)
+        {
+            sdPage.SDChatList.ItemsSource = _sdChatHistory;
+        }
     }
 
     // 递归查找 ScrollViewer
@@ -216,12 +261,13 @@ public sealed partial class MainWindow : Window
         }
 
         // 检查是否在ChatPage，如果是则从ChatPage的ComboBox读取
-        bool isInChatPage = ChatPage.Visibility == Visibility.Visible;
+        var chatPage = GetChatPage();
+        bool isInChatPage = ChatPageContainer.Visibility == Visibility.Visible && chatPage != null;
 
         if (isInChatPage)
         {
             // ChatPage使用ComboBox
-            if (CmbAnswerStyleChat?.SelectedItem is ComboBoxItem selectedItem)
+            if (chatPage.CmbAnswerStyleChat?.SelectedItem is ComboBoxItem selectedItem)
             {
                 var tag = selectedItem.Tag?.ToString();
                 return tag switch
@@ -250,7 +296,7 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== 模式切换 ==========
-    private async void CmbConversationMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    public async void CmbConversationMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not ComboBox comboBox || comboBox.SelectedItem is not ComboBoxItem selectedItem)
             return;
@@ -363,7 +409,7 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== 清空历史 ==========
-    private async void BtnGraniteClear_Click(object sender, RoutedEventArgs e)
+    public async void BtnGraniteClear_Click(object sender, RoutedEventArgs e)
     {
         _chatHistory.Clear();
 
@@ -409,12 +455,12 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== 发送消息 ==========
-    private async void BtnGraniteSend_Click(object sender, RoutedEventArgs e)
+    public async void BtnGraniteSend_Click(object sender, RoutedEventArgs e)
     {
         await SendGraniteMessageAsync();
     }
 
-    private void TxtGraniteInput_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    public void TxtGraniteInput_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         // Ctrl+Enter 发送
         if (e.Key == VirtualKey.Enter)
@@ -434,9 +480,10 @@ public sealed partial class MainWindow : Window
         try
         {
             // 检查是否在ChatPage，如果是则从ChatPage读取
-            bool isInChatPage = ChatPage.Visibility == Visibility.Visible;
+            var chatPage = GetChatPage();
+            bool isInChatPage = ChatPageContainer.Visibility == Visibility.Visible && chatPage != null;
 
-            var userInput = isInChatPage ? TxtGraniteInputChat.Text.Trim() : TxtGraniteInput.Text.Trim();
+            var userInput = isInChatPage ? chatPage.TxtGraniteInputChat.Text.Trim() : TxtGraniteInput.Text.Trim();
             if (string.IsNullOrEmpty(userInput)) return;
 
             await EnsurePipeAsync();
@@ -465,7 +512,7 @@ public sealed partial class MainWindow : Window
             SetCurrentModeScrollThrottle(0);
 
             // 自动滚动到底部
-            var chatListView = isInChatPage ? ChatHistoryListChat : ChatHistoryList;
+            var chatListView = isInChatPage ? chatPage.ChatHistoryListChat : ChatHistoryList;
             if (chatListView.Items.Count > 0)
             {
                 chatListView.ScrollIntoView(chatListView.Items[^1]);
@@ -474,7 +521,7 @@ public sealed partial class MainWindow : Window
             // 清空输入框
             if (isInChatPage)
             {
-                TxtGraniteInputChat.Text = "";
+                chatPage.TxtGraniteInputChat.Text = "";
             }
             else
             {
@@ -567,8 +614,8 @@ public sealed partial class MainWindow : Window
             }
 
             // 获取参数 - 根据所在页面读取
-            var maxTokensCombo = isInChatPage ? CmbMaxTokensChat : CmbMaxTokens;
-            var temperatureCombo = isInChatPage ? CmbTemperatureChat : CmbTemperature;
+            var maxTokensCombo = isInChatPage ? chatPage.CmbMaxTokensChat : CmbMaxTokens;
+            var temperatureCombo = isInChatPage ? chatPage.CmbTemperatureChat : CmbTemperature;
 
             int maxTokens;
             float temperature;
@@ -812,11 +859,17 @@ public sealed partial class MainWindow : Window
     // ========== 滚动到底部 ==========
     private void ScrollToBottom()
     {
-        ScrollViewer? targetScrollViewer = _currentDialogMode switch
+        ScrollViewer? targetScrollViewer = null;
+
+        if (_currentDialogMode == "visual")
         {
-            "visual" => ScrollViewerVisual,
-            _ => _chatScrollViewer
-        };
+            var llaVAPage = GetLLaVAPage();
+            targetScrollViewer = llaVAPage?.ScrollViewerVisual;
+        }
+        else
+        {
+            targetScrollViewer = _chatScrollViewer;
+        }
 
         if (targetScrollViewer != null)
         {
@@ -828,7 +881,7 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== 复制消息内容 ==========
-    private void CopyMessage_Click(object sender, RoutedEventArgs e)
+    public void CopyMessage_Click(object sender, RoutedEventArgs e)
     {
         if (sender is MenuFlyoutItem item && item.DataContext is ChatMessage message)
         {

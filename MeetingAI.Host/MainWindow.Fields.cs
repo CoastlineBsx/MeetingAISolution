@@ -160,5 +160,16 @@ public sealed partial class MainWindow : Window
     // ========== OpenVINO Whisper 消息处理器 ==========
     public Action<string>? OpenVINOWhisperMessageHandler { get; set; }
 
+    // ========== 实时流式转录消息处理器 ==========
+    public Action<string>? StreamingMessageHandler { get; set; }
+
+    // ========== 语音输入相关 ==========
+    private WasapiCapture? _voiceInputCapture;          // 语音输入麦克风捕获
+    private WaveFileWriter? _voiceInputWriter;          // 语音输入 WAV 写入器
+    private string? _voiceInputTempFile;                // 语音输入临时文件
+    private bool _isVoiceInputRecording = false;        // 是否正在录音
+    private bool _isVoiceInputTranscribing = false;     // 是否正在转录
+    private StringBuilder? _voiceInputTranscriptBuffer; // 转录结果缓冲区
+
     private const string PipeName = "MeetingAI_Pipe";
 }

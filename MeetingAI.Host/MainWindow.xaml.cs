@@ -36,6 +36,10 @@ public sealed partial class MainWindow : Window
         // 枚举麦克风设备
         EnumerateMicrophoneDevices();
 
+        // 预加载所有页面（避免懒加载带来的复杂性）
+        // 必须在 InitializeGranite() 之前调用，以便绑定聊天历史
+        LoadAllPages();
+
         // 初始化 Granite 对话
         InitializeGranite();
 
@@ -77,6 +81,20 @@ public sealed partial class MainWindow : Window
 
         // 保持按钮前景色和悬停色使用系统默认（自动适配主题）
         // 这样按钮会根据系统主题自动调整颜色
+    }
+
+    private void LoadAllPages()
+    {
+        // 预加载所有页面，避免懒加载带来的 null 检查复杂性
+        StartupFrame.Navigate(typeof(Pages.StartupPage));
+        ChatFrame.Navigate(typeof(Pages.ChatPage));
+        QuickQAFrame.Navigate(typeof(Pages.QuickQAPage));
+        IEChatFrame.Navigate(typeof(Pages.IEChatPage));
+        LLaVAFrame.Navigate(typeof(Pages.LLaVAPage));
+        SDFrame.Navigate(typeof(Pages.SDPage));
+        SettingsFrame.Navigate(typeof(Pages.SettingsPage));
+        HelpFrame.Navigate(typeof(Pages.HelpPage));
+        OpenVINOWhisperFrame.Navigate(typeof(Pages.OpenVINOWhisperPage));
     }
 
     private Task AppendLineAsync(string text)
@@ -165,14 +183,17 @@ public sealed partial class MainWindow : Window
 
     private void NavigateToPage(string tag)
     {
-        // 隐藏所有页面
+        // 隐藏所有页面容器
         HomePage.Visibility = Visibility.Collapsed;
-        ChatPage.Visibility = Visibility.Collapsed;
-        QuickQAPage.Visibility = Visibility.Collapsed;
-        IEChatPage.Visibility = Visibility.Collapsed;
-        LLaVAPage.Visibility = Visibility.Collapsed;
-        HelpPage.Visibility = Visibility.Collapsed;
-        SettingsPage.Visibility = Visibility.Collapsed;
+        StartupPageContainer.Visibility = Visibility.Collapsed;
+        ChatPageContainer.Visibility = Visibility.Collapsed;
+        QuickQAPageContainer.Visibility = Visibility.Collapsed;
+        IEChatPageContainer.Visibility = Visibility.Collapsed;
+        LLaVAPageContainer.Visibility = Visibility.Collapsed;
+        SDPageContainer.Visibility = Visibility.Collapsed;
+        HelpPageContainer.Visibility = Visibility.Collapsed;
+        OpenVINOWhisperPageContainer.Visibility = Visibility.Collapsed;
+        SettingsPageContainer.Visibility = Visibility.Collapsed;
 
         // 显示目标页面
         switch (tag)
@@ -181,31 +202,42 @@ public sealed partial class MainWindow : Window
                 HomePage.Visibility = Visibility.Visible;
                 SelectNavigationItem("home");
                 break;
+            case "startup":
+                StartupPageContainer.Visibility = Visibility.Visible;
+                SelectNavigationItem("startup");
+                break;
             case "chat":
-                ChatPage.Visibility = Visibility.Visible;
-                ChatHistoryListChat.ItemsSource = _normalChatHistory;
+                ChatPageContainer.Visibility = Visibility.Visible;
                 _currentDialogMode = "normal";
                 _isRAGMode = false;
                 SelectNavigationItem("chat");
                 break;
             case "quickqa":
-                QuickQAPage.Visibility = Visibility.Visible;
+                QuickQAPageContainer.Visibility = Visibility.Visible;
                 SelectNavigationItem("quickqa");
                 break;
             case "ie_chat":
-                IEChatPage.Visibility = Visibility.Visible;
+                IEChatPageContainer.Visibility = Visibility.Visible;
                 SelectNavigationItem("ie_chat");
                 break;
             case "llava":
-                LLaVAPage.Visibility = Visibility.Visible;
+                LLaVAPageContainer.Visibility = Visibility.Visible;
                 SelectNavigationItem("llava");
                 break;
+            case "sd":
+                SDPageContainer.Visibility = Visibility.Visible;
+                SelectNavigationItem("sd");
+                break;
+            case "openvino_whisper":
+                OpenVINOWhisperPageContainer.Visibility = Visibility.Visible;
+                SelectNavigationItem("openvino_whisper");
+                break;
             case "help":
-                HelpPage.Visibility = Visibility.Visible;
+                HelpPageContainer.Visibility = Visibility.Visible;
                 SelectNavigationItem("help");
                 break;
             case "settings":
-                SettingsPage.Visibility = Visibility.Visible;
+                SettingsPageContainer.Visibility = Visibility.Visible;
                 // 选中设置项 - 通过设置SelectedItem为null来让系统选中设置
                 NavView.SelectedItem = NavView.SettingsItem;
                 break;
@@ -232,48 +264,33 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== 主题切换 ==========
-    private void ThemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (ThemeComboBox?.SelectedItem is ComboBoxItem selectedItem)
-        {
-            var tag = selectedItem.Tag?.ToString();
-            ElementTheme theme = tag switch
-            {
-                "Light" => ElementTheme.Light,
-                "Dark" => ElementTheme.Dark,
-                _ => ElementTheme.Default
-            };
-
-            // Apply to entire window content
-            if (this.Content is FrameworkElement rootElement)
-            {
-                rootElement.RequestedTheme = theme;
-            }
-
-            // Optional: save setting
-            // Windows.Storage.ApplicationData.Current.LocalSettings.Values["AppTheme"] = tag;
-        }
-    }
+    // Note: ThemeComboBox_SelectionChanged has been moved to SettingsPage.xaml.cs
+    // This method is no longer needed as the ThemeComboBox control is now in SettingsPage
 
     // ========== 导航切换 ==========
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        // 隐藏所有页面
+        // 隐藏所有页面容器
         HomePage.Visibility = Visibility.Collapsed;
-        StartupPage.Visibility = Visibility.Collapsed;
+        StartupPageContainer.Visibility = Visibility.Collapsed;
         OpenVINOWhisperPageContainer.Visibility = Visibility.Collapsed;
-        ChatPage.Visibility = Visibility.Collapsed;
-        QuickQAPage.Visibility = Visibility.Collapsed;
-        IEChatPage.Visibility = Visibility.Collapsed;
-        LLaVAPage.Visibility = Visibility.Collapsed;
-        SDPage.Visibility = Visibility.Collapsed;
-        HelpPage.Visibility = Visibility.Collapsed;
-        SettingsPage.Visibility = Visibility.Collapsed;
+        StreamingMeetingPageContainer.Visibility = Visibility.Collapsed;
+        ChatPageContainer.Visibility = Visibility.Collapsed;
+        QuickQAPageContainer.Visibility = Visibility.Collapsed;
+        IEChatPageContainer.Visibility = Visibility.Collapsed;
+        LLaVAPageContainer.Visibility = Visibility.Collapsed;
+        SDPageContainer.Visibility = Visibility.Collapsed;
+        HelpPageContainer.Visibility = Visibility.Collapsed;
+        SettingsPageContainer.Visibility = Visibility.Collapsed;
 
         if (args.IsSettingsSelected)
         {
             // 显示设置页面
-            SettingsPage.Visibility = Visibility.Visible;
+            SettingsPageContainer.Visibility = Visibility.Visible;
+            if (SettingsFrame.Content == null)
+            {
+                SettingsFrame.Navigate(typeof(Pages.SettingsPage));
+            }
         }
         else if (args.SelectedItemContainer != null)
         {
@@ -285,7 +302,11 @@ public sealed partial class MainWindow : Window
                     HomePage.Visibility = Visibility.Visible;
                     break;
                 case "startup":
-                    StartupPage.Visibility = Visibility.Visible;
+                    StartupPageContainer.Visibility = Visibility.Visible;
+                    if (StartupFrame.Content == null)
+                    {
+                        StartupFrame.Navigate(typeof(Pages.StartupPage));
+                    }
                     break;
                 case "openvino_whisper":
                     OpenVINOWhisperPageContainer.Visibility = Visibility.Visible;
@@ -294,15 +315,22 @@ public sealed partial class MainWindow : Window
                         OpenVINOWhisperFrame.Navigate(typeof(Pages.OpenVINOWhisperPage));
                     }
                     break;
+                case "streaming_meeting":
+                    StreamingMeetingPageContainer.Visibility = Visibility.Visible;
+                    if (StreamingMeetingFrame.Content == null)
+                    {
+                        StreamingMeetingFrame.Navigate(typeof(Pages.StreamingMeetingPage));
+                    }
+                    break;
                 case "chat":
-                    ChatPage.Visibility = Visibility.Visible;
-                    // 绑定聊天历史到普通对话模式
-                    ChatHistoryListChat.ItemsSource = _normalChatHistory;
+                    ChatPageContainer.Visibility = Visibility.Visible;
+                    if (ChatFrame.Content == null)
+                    {
+                        ChatFrame.Navigate(typeof(Pages.ChatPage));
+                    }
                     // 设置为普通对话模式
                     _currentDialogMode = "normal";
                     _isRAGMode = false;
-                    // 更新 _chatHistory 指针
-                    _chatHistory = _normalChatHistory;
                     // 清理其他模式的流式消息状态
                     if (_quickQAStreamingMessage != null)
                     {
@@ -321,14 +349,14 @@ public sealed partial class MainWindow : Window
                     }
                     break;
                 case "quickqa":
-                    QuickQAPage.Visibility = Visibility.Visible;
-                    // 绑定聊天历史到文档助手模式
-                    ChatHistoryListQuickQA.ItemsSource = _quickQAChatHistory;
+                    QuickQAPageContainer.Visibility = Visibility.Visible;
+                    if (QuickQAFrame.Content == null)
+                    {
+                        QuickQAFrame.Navigate(typeof(Pages.QuickQAPage));
+                    }
                     // 设置为QuickQA模式
                     _currentDialogMode = "quickqa";
                     _isRAGMode = false;
-                    // 更新 _chatHistory 指针
-                    _chatHistory = _quickQAChatHistory;
                     // 清理其他模式的流式消息状态
                     if (_normalStreamingMessage != null)
                     {
@@ -347,9 +375,11 @@ public sealed partial class MainWindow : Window
                     }
                     break;
                 case "ie_chat":
-                    IEChatPage.Visibility = Visibility.Visible;
-                    // Bind chat history to IE Chat mode
-                    ChatHistoryListIE.ItemsSource = _ieChatHistory;
+                    IEChatPageContainer.Visibility = Visibility.Visible;
+                    if (IEChatFrame.Content == null)
+                    {
+                        IEChatFrame.Navigate(typeof(Pages.IEChatPage));
+                    }
                     // Set to IE Chat mode
                     _currentDialogMode = "ie_chat";
                     _isRAGMode = false;
@@ -383,12 +413,14 @@ public sealed partial class MainWindow : Window
                     }
                     break;
                 case "llava":
-                    LLaVAPage.Visibility = Visibility.Visible;
+                    LLaVAPageContainer.Visibility = Visibility.Visible;
+                    if (LLaVAFrame.Content == null)
+                    {
+                        LLaVAFrame.Navigate(typeof(Pages.LLaVAPage));
+                    }
                     // Set to Visual Understanding mode
                     _currentDialogMode = "visual";
                     _isRAGMode = false;
-                    // Update _chatHistory pointer
-                    _chatHistory = VisualChatHistory;
                     // Clean up other modes' streaming messages
                     if (_normalStreamingMessage != null)
                     {
@@ -412,10 +444,18 @@ public sealed partial class MainWindow : Window
                     }
                     break;
                 case "sd":
-                    SDPage.Visibility = Visibility.Visible;
+                    SDPageContainer.Visibility = Visibility.Visible;
+                    if (SDFrame.Content == null)
+                    {
+                        SDFrame.Navigate(typeof(Pages.SDPage));
+                    }
                     break;
                 case "help":
-                    HelpPage.Visibility = Visibility.Visible;
+                    HelpPageContainer.Visibility = Visibility.Visible;
+                    if (HelpFrame.Content == null)
+                    {
+                        HelpFrame.Navigate(typeof(Pages.HelpPage));
+                    }
                     break;
             }
         }

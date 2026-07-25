@@ -11,9 +11,18 @@ namespace MeetingAI.Host;
 
 public sealed partial class MainWindow : Window
 {
-    // ========== Microphone Test ==========
-    private async void BtnMicrophoneTest_Click(object sender, RoutedEventArgs e)
+    // Helper method to get SettingsPage
+    private Pages.SettingsPage? GetSettingsPage()
     {
+        return SettingsFrame?.Content as Pages.SettingsPage;
+    }
+
+    // ========== Microphone Test ==========
+    public async void BtnMicrophoneTest_Click(object sender, RoutedEventArgs e)
+    {
+        var page = GetSettingsPage();
+        if (page == null) return;
+
         try
         {
             if (!_isMicrophoneTestRunning)
@@ -28,22 +37,25 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             // Show error in a simple way
-            MicrophoneVolumeText.Text = $"Error: {ex.Message}";
+            page.MicrophoneVolumeText.Text = $"Error: {ex.Message}";
         }
     }
 
     private async Task StartMicrophoneTestAsync()
     {
+        var page = GetSettingsPage();
+        if (page == null) return;
+
         _microphoneTestCapture = new WasapiCapture();
         _microphoneTestCancellation = new CancellationTokenSource();
 
         // Show volume panel
-        MicrophoneVolumePanel.Visibility = Visibility.Visible;
-        MicrophoneVolumeBar.Value = 0;
-        MicrophoneVolumeText.Text = "0%";
+        page.MicrophoneVolumePanel.Visibility = Visibility.Visible;
+        page.MicrophoneVolumeBar.Value = 0;
+        page.MicrophoneVolumeText.Text = "0%";
 
         // Update button
-        BtnMicrophoneTest.Content = "Stop test";
+        page.BtnMicrophoneTest.Content = "Stop test";
         _isMicrophoneTestRunning = true;
 
         // Data available event - calculate and display volume
@@ -61,11 +73,12 @@ public sealed partial class MainWindow : Window
             // Update UI on UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
-                if (_isMicrophoneTestRunning)
+                var p = GetSettingsPage();
+                if (p != null && _isMicrophoneTestRunning)
                 {
                     int percentage = (int)(displayValue * 100);
-                    MicrophoneVolumeBar.Value = percentage;
-                    MicrophoneVolumeText.Text = $"{percentage}%";
+                    p.MicrophoneVolumeBar.Value = percentage;
+                    p.MicrophoneVolumeText.Text = $"{percentage}%";
                 }
             });
         };
@@ -77,6 +90,9 @@ public sealed partial class MainWindow : Window
 
     private async Task StopMicrophoneTestAsync()
     {
+        var page = GetSettingsPage();
+        if (page == null) return;
+
         _isMicrophoneTestRunning = false;
 
         _microphoneTestCancellation?.Cancel();
@@ -92,19 +108,22 @@ public sealed partial class MainWindow : Window
         _microphoneTestCancellation = null;
 
         // Update UI
-        BtnMicrophoneTest.Content = "Start test";
+        page.BtnMicrophoneTest.Content = "Start test";
 
         // Keep volume panel visible for a moment
         await Task.Delay(500);
         if (!_isMicrophoneTestRunning)
         {
-            MicrophoneVolumePanel.Visibility = Visibility.Collapsed;
+            page.MicrophoneVolumePanel.Visibility = Visibility.Collapsed;
         }
     }
 
     // ========== Speaker Test ==========
-    private async void BtnSpeakerTest_Click(object sender, RoutedEventArgs e)
+    public async void BtnSpeakerTest_Click(object sender, RoutedEventArgs e)
     {
+        var page = GetSettingsPage();
+        if (page == null) return;
+
         try
         {
             if (!_isSpeakerTestRunning)
@@ -119,16 +138,19 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             // Show error
-            BtnSpeakerTest.Content = $"Error";
+            page.BtnSpeakerTest.Content = $"Error";
             await Task.Delay(2000);
-            BtnSpeakerTest.Content = "Play test sound";
+            page.BtnSpeakerTest.Content = "Play test sound";
         }
     }
 
     private async Task StartSpeakerTestAsync()
     {
+        var page = GetSettingsPage();
+        if (page == null) return;
+
         _isSpeakerTestRunning = true;
-        BtnSpeakerTest.Content = "Stop";
+        page.BtnSpeakerTest.Content = "Stop";
 
         // Create pink noise generator (softer, more pleasant than sine wave)
         _speakerTestGenerator = new SignalGenerator()
@@ -159,6 +181,9 @@ public sealed partial class MainWindow : Window
 
     private void StopSpeakerTest()
     {
+        var page = GetSettingsPage();
+        if (page == null) return;
+
         _isSpeakerTestRunning = false;
 
         if (_speakerTestOutput != null)
@@ -170,7 +195,7 @@ public sealed partial class MainWindow : Window
 
         _speakerTestGenerator = null;
 
-        BtnSpeakerTest.Content = "Play test sound";
+        page.BtnSpeakerTest.Content = "Play test sound";
     }
 
     // ========== Helper Functions ==========

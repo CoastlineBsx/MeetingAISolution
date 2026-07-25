@@ -1,0 +1,212 @@
+<Page x:Class="MeetingAI.Host.Pages.LLaVAPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d">
+
+    <Grid Padding="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header with Controls -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Visual Understanding" FontSize="24" FontWeight="Bold" Margin="0,0,0,12"/>
+
+            <!-- Parameter Controls -->
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <!-- Answer Style -->
+                <ComboBox x:Name="CmbAnswerStyleVisual" x:FieldModifier="public" MinWidth="150" SelectedIndex="2">
+                    <ComboBoxItem Content="🎯 Concise" Tag="Concise"/>
+                    <ComboBoxItem Content="💬 Conversational" Tag="Conversational"/>
+                    <ComboBoxItem Content="📝 Detailed" Tag="Detailed"/>
+                    <ComboBoxItem Content="🎓 Educational" Tag="Educational"/>
+                    <ComboBoxItem Content="🔬 Technical" Tag="Technical"/>
+                </ComboBox>
+
+                <!-- Creativity -->
+                <ComboBox x:Name="CmbCreativityVisual" x:FieldModifier="public" MinWidth="150" SelectedIndex="3">
+                    <ComboBoxItem Content="🎯 Focused (0.3)" Tag="0.3"/>
+                    <ComboBoxItem Content="🔒 Precise (0.5)" Tag="0.5"/>
+                    <ComboBoxItem Content="⚖️ Balanced (0.7)" Tag="0.7"/>
+                    <ComboBoxItem Content="🎨 Creative (0.9)" Tag="0.9"/>
+                    <ComboBoxItem Content="🌟 Imaginative (1.0)" Tag="1.0"/>
+                </ComboBox>
+
+                <!-- Max Length -->
+                <ComboBox x:Name="CmbMaxLengthVisual" x:FieldModifier="public" MinWidth="150" SelectedIndex="2">
+                    <ComboBoxItem Content="📄 Short (512)" Tag="512"/>
+                    <ComboBoxItem Content="📑 Medium (1024)" Tag="1024"/>
+                    <ComboBoxItem Content="📚 Long (2048)" Tag="2048"/>
+                    <ComboBoxItem Content="📖 Extended (4096)" Tag="4096"/>
+                </ComboBox>
+
+                <!-- Clear Chat Button -->
+                <Button x:Name="BtnClearVisualChat" Click="BtnClearVisualChat_Click" Margin="24,0,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE74D;" FontSize="14"/>
+                        <TextBlock Text="Clear Chat"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Chat History -->
+        <Border Grid.Row="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1" CornerRadius="8" Background="{ThemeResource LayerFillColorDefaultBrush}">
+            <ScrollViewer x:Name="ScrollViewerVisual" x:FieldModifier="public" Padding="16" VerticalScrollBarVisibility="Auto">
+                <ListView x:Name="ChatHistoryVisual" x:FieldModifier="public"
+                          SelectionMode="None" ScrollViewer.VerticalScrollMode="Disabled">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="0,4"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <!-- User Message -->
+                                <Border Visibility="{Binding IsUserVisible}"
+                                        HorizontalAlignment="Right" MaxWidth="600"
+                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        CornerRadius="12" Padding="12,8" Margin="48,0,0,0">
+                                    <StackPanel>
+                                        <!-- Image if present -->
+                                        <Border Visibility="{Binding ImageVisible}"
+                                                Margin="0,0,0,8" CornerRadius="8">
+                                            <Image Source="{Binding Image.Preview}"
+                                                   MaxHeight="200" MaxWidth="400"
+                                                   Stretch="Uniform"
+                                                   Tapped="OnImageTapped_Visual"
+                                                   Tag="{Binding Image}"/>
+                                        </Border>
+                                        <!-- Text Content -->
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="White"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Assistant Message -->
+                                <Border Visibility="{Binding IsAssistantVisible}"
+                                        HorizontalAlignment="Left" MaxWidth="600"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="12" Padding="12,8" Margin="0,0,48,0">
+                                    <TextBlock Text="{Binding Content}"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Input Area -->
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Input Box with Drag-Drop -->
+            <Border Grid.Column="0" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8"
+                    AllowDrop="True"
+                    DragEnter="OnDragEnter_Visual"
+                    DragLeave="OnDragLeave_Visual"
+                    DragOver="OnDragOver_Visual"
+                    Drop="OnDrop_Visual">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Current Image Preview Bar -->
+                    <Border x:Name="CurrentImageBarVisual" Grid.Row="0"
+                            x:FieldModifier="public"
+                            Visibility="Collapsed"
+                            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                            Padding="8,4">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Thumbnail -->
+                            <Image x:Name="CurrentImageThumbnailVisual" Grid.Column="0"
+                                   x:FieldModifier="public"
+                                   Height="40" Width="40" Stretch="UniformToFill"
+                                   Margin="0,0,8,0"/>
+
+                            <!-- File Name -->
+                            <TextBlock x:Name="CurrentImageNameVisual" Grid.Column="1"
+                                       x:FieldModifier="public"
+                                       VerticalAlignment="Center"/>
+
+                            <!-- Remove Button -->
+                            <Button Grid.Column="2" Click="RemoveImage_Visual"
+                                    Background="Transparent" BorderThickness="0">
+                                <FontIcon Glyph="&#xE711;" FontSize="12"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Text Input -->
+                    <TextBox x:Name="InputBoxVisual" Grid.Row="1"
+                             x:FieldModifier="public"
+                             PlaceholderText="Describe your image or drag &amp; drop an image file here..."
+                             TextWrapping="Wrap" MinHeight="60" MaxHeight="120"
+                             AcceptsReturn="True" BorderThickness="0"
+                             KeyDown="InputBoxVisual_KeyDown"
+                             Padding="12,8"/>
+                </Grid>
+            </Border>
+
+            <!-- Action Buttons -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0">
+                <!-- Upload Image Button -->
+                <Button x:Name="BtnUploadImageVisual" Click="BtnUploadImageVisual_Click"
+                        Style="{StaticResource AccentButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xEB9F;" FontSize="16"/>
+                        <TextBlock Text="Image"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Send Button -->
+                <Button x:Name="BtnSendVisual" Click="BtnSendVisual_Click"
+                        Style="{StaticResource AccentButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE724;" FontSize="16"/>
+                        <TextBlock Text="Send"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Image Preview Overlay -->
+        <Grid x:Name="ImagePreviewOverlayVisual"
+              x:FieldModifier="public"
+              Grid.RowSpan="3"
+              Background="#CC000000"
+              Visibility="Collapsed"
+              Tapped="CloseImagePreview_Visual">
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Image x:Name="PreviewImageVisual"
+                       x:FieldModifier="public"
+                       MaxWidth="900" MaxHeight="700"
+                       Stretch="Uniform"/>
+            </Grid>
+        </Grid>
+    </Grid>
+</Page>

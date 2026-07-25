@@ -1,0 +1,165 @@
+<Page x:Class="MeetingAI.Host.Pages.QuickQAPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d">
+
+    <Grid Padding="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="120"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Text="Document Assistant" FontSize="28" FontWeight="Bold" Margin="0,0,0,24"/>
+
+        <!-- Configuration Panel -->
+        <StackPanel Grid.Row="1" Spacing="16" Margin="0,0,0,24">
+            <!-- First Row: Answer parameters and clear history -->
+            <StackPanel Orientation="Horizontal" Spacing="20">
+                <!-- Answer style -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Answer style" FontSize="14" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbAnswerStyleQuickQA" x:FieldModifier="public" SelectedIndex="1" VerticalAlignment="Center">
+                        <ComboBoxItem Content="Simple" Tag="Simple"/>
+                        <ComboBoxItem Content="Normal" Tag="Normal"/>
+                        <ComboBoxItem Content="Professional" Tag="Professional"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Creativity -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Creativity" FontSize="14" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbTemperatureQuickQA" x:FieldModifier="public" SelectedIndex="2" VerticalAlignment="Center">
+                        <ComboBoxItem Content="Precise" Tag="0.1"/>
+                        <ComboBoxItem Content="Focused" Tag="0.3"/>
+                        <ComboBoxItem Content="Balanced" Tag="0.7"/>
+                        <ComboBoxItem Content="Creative" Tag="0.9"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Length -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Length" FontSize="14" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbMaxTokensQuickQA" x:FieldModifier="public" SelectedIndex="2" VerticalAlignment="Center">
+                        <ComboBoxItem Content="Brief" Tag="512"/>
+                        <ComboBoxItem Content="Normal" Tag="1024"/>
+                        <ComboBoxItem Content="Detailed" Tag="2048"/>
+                        <ComboBoxItem Content="Extensive" Tag="4096"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Clear history button -->
+                <Button x:Name="BtnQuickQAClearHistory"
+                        x:FieldModifier="public"
+                        Content="Clear history"
+                        Click="BtnQuickQAClearHistory_Click"
+                        VerticalAlignment="Center"
+                        IsEnabled="False"/>
+            </StackPanel>
+
+            <!-- Second Row: Document controls and conversation mode -->
+            <StackPanel Orientation="Horizontal" Spacing="20">
+                <!-- Conversation mode -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Mode" FontSize="14" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbConversationModeQuickQA"
+                              x:FieldModifier="public"
+                              SelectedIndex="0"
+                              VerticalAlignment="Center">
+                        <ComboBoxItem Content="Single-turn" Tag="Single"/>
+                        <ComboBoxItem Content="Multi-turn" Tag="Multi"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Document upload controls -->
+                <Button x:Name="BtnQuickQALoad" Content="📁 Load document"
+                        x:FieldModifier="public"
+                        Click="BtnQuickQALoad_Click" IsEnabled="False"
+                        VerticalAlignment="Center"/>
+                <TextBlock x:Name="LblQuickQADoc" Text="No document loaded"
+                           x:FieldModifier="public"
+                           VerticalAlignment="Center" Foreground="Gray" FontSize="14"
+                           MaxWidth="400" TextTrimming="CharacterEllipsis"/>
+                <Button x:Name="BtnQuickQAClear" Content="❌ Clear"
+                        x:FieldModifier="public"
+                        Click="BtnQuickQAClear_Click" IsEnabled="False"
+                        VerticalAlignment="Center"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Chat History -->
+        <ListView x:Name="ChatHistoryListQuickQA" Grid.Row="2"
+                  x:FieldModifier="public"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  SelectionMode="None"
+                  Margin="0,0,0,12">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Padding" Value="4"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="ContextFlyout">
+                        <Setter.Value>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="Copy" Icon="Copy" Click="CopyMessage_Click"/>
+                            </MenuFlyout>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListView.ItemContainerStyle>
+
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="4,2">
+                        <!-- User message (right-aligned, Teams purple-blue) -->
+                        <Border Visibility="{Binding IsUserVisible}"
+                                Background="{ThemeResource UserBubbleBackground}"
+                                CornerRadius="12"
+                                Padding="12,8"
+                                HorizontalAlignment="Right"
+                                MaxWidth="600">
+                            <TextBlock Text="{Binding Content}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{ThemeResource UserBubbleText}"
+                                       IsTextSelectionEnabled="True"/>
+                        </Border>
+
+                        <!-- AI message (left-aligned, dark/light gray) -->
+                        <Border Visibility="{Binding IsAssistantVisible}"
+                                Background="{ThemeResource AIBubbleBackground}"
+                                CornerRadius="12"
+                                Padding="12,8"
+                                HorizontalAlignment="Left"
+                                MaxWidth="600">
+                            <TextBlock Text="{Binding Content}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{ThemeResource AIBubbleText}"
+                                       IsTextSelectionEnabled="True"/>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Input Box -->
+        <TextBox x:Name="TxtQuickQAInput" Grid.Row="3"
+                 x:FieldModifier="public"
+                 PlaceholderText="Type your question about the document (Ctrl+Enter to send)..."
+                 TextWrapping="Wrap" AcceptsReturn="True"
+                 PreviewKeyDown="TxtQuickQAInput_PreviewKeyDown"/>
+
+        <!-- Send Button -->
+        <Button x:Name="BtnQuickQASend" Grid.Row="4"
+                x:FieldModifier="public"
+                Content="Send (Ctrl+Enter)"
+                Click="BtnQuickQASend_Click"
+                HorizontalAlignment="Stretch"
+                Margin="0,24,0,0"
+                IsEnabled="False"/>
+    </Grid>
+</Page>

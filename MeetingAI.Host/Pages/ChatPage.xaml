@@ -1,0 +1,165 @@
+<Page x:Class="MeetingAI.Host.Pages.ChatPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d">
+
+    <Grid Padding="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="120"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Text="Intelligent Chat" FontSize="28" FontWeight="Bold" Margin="0,0,0,24"/>
+
+        <!-- Configuration Panel -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="24" Margin="0,0,0,24">
+            <!-- Conversation mode -->
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="Conversation mode" FontSize="14" VerticalAlignment="Center"/>
+                <ComboBox x:Name="CmbConversationModeChat"
+                          x:FieldModifier="public"
+                          SelectionChanged="CmbConversationMode_SelectionChanged" SelectedIndex="0"
+                          VerticalAlignment="Center">
+                    <ComboBoxItem Content="Single-turn" Tag="Single"/>
+                    <ComboBoxItem Content="Multi-turn" Tag="Multi"/>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Answer style -->
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="Answer style" FontSize="14" VerticalAlignment="Center"/>
+                <ComboBox x:Name="CmbAnswerStyleChat" x:FieldModifier="public" SelectedIndex="1" VerticalAlignment="Center">
+                    <ComboBoxItem Content="Simple" Tag="Simple"/>
+                    <ComboBoxItem Content="Normal" Tag="Normal"/>
+                    <ComboBoxItem Content="Professional" Tag="Professional"/>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Creativity -->
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="Creativity" FontSize="14" VerticalAlignment="Center"/>
+                <ComboBox x:Name="CmbTemperatureChat" x:FieldModifier="public" SelectedIndex="2" VerticalAlignment="Center">
+                    <ComboBoxItem Content="Precise" Tag="0.1"/>
+                    <ComboBoxItem Content="Focused" Tag="0.3"/>
+                    <ComboBoxItem Content="Balanced" Tag="0.7"/>
+                    <ComboBoxItem Content="Creative" Tag="0.9"/>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Length -->
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="Length" FontSize="14" VerticalAlignment="Center"/>
+                <ComboBox x:Name="CmbMaxTokensChat" x:FieldModifier="public" SelectedIndex="2" VerticalAlignment="Center">
+                    <ComboBoxItem Content="Brief" Tag="512"/>
+                    <ComboBoxItem Content="Normal" Tag="1024"/>
+                    <ComboBoxItem Content="Detailed" Tag="2048"/>
+                    <ComboBoxItem Content="Extensive" Tag="4096"/>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Clear history button -->
+            <Button x:Name="BtnGraniteClearChat"
+                    x:FieldModifier="public"
+                    Content="Clear history"
+                    Click="BtnGraniteClear_Click"
+                    VerticalAlignment="Center"
+                    IsEnabled="False"/>
+        </StackPanel>
+
+        <!-- Chat History -->
+        <ListView x:Name="ChatHistoryListChat" Grid.Row="2"
+                  x:FieldModifier="public"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  SelectionMode="None"
+                  Margin="0,0,0,12">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Padding" Value="4"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="ContextFlyout">
+                        <Setter.Value>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="Copy" Icon="Copy" Click="CopyMessage_Click"/>
+                            </MenuFlyout>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListView.ItemContainerStyle>
+
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="4,2">
+                        <!-- 用户消息（右对齐，Teams 紫蓝色） -->
+                        <Border Visibility="{Binding IsUserVisible}"
+                                Background="{ThemeResource UserBubbleBackground}"
+                                CornerRadius="12"
+                                Padding="12,8"
+                                HorizontalAlignment="Right"
+                                MaxWidth="600">
+                            <TextBlock Text="{Binding Content}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{ThemeResource UserBubbleText}"
+                                       IsTextSelectionEnabled="True"/>
+                        </Border>
+
+                        <!-- AI 消息（左对齐，深灰/浅灰） -->
+                        <Border Visibility="{Binding IsAssistantVisible}"
+                                Background="{ThemeResource AIBubbleBackground}"
+                                CornerRadius="12"
+                                Padding="12,8"
+                                HorizontalAlignment="Left"
+                                MaxWidth="600">
+                            <TextBlock Text="{Binding Content}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{ThemeResource AIBubbleText}"
+                                       IsTextSelectionEnabled="True"/>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Input Box -->
+        <TextBox x:Name="TxtGraniteInputChat" Grid.Row="3"
+                 x:FieldModifier="public"
+                 PlaceholderText="Type your question or use voice input (Ctrl+Enter to send)..."
+                 TextWrapping="Wrap" AcceptsReturn="True"
+                 PreviewKeyDown="TxtGraniteInput_PreviewKeyDown"/>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="4" Margin="0,24,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Voice Input Button -->
+            <Button x:Name="BtnVoiceInputChat" Grid.Column="0"
+                    x:FieldModifier="public"
+                    Click="BtnVoiceInput_Click"
+                    MinWidth="120"
+                    Margin="0,0,12,0"
+                    IsEnabled="False">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="TxtVoiceIconChat" x:FieldModifier="public" Text="🎤" FontSize="16"/>
+                    <TextBlock x:Name="TxtVoiceStatusChat" x:FieldModifier="public" Text="Voice Input"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Send Button -->
+            <Button x:Name="BtnGraniteSendChat" Grid.Column="1"
+                    x:FieldModifier="public"
+                    Content="Send (Ctrl+Enter)"
+                    Click="BtnGraniteSend_Click"
+                    HorizontalAlignment="Stretch"
+                    IsEnabled="False"/>
+        </Grid>
+    </Grid>
+</Page>

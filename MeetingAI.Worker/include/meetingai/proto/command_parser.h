@@ -67,4 +67,20 @@ namespace meetingai::proto {
 	// 从 {"system_message":"..."} 提取 system_message；失败返回默认值
 	std::string extractSystemMessage(const std::string& json, const std::string& defaultValue = "");
 
+	// ==================== Sherpa-ONNX 实时流式转录相关 ====================
+	// {"type":"start_streaming","sample_rate":16000}
+	bool isStartStreaming(const std::string& s);
+
+	// {"type":"streaming_audio","audio_data":"base64...","sample_rate":16000,"is_end":false}
+	bool isStreamingAudio(const std::string& s);
+
+	// {"type":"stop_streaming"}
+	bool isStopStreaming(const std::string& s);
+
+	// 从 {"audio_data":"..."} 提取 base64 编码的音频数据；失败返回空
+	std::string extractAudioData(const std::string& json);
+
+	// 从 {"is_end":true/false} 提取结束标记；失败返回 false
+	bool extractIsEnd(const std::string& json);
+
 } // namespace meetingai::proto

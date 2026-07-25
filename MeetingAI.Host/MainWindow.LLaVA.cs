@@ -37,7 +37,7 @@ public sealed partial class MainWindow : Window
     }
 
     // ========== 加载 LLaVA 模型 ==========
-    private async void BtnLoadLLaVA_Click(object sender, RoutedEventArgs e)
+    public async void BtnLoadLLaVA_Click(object sender, RoutedEventArgs e)
     {
         if (_isLLaVALoaded)
         {
@@ -53,20 +53,23 @@ public sealed partial class MainWindow : Window
 
     private async Task LoadLLaVAModel()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await AppendLineAsync("[Startup] Loading LLaVA model...");
 
             // 显示加载中状态
-            BtnLoadLLaVA.IsEnabled = false;
-            ProgressLLaVA.IsActive = true;
-            ProgressLLaVA.Visibility = Visibility.Visible;
-            CmbLLaVADevice.IsEnabled = false;
+            page.BtnLoadLLaVA.IsEnabled = false;
+            page.ProgressLLaVA.IsActive = true;
+            page.ProgressLLaVA.Visibility = Visibility.Visible;
+            page.CmbLLaVADevice.IsEnabled = false;
 
             await EnsurePipeAsync();
 
             // 读取用户选择的设备（从Startup页面）
-            string llaVADevice = CmbLLaVADevice.SelectedIndex switch
+            string llaVADevice = page.CmbLLaVADevice.SelectedIndex switch
             {
                 1 => "GPU",
                 2 => "NPU",
@@ -89,23 +92,26 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] LLaVA load failed: {ex.Message}");
-            ProgressLLaVA.IsActive = false;
-            ProgressLLaVA.Visibility = Visibility.Collapsed;
-            BtnLoadLLaVA.IsEnabled = true;
-            CmbLLaVADevice.IsEnabled = true;
+            page.ProgressLLaVA.IsActive = false;
+            page.ProgressLLaVA.Visibility = Visibility.Collapsed;
+            page.BtnLoadLLaVA.IsEnabled = true;
+            page.CmbLLaVADevice.IsEnabled = true;
         }
     }
 
     private async Task UnloadLLaVAModel()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await AppendLineAsync("[Startup] Unloading LLaVA model...");
 
             // 显示卸载中状态
-            BtnLoadLLaVA.IsEnabled = false;
-            ProgressLLaVA.IsActive = true;
-            ProgressLLaVA.Visibility = Visibility.Visible;
+            page.BtnLoadLLaVA.IsEnabled = false;
+            page.ProgressLLaVA.IsActive = true;
+            page.ProgressLLaVA.Visibility = Visibility.Visible;
 
             await EnsurePipeAsync();
 
@@ -122,9 +128,9 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] LLaVA unload failed: {ex.Message}");
-            ProgressLLaVA.IsActive = false;
-            ProgressLLaVA.Visibility = Visibility.Collapsed;
-            BtnLoadLLaVA.IsEnabled = true;
+            page.ProgressLLaVA.IsActive = false;
+            page.ProgressLLaVA.Visibility = Visibility.Collapsed;
+            page.BtnLoadLLaVA.IsEnabled = true;
         }
     }
 

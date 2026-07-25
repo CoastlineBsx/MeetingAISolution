@@ -8,13 +8,19 @@ namespace MeetingAI.Host;
 
 public sealed partial class MainWindow : Window
 {
+    // 辅助方法：获取 StartupPage 实例
+    private Pages.StartupPage? GetStartupPage()
+    {
+        return StartupFrame?.Content as Pages.StartupPage;
+    }
+
     private void InitializeStartup()
     {
         // 初始化（如果需要）
     }
 
     // ========== 加载/卸载 Whisper 模型 ==========
-    private async void BtnLoadWhisper_Click(object sender, RoutedEventArgs e)
+    public async void BtnLoadWhisper_Click(object sender, RoutedEventArgs e)
     {
         if (_isWhisperLoaded)
         {
@@ -30,20 +36,23 @@ public sealed partial class MainWindow : Window
 
     private async Task LoadWhisperModel()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await AppendLineAsync("[Startup] Loading Whisper model...");
 
             // 显示加载中状态
-            BtnLoadWhisper.IsEnabled = false;
-            ProgressWhisper.IsActive = true;
-            ProgressWhisper.Visibility = Visibility.Visible;
-            CmbWhisperDevice.IsEnabled = false;
+            page.BtnLoadWhisper.IsEnabled = false;
+            page.ProgressWhisper.IsActive = true;
+            page.ProgressWhisper.Visibility = Visibility.Visible;
+            page.CmbWhisperDevice.IsEnabled = false;
 
             await EnsurePipeAsync();
 
             // 读取用户选择的设备
-            string whisperDevice = CmbWhisperDevice.SelectedIndex switch
+            string whisperDevice = page.CmbWhisperDevice.SelectedIndex switch
             {
                 1 => "GPU",
                 2 => "NPU",
@@ -66,23 +75,26 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] Whisper load failed: {ex.Message}");
-            ProgressWhisper.IsActive = false;
-            ProgressWhisper.Visibility = Visibility.Collapsed;
-            BtnLoadWhisper.IsEnabled = true;
-            CmbWhisperDevice.IsEnabled = true;
+            page.ProgressWhisper.IsActive = false;
+            page.ProgressWhisper.Visibility = Visibility.Collapsed;
+            page.BtnLoadWhisper.IsEnabled = true;
+            page.CmbWhisperDevice.IsEnabled = true;
         }
     }
 
     private async Task UnloadWhisperModel()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await AppendLineAsync("[Startup] Unloading Whisper model...");
 
             // 显示卸载中状态
-            BtnLoadWhisper.IsEnabled = false;
-            ProgressWhisper.IsActive = true;
-            ProgressWhisper.Visibility = Visibility.Visible;
+            page.BtnLoadWhisper.IsEnabled = false;
+            page.ProgressWhisper.IsActive = true;
+            page.ProgressWhisper.Visibility = Visibility.Visible;
 
             await EnsurePipeAsync();
 
@@ -99,9 +111,9 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] Whisper unload failed: {ex.Message}");
-            ProgressWhisper.IsActive = false;
-            ProgressWhisper.Visibility = Visibility.Collapsed;
-            BtnLoadWhisper.IsEnabled = true;
+            page.ProgressWhisper.IsActive = false;
+            page.ProgressWhisper.Visibility = Visibility.Collapsed;
+            page.BtnLoadWhisper.IsEnabled = true;
         }
     }
 
@@ -110,20 +122,23 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ProgressWhisper.IsActive = false;
-            ProgressWhisper.Visibility = Visibility.Collapsed;
+            var page = GetStartupPage();
+            if (page == null) return;
+
+            page.ProgressWhisper.IsActive = false;
+            page.ProgressWhisper.Visibility = Visibility.Collapsed;
 
             if (success)
             {
                 _isWhisperLoaded = true;
-                BtnLoadWhisper.Content = "Unload Model";
-                BtnLoadWhisper.IsEnabled = true;
+                page.BtnLoadWhisper.Content = "Unload Model";
+                page.BtnLoadWhisper.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✓ Whisper model loaded: {message}");
             }
             else
             {
-                BtnLoadWhisper.IsEnabled = true;
-                CmbWhisperDevice.IsEnabled = true;
+                page.BtnLoadWhisper.IsEnabled = true;
+                page.CmbWhisperDevice.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✗ Whisper load failed: {message}");
             }
         });
@@ -133,27 +148,30 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ProgressWhisper.IsActive = false;
-            ProgressWhisper.Visibility = Visibility.Collapsed;
+            var page = GetStartupPage();
+            if (page == null) return;
+
+            page.ProgressWhisper.IsActive = false;
+            page.ProgressWhisper.Visibility = Visibility.Collapsed;
 
             if (success)
             {
                 _isWhisperLoaded = false;
-                BtnLoadWhisper.Content = "Load Model";
-                BtnLoadWhisper.IsEnabled = true;
-                CmbWhisperDevice.IsEnabled = true;
+                page.BtnLoadWhisper.Content = "Load Model";
+                page.BtnLoadWhisper.IsEnabled = true;
+                page.CmbWhisperDevice.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✓ Whisper model unloaded");
             }
             else
             {
-                BtnLoadWhisper.IsEnabled = true;
+                page.BtnLoadWhisper.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✗ Whisper unload failed: {message}");
             }
         });
     }
 
     // ========== 加载/卸载 OpenVINO Whisper 模型 ==========
-    private async void BtnLoadOpenVINOWhisper_Click(object sender, RoutedEventArgs e)
+    public async void BtnLoadOpenVINOWhisper_Click(object sender, RoutedEventArgs e)
     {
         if (_isOpenVINOWhisperLoaded)
         {
@@ -169,20 +187,23 @@ public sealed partial class MainWindow : Window
 
     private async Task LoadOpenVINOWhisperModel()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await AppendLineAsync("[Startup] Loading OpenVINO Whisper model...");
 
             // 显示加载中状态
-            BtnLoadOpenVINOWhisper.IsEnabled = false;
-            ProgressOpenVINOWhisper.IsActive = true;
-            ProgressOpenVINOWhisper.Visibility = Visibility.Visible;
-            CmbOpenVINOWhisperDevice.IsEnabled = false;
+            page.BtnLoadOpenVINOWhisper.IsEnabled = false;
+            page.ProgressOpenVINOWhisper.IsActive = true;
+            page.ProgressOpenVINOWhisper.Visibility = Visibility.Visible;
+            page.CmbOpenVINOWhisperDevice.IsEnabled = false;
 
             await EnsurePipeAsync();
 
             // 读取设备选择
-            string device = CmbOpenVINOWhisperDevice.SelectedIndex switch
+            string device = page.CmbOpenVINOWhisperDevice.SelectedIndex switch
             {
                 1 => "GPU",
                 2 => "NPU",
@@ -206,23 +227,26 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] OpenVINO Whisper load failed: {ex.Message}");
-            ProgressOpenVINOWhisper.IsActive = false;
-            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
-            BtnLoadOpenVINOWhisper.IsEnabled = true;
-            CmbOpenVINOWhisperDevice.IsEnabled = true;
+            page.ProgressOpenVINOWhisper.IsActive = false;
+            page.ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+            page.BtnLoadOpenVINOWhisper.IsEnabled = true;
+            page.CmbOpenVINOWhisperDevice.IsEnabled = true;
         }
     }
 
     private async Task UnloadOpenVINOWhisperModel()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await AppendLineAsync("[Startup] Unloading OpenVINO Whisper model...");
 
             // 显示卸载中状态
-            BtnLoadOpenVINOWhisper.IsEnabled = false;
-            ProgressOpenVINOWhisper.IsActive = true;
-            ProgressOpenVINOWhisper.Visibility = Visibility.Visible;
+            page.BtnLoadOpenVINOWhisper.IsEnabled = false;
+            page.ProgressOpenVINOWhisper.IsActive = true;
+            page.ProgressOpenVINOWhisper.Visibility = Visibility.Visible;
 
             await EnsurePipeAsync();
 
@@ -239,9 +263,9 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] OpenVINO Whisper unload failed: {ex.Message}");
-            ProgressOpenVINOWhisper.IsActive = false;
-            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
-            BtnLoadOpenVINOWhisper.IsEnabled = true;
+            page.ProgressOpenVINOWhisper.IsActive = false;
+            page.ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+            page.BtnLoadOpenVINOWhisper.IsEnabled = true;
         }
     }
 
@@ -250,20 +274,30 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ProgressOpenVINOWhisper.IsActive = false;
-            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+            var page = GetStartupPage();
+            if (page == null) return;
+
+            page.ProgressOpenVINOWhisper.IsActive = false;
+            page.ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
 
             if (success)
             {
                 _isOpenVINOWhisperLoaded = true;
-                BtnLoadOpenVINOWhisper.Content = "Unload OpenVINO Whisper";
-                BtnLoadOpenVINOWhisper.IsEnabled = true;
+                page.BtnLoadOpenVINOWhisper.Content = "Unload OpenVINO Whisper";
+                page.BtnLoadOpenVINOWhisper.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✓ OpenVINO Whisper model loaded: {message}");
+
+                // 启用 ChatPage 的语音输入按钮
+                var chatPage = GetChatPage();
+                if (chatPage != null)
+                {
+                    chatPage.BtnVoiceInputChat.IsEnabled = true;
+                }
             }
             else
             {
-                BtnLoadOpenVINOWhisper.IsEnabled = true;
-                CmbOpenVINOWhisperDevice.IsEnabled = true;
+                page.BtnLoadOpenVINOWhisper.IsEnabled = true;
+                page.CmbOpenVINOWhisperDevice.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✗ OpenVINO Whisper load failed: {message}");
             }
         });
@@ -273,20 +307,30 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ProgressOpenVINOWhisper.IsActive = false;
-            ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
+            var page = GetStartupPage();
+            if (page == null) return;
+
+            page.ProgressOpenVINOWhisper.IsActive = false;
+            page.ProgressOpenVINOWhisper.Visibility = Visibility.Collapsed;
 
             if (success)
             {
                 _isOpenVINOWhisperLoaded = false;
-                BtnLoadOpenVINOWhisper.Content = "Load OpenVINO Whisper";
-                BtnLoadOpenVINOWhisper.IsEnabled = true;
-                CmbOpenVINOWhisperDevice.IsEnabled = true;
+                page.BtnLoadOpenVINOWhisper.Content = "Load OpenVINO Whisper";
+                page.BtnLoadOpenVINOWhisper.IsEnabled = true;
+                page.CmbOpenVINOWhisperDevice.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✓ OpenVINO Whisper model unloaded");
+
+                // 禁用 ChatPage 的语音输入按钮
+                var chatPage = GetChatPage();
+                if (chatPage != null)
+                {
+                    chatPage.BtnVoiceInputChat.IsEnabled = false;
+                }
             }
             else
             {
-                BtnLoadOpenVINOWhisper.IsEnabled = true;
+                page.BtnLoadOpenVINOWhisper.IsEnabled = true;
                 _ = AppendLineAsync($"[Startup] ✗ OpenVINO Whisper unload failed: {message}");
             }
         });

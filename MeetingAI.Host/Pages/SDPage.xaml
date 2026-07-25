@@ -1,0 +1,183 @@
+<Page x:Class="MeetingAI.Host.Pages.SDPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d">
+
+    <Grid Padding="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="120"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Text="图像生成" FontSize="28" FontWeight="Bold" Margin="0,0,0,24"/>
+
+        <!-- Configuration Panel -->
+        <StackPanel Grid.Row="1" Spacing="16" Margin="0,0,0,24">
+            <!-- First Row: Style, Size, Quality, Clear -->
+            <StackPanel Orientation="Horizontal" Spacing="20">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="风格" FontSize="14" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbSDStyle" x:FieldModifier="public" SelectedIndex="0" VerticalAlignment="Center" MinWidth="100">
+                        <ComboBoxItem Content="默认"/>
+                        <ComboBoxItem Content="写实"/>
+                        <ComboBoxItem Content="卡通"/>
+                        <ComboBoxItem Content="油画"/>
+                        <ComboBoxItem Content="水彩"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="尺寸" FontSize="14" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbSDSize" x:FieldModifier="public" SelectedIndex="0" VerticalAlignment="Center" MinWidth="120">
+                        <ComboBoxItem Content="512 x 512"/>
+                        <ComboBoxItem Content="768 x 768"/>
+                        <ComboBoxItem Content="1024 x 1024"/>
+                        <ComboBoxItem Content="512 x 768"/>
+                        <ComboBoxItem Content="768 x 512"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="质量" FontSize="14" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CmbSDQuality" x:FieldModifier="public" SelectedIndex="1" VerticalAlignment="Center" MinWidth="100">
+                        <ComboBoxItem Content="快速 (15步)"/>
+                        <ComboBoxItem Content="标准 (20步)"/>
+                        <ComboBoxItem Content="高质量 (30步)"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <Button x:Name="BtnSDClear" Content="清空历史"
+                        x:FieldModifier="public"
+                        Click="BtnSDClear_Click" VerticalAlignment="Center" IsEnabled="False"/>
+            </StackPanel>
+
+            <!-- Second Row: Mode selection and negative prompt (collapsed) -->
+            <StackPanel Orientation="Horizontal" Spacing="20">
+                <Button x:Name="BtnSDSingle" Content="单轮模式"
+                        x:FieldModifier="public"
+                        Click="BtnSDSingle_Click" IsEnabled="False"/>
+                <Button x:Name="BtnSDMulti" Content="多轮模式 (迭代修改)"
+                        x:FieldModifier="public"
+                        Click="BtnSDMulti_Click" IsEnabled="False"/>
+                <TextBlock x:Name="LblSDMode" Text="[单轮模式]"
+                           x:FieldModifier="public"
+                           VerticalAlignment="Center" Foreground="Gray"/>
+            </StackPanel>
+
+            <!-- Negative Prompt (Expander) -->
+            <Expander Header="反向提示词 (可选)" IsExpanded="False">
+                <TextBox x:Name="TxtNegativePrompt"
+                         x:FieldModifier="public"
+                         PlaceholderText="lowres, bad anatomy, bad hands..."
+                         Height="60" TextWrapping="Wrap" AcceptsReturn="True"/>
+            </Expander>
+        </StackPanel>
+
+        <!-- Chat History with Images -->
+        <ListView x:Name="SDChatList" Grid.Row="2"
+                  x:FieldModifier="public"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  SelectionMode="None"
+                  Margin="0,0,0,12">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Padding" Value="4"/>
+                    <Setter Property="Margin" Value="0"/>
+                </Style>
+            </ListView.ItemContainerStyle>
+
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="4,2">
+                        <!-- User message (right) -->
+                        <Border Visibility="{Binding IsUserVisible}"
+                                Background="{ThemeResource UserBubbleBackground}"
+                                CornerRadius="12" Padding="12,8"
+                                HorizontalAlignment="Right" MaxWidth="600">
+                            <TextBlock Text="{Binding Content}" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource UserBubbleText}"
+                                       IsTextSelectionEnabled="True"/>
+                        </Border>
+
+                        <!-- AI message with image (left) -->
+                        <Border Visibility="{Binding IsAssistantVisible}"
+                                Background="{ThemeResource AIBubbleBackground}"
+                                CornerRadius="12" Padding="12,8"
+                                HorizontalAlignment="Left" MaxWidth="600">
+                            <StackPanel Spacing="8">
+                                <!-- Progress indicator -->
+                                <StackPanel Visibility="{Binding ProgressVisible}" Spacing="4">
+                                    <TextBlock Text="{Binding ProgressText}" FontSize="12"
+                                               Foreground="{ThemeResource AIBubbleText}"/>
+                                    <ProgressBar Value="{Binding GenerationProgress}"
+                                                 Maximum="100" Height="4"/>
+                                </StackPanel>
+
+                                <!-- Generated image -->
+                                <Image Source="{Binding Image.Preview}"
+                                       Visibility="{Binding ImageVisible}"
+                                       MaxWidth="512" MaxHeight="512"
+                                       Stretch="Uniform"/>
+
+                                <!-- Generation info -->
+                                <TextBlock Text="{Binding GenerationInfo}"
+                                           FontSize="11" Foreground="{ThemeResource AIBubbleText}"
+                                           Opacity="0.8"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Input Box -->
+        <TextBox x:Name="TxtSDInput" Grid.Row="3"
+                 x:FieldModifier="public"
+                 PlaceholderText="描述你想要生成的图片... (Ctrl+Enter 生成)"
+                 TextWrapping="Wrap" AcceptsReturn="True"
+                 PreviewKeyDown="TxtSDInput_PreviewKeyDown"/>
+
+        <!-- Action buttons row -->
+        <Grid Grid.Row="4" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: Image operation buttons (only visible when image selected) -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                <AppBarButton x:Name="BtnSDSaveImage" x:FieldModifier="public" Label="保存" Click="BtnSaveImage_Click" IsEnabled="False">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE74E;"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton x:Name="BtnSDCopyImage" x:FieldModifier="public" Label="复制" Click="BtnCopyImage_Click" IsEnabled="False">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE8C8;"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton x:Name="BtnSDRegenerate" x:FieldModifier="public" Label="重新生成" Click="BtnRegenerate_Click" IsEnabled="False">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE72C;"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
+            </StackPanel>
+
+            <!-- Right: Generate button -->
+            <Button x:Name="BtnSDGenerate" Grid.Column="1"
+                    x:FieldModifier="public"
+                    Content="生成 (Ctrl+Enter)"
+                    Click="BtnSDGenerate_Click"
+                    IsEnabled="False"
+                    Style="{ThemeResource AccentButtonStyle}"
+                    MinWidth="160"/>
+        </Grid>
+    </Grid>
+</Page>

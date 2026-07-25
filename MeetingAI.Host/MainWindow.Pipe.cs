@@ -111,19 +111,20 @@ public sealed partial class MainWindow : Window
             }
 
             // 读取设备选择 (0=CPU, 1=GPU, 2=NPU)
-            string graniteDevice = CmbGraniteDevice.SelectedIndex switch
+            var startupPage = GetStartupPage();
+            string graniteDevice = startupPage.CmbGraniteDevice.SelectedIndex switch
             {
                 0 => "CPU",
                 1 => "GPU",
                 2 => "NPU",
-                _ => "GPU"  // 默认 GPU
+                _ => "GPU"
             };
-            string embeddingDevice = CmbEmbeddingDevice.SelectedIndex switch
+            string embeddingDevice = startupPage.CmbEmbeddingDevice.SelectedIndex switch
             {
                 0 => "CPU",
                 1 => "GPU",
                 2 => "NPU",
-                _ => "GPU"  // 默认 GPU
+                _ => "GPU"
             };
 
             await AppendLineAsync($"[Host] 设备配置: Granite={graniteDevice}, Embedding={embeddingDevice}");
@@ -136,7 +137,7 @@ public sealed partial class MainWindow : Window
             });
 
             await Task.Delay(700);
-            BtnPreloadModels.IsEnabled = true;
+            startupPage.BtnPreloadModels.IsEnabled = true;
             BtnPing.IsEnabled = true;
             BtnTranscribe.IsEnabled = true;
             BtnLoopback.IsEnabled = true;
@@ -166,18 +167,19 @@ public sealed partial class MainWindow : Window
             BtnLLaVAMode.IsEnabled = true;
 
             // 启用Startup页面的模型加载按钮
-            BtnPreloadModels.IsEnabled = true;
-            BtnLoadWhisper.IsEnabled = true;
-            BtnLoadOpenVINOWhisper.IsEnabled = true;
-            BtnLoadLLaVA.IsEnabled = true;
-            BtnLoadSD.IsEnabled = true;
+            startupPage.BtnLoadWhisper.IsEnabled = true;
+            startupPage.BtnLoadOpenVINOWhisper.IsEnabled = true;
+            startupPage.BtnLoadLLaVA.IsEnabled = true;
+            startupPage.BtnLoadSD.IsEnabled = true;
 
             // 启用Document Assistant页面的按钮
-            BtnQuickQALoad.IsEnabled = true;
+            var quickQAPage = GetQuickQAPage();
+            quickQAPage.BtnQuickQALoad.IsEnabled = true;
 
             // 启用ChatPage的按钮
-            BtnGraniteClearChat.IsEnabled = true;
-            BtnGraniteSendChat.IsEnabled = true;
+            var chatPage = GetChatPage();
+            chatPage.BtnGraniteClearChat.IsEnabled = true;
+            chatPage.BtnGraniteSendChat.IsEnabled = true;
             // ChatPage的对话模式现在由ComboBox控制，默认选中Single-turn（索引0）
 
             LblModeStatus.Text = "";
@@ -191,7 +193,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void BtnPreloadModels_Click(object sender, RoutedEventArgs e)
+    public async void BtnPreloadModels_Click(object sender, RoutedEventArgs e)
     {
         if (_isGraniteEmbeddingLoaded)
         {
@@ -207,25 +209,28 @@ public sealed partial class MainWindow : Window
 
     private async Task LoadGraniteEmbeddingModels()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await EnsurePipeAsync();
 
             // 显示加载中状态
-            BtnPreloadModels.IsEnabled = false;
-            ProgressGraniteEmbedding.IsActive = true;
-            ProgressGraniteEmbedding.Visibility = Visibility.Visible;
-            CmbGraniteDevice.IsEnabled = false;
-            CmbEmbeddingDevice.IsEnabled = false;
+            page.BtnPreloadModels.IsEnabled = false;
+            page.ProgressGraniteEmbedding.IsActive = true;
+            page.ProgressGraniteEmbedding.Visibility = Visibility.Visible;
+            page.CmbGraniteDevice.IsEnabled = false;
+            page.CmbEmbeddingDevice.IsEnabled = false;
 
             // 读取当前设备选择
-            string graniteDevice = CmbGraniteDevice.SelectedIndex switch
+            string graniteDevice = page.CmbGraniteDevice.SelectedIndex switch
             {
                 1 => "GPU",
                 2 => "NPU",
                 _ => "CPU"  // 默认 CPU
             };
-            string embeddingDevice = CmbEmbeddingDevice.SelectedIndex switch
+            string embeddingDevice = page.CmbEmbeddingDevice.SelectedIndex switch
             {
                 1 => "GPU",
                 2 => "NPU",
@@ -246,24 +251,27 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] Model preload failed: {ex.Message}");
-            ProgressGraniteEmbedding.IsActive = false;
-            ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-            BtnPreloadModels.IsEnabled = true;
-            CmbGraniteDevice.IsEnabled = true;
-            CmbEmbeddingDevice.IsEnabled = true;
+            page.ProgressGraniteEmbedding.IsActive = false;
+            page.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+            page.BtnPreloadModels.IsEnabled = true;
+            page.CmbGraniteDevice.IsEnabled = true;
+            page.CmbEmbeddingDevice.IsEnabled = true;
         }
     }
 
     private async Task UnloadGraniteEmbeddingModels()
     {
+        var page = GetStartupPage();
+        if (page == null) return;
+
         try
         {
             await AppendLineAsync("[Startup] Unloading Granite & Embedding models...");
 
             // 显示卸载中状态
-            BtnPreloadModels.IsEnabled = false;
-            ProgressGraniteEmbedding.IsActive = true;
-            ProgressGraniteEmbedding.Visibility = Visibility.Visible;
+            page.BtnPreloadModels.IsEnabled = false;
+            page.ProgressGraniteEmbedding.IsActive = true;
+            page.ProgressGraniteEmbedding.Visibility = Visibility.Visible;
 
             await EnsurePipeAsync();
 
@@ -282,13 +290,13 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await AppendLineAsync($"[Startup] Unload failed: {ex.Message}");
-            ProgressGraniteEmbedding.IsActive = false;
-            ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-            BtnPreloadModels.IsEnabled = true;
+            page.ProgressGraniteEmbedding.IsActive = false;
+            page.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+            page.BtnPreloadModels.IsEnabled = true;
         }
     }
 
-    private async Task EnsurePipeAsync()
+    public async Task EnsurePipeAsync()
     {
         if (_pipe is { IsConnected: true } && _reader != null && _readLoopTask != null)
             return;
@@ -448,9 +456,13 @@ public sealed partial class MainWindow : Window
                 {
                     LblStatus.Text = "Granite 已就绪";
                     // Fix: Also stop the spinner for Granite
-                    ProgressGraniteEmbedding.IsActive = false;
-                    ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-                    BtnPreloadModels.IsEnabled = true;
+                    var startupPage = GetStartupPage();
+                    if (startupPage != null)
+                    {
+                        startupPage.ProgressGraniteEmbedding.IsActive = false;
+                        startupPage.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+                        startupPage.BtnPreloadModels.IsEnabled = true;
+                    }
 
                     // Update IE Chat UI to enable upload button
                     UpdateIEChatUI();
@@ -541,10 +553,14 @@ public sealed partial class MainWindow : Window
                     LblStatus.Text = "模型加载完成 ✅";
 
                     // 更新Startup页面状态
-                    ProgressGraniteEmbedding.IsActive = false;
-                    ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-                    BtnPreloadModels.Content = "Unload Models";
-                    BtnPreloadModels.IsEnabled = true;
+                    var startupPage = GetStartupPage();
+                    if (startupPage != null)
+                    {
+                        startupPage.ProgressGraniteEmbedding.IsActive = false;
+                        startupPage.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+                        startupPage.BtnPreloadModels.Content = "Unload Models";
+                        startupPage.BtnPreloadModels.IsEnabled = true;
+                    }
                     _isGraniteEmbeddingLoaded = true;
 
                     _ = AppendLineAsync("[DEBUG] *** UI更新已完成 ***");
@@ -564,12 +580,16 @@ public sealed partial class MainWindow : Window
             await AppendLineAsync("[Startup] ✓ Granite & Embedding models unloaded");
             DispatcherQueue.TryEnqueue(() =>
             {
-                ProgressGraniteEmbedding.IsActive = false;
-                ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-                BtnPreloadModels.Content = "Load Models";
-                BtnPreloadModels.IsEnabled = true;
-                CmbGraniteDevice.IsEnabled = true;
-                CmbEmbeddingDevice.IsEnabled = true;
+                var startupPage = GetStartupPage();
+                if (startupPage != null)
+                {
+                    startupPage.ProgressGraniteEmbedding.IsActive = false;
+                    startupPage.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
+                    startupPage.BtnPreloadModels.Content = "Load Models";
+                    startupPage.BtnPreloadModels.IsEnabled = true;
+                    startupPage.CmbGraniteDevice.IsEnabled = true;
+                    startupPage.CmbEmbeddingDevice.IsEnabled = true;
+                }
                 _isGraniteEmbeddingLoaded = false;
             });
             return;
@@ -589,10 +609,14 @@ public sealed partial class MainWindow : Window
                     LblStatus.Text = "LLaVA 已就绪";
 
                     // 更新Startup页面状态
-                    ProgressLLaVA.IsActive = false;
-                    ProgressLLaVA.Visibility = Visibility.Collapsed;
-                    BtnLoadLLaVA.Content = "Unload Model";
-                    BtnLoadLLaVA.IsEnabled = true;
+                    var startupPage = GetStartupPage();
+                    if (startupPage != null)
+                    {
+                        startupPage.ProgressLLaVA.IsActive = false;
+                        startupPage.ProgressLLaVA.Visibility = Visibility.Collapsed;
+                        startupPage.BtnLoadLLaVA.Content = "Unload Model";
+                        startupPage.BtnLoadLLaVA.IsEnabled = true;
+                    }
 
                     // 启用所有 LLaVA 功能按钮
                     BtnUploadImage.IsEnabled = true;
@@ -614,11 +638,15 @@ public sealed partial class MainWindow : Window
             await AppendLineAsync("[Startup] ✓ LLaVA model unloaded");
             DispatcherQueue.TryEnqueue(() =>
             {
-                ProgressLLaVA.IsActive = false;
-                ProgressLLaVA.Visibility = Visibility.Collapsed;
-                BtnLoadLLaVA.Content = "Load Model";
-                BtnLoadLLaVA.IsEnabled = true;
-                CmbLLaVADevice.IsEnabled = true;
+                var startupPage = GetStartupPage();
+                if (startupPage != null)
+                {
+                    startupPage.ProgressLLaVA.IsActive = false;
+                    startupPage.ProgressLLaVA.Visibility = Visibility.Collapsed;
+                    startupPage.BtnLoadLLaVA.Content = "Load Model";
+                    startupPage.BtnLoadLLaVA.IsEnabled = true;
+                    startupPage.CmbLLaVADevice.IsEnabled = true;
+                }
 
                 // 禁用 LLaVA 功能按钮
                 BtnUploadImage.IsEnabled = false;
@@ -819,6 +847,16 @@ public sealed partial class MainWindow : Window
         {
             // 转发给 OpenVINO Whisper 页面（如果有处理器）
             OpenVINOWhisperMessageHandler?.Invoke(jsonMsg);
+            return;
+        }
+
+        // ========== 实时流式转录消息处理 ==========
+        if (jsonMsg.Contains("\"type\":\"streaming_partial\"") ||
+            jsonMsg.Contains("\"type\":\"streaming_final\"") ||
+            jsonMsg.Contains("\"type\":\"streaming_error\""))
+        {
+            // 转发给 StreamingMeetingPage（如果有处理器）
+            StreamingMessageHandler?.Invoke(jsonMsg);
             return;
         }
     }

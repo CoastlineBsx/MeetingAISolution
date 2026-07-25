@@ -1,0 +1,280 @@
+<Page
+    x:Class="MeetingAI.Host.Pages.StartupPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Text="Startup &amp; Model Initialization" FontSize="28" FontWeight="Bold" Margin="0,0,0,32"/>
+
+        <!-- Model Configuration Panel -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="24" MaxWidth="900">
+
+                <!-- Granite & Embedding Models Group -->
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Language Models (Granite &amp; Embedding)"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Granite Device Selection -->
+                            <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,12,0">
+                                <TextBlock Text="Granite Model Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                <ComboBox x:Name="CmbGraniteDevice"
+                                          x:FieldModifier="public"
+                                          SelectedIndex="1"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="CPU"/>
+                                    <ComboBoxItem Content="GPU"/>
+                                    <ComboBoxItem Content="NPU"/>
+                                </ComboBox>
+                            </StackPanel>
+
+                            <!-- Embedding Device Selection -->
+                            <StackPanel Grid.Column="1" Spacing="8" Margin="12,0,0,0">
+                                <TextBlock Text="Embedding Model Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                <ComboBox x:Name="CmbEmbeddingDevice"
+                                          x:FieldModifier="public"
+                                          SelectedIndex="1"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="CPU"/>
+                                    <ComboBoxItem Content="GPU"/>
+                                    <ComboBoxItem Content="NPU"/>
+                                </ComboBox>
+                            </StackPanel>
+
+                            <!-- Load/Unload Button with ProgressRing -->
+                            <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="12" Margin="0,12,0,0">
+                                <Button x:Name="BtnPreloadModels"
+                                        x:FieldModifier="public"
+                                        Content="Load Models"
+                                        Click="BtnPreloadModels_Click"
+                                        HorizontalAlignment="Stretch"
+                                        MinWidth="200"
+                                        IsEnabled="False"
+                                        Style="{ThemeResource AccentButtonStyle}"/>
+                                <ProgressRing x:Name="ProgressGraniteEmbedding"
+                                              x:FieldModifier="public"
+                                              Width="24"
+                                              Height="24"
+                                              IsActive="False"
+                                              Visibility="Collapsed"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Whisper Model Group -->
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Speech Recognition (Whisper)"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"/>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Whisper Model Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ComboBox x:Name="CmbWhisperDevice"
+                                      x:FieldModifier="public"
+                                      SelectedIndex="1"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="CPU"/>
+                                <ComboBoxItem Content="GPU"/>
+                                <ComboBoxItem Content="NPU"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="BtnLoadWhisper"
+                                    x:FieldModifier="public"
+                                    Content="Load Model"
+                                    Click="BtnLoadWhisper_Click"
+                                    MinWidth="200"
+                                    IsEnabled="False"
+                                    Style="{ThemeResource AccentButtonStyle}"/>
+                            <ProgressRing x:Name="ProgressWhisper"
+                                          x:FieldModifier="public"
+                                          Width="24"
+                                          Height="24"
+                                          IsActive="False"
+                                          Visibility="Collapsed"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- OpenVINO Whisper Model Group -->
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="OpenVINO Whisper (High Performance)"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Text="Intel GenAI accelerated speech recognition with DTW timestamps"
+                                       FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Device Selection -->
+                            <StackPanel Grid.Column="0" Spacing="8" Margin="0,0,12,0">
+                                <TextBlock Text="Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                <ComboBox x:Name="CmbOpenVINOWhisperDevice"
+                                          x:FieldModifier="public"
+                                          SelectedIndex="0"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="CPU"/>
+                                    <ComboBoxItem Content="GPU"/>
+                                    <ComboBoxItem Content="NPU"/>
+                                </ComboBox>
+                            </StackPanel>
+
+                            <!-- Model Path -->
+                            <StackPanel Grid.Column="1" Spacing="8" Margin="12,0,0,0">
+                                <TextBlock Text="Model Path" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                <TextBlock Text="models/whisper_large_v3"
+                                           FontSize="12"
+                                           FontFamily="Consolas"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="BtnLoadOpenVINOWhisper"
+                                    x:FieldModifier="public"
+                                    Content="Load OpenVINO Whisper"
+                                    Click="BtnLoadOpenVINOWhisper_Click"
+                                    MinWidth="200"
+                                    IsEnabled="False"
+                                    Style="{ThemeResource AccentButtonStyle}"/>
+                            <ProgressRing x:Name="ProgressOpenVINOWhisper"
+                                          x:FieldModifier="public"
+                                          Width="24"
+                                          Height="24"
+                                          IsActive="False"
+                                          Visibility="Collapsed"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- LLaVA Model Group -->
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Vision Model (LLaVA)"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"/>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="LLaVA Model Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ComboBox x:Name="CmbLLaVADevice"
+                                      x:FieldModifier="public"
+                                      SelectedIndex="1"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="CPU"/>
+                                <ComboBoxItem Content="GPU"/>
+                                <ComboBoxItem Content="NPU"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="BtnLoadLLaVA"
+                                    x:FieldModifier="public"
+                                    Content="Load Model"
+                                    Click="BtnLoadLLaVA_Click"
+                                    MinWidth="200"
+                                    IsEnabled="False"
+                                    Style="{ThemeResource AccentButtonStyle}"/>
+                            <ProgressRing x:Name="ProgressLLaVA"
+                                          x:FieldModifier="public"
+                                          Width="24"
+                                          Height="24"
+                                          IsActive="False"
+                                          Visibility="Collapsed"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Stable Diffusion Model Group -->
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Image Generation (Stable Diffusion)"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"/>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="SD Model Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ComboBox x:Name="CmbSDDevice"
+                                      x:FieldModifier="public"
+                                      SelectedIndex="2"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="CPU"/>
+                                <ComboBoxItem Content="GPU"/>
+                                <ComboBoxItem Content="NPU"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="BtnLoadSD"
+                                    x:FieldModifier="public"
+                                    Content="Load Model"
+                                    Click="BtnLoadSD_Click"
+                                    MinWidth="200"
+                                    IsEnabled="False"
+                                    Style="{ThemeResource AccentButtonStyle}"/>
+                            <ProgressRing x:Name="ProgressSD"
+                                          x:FieldModifier="public"
+                                          Width="24"
+                                          Height="24"
+                                          IsActive="False"
+                                          Visibility="Collapsed"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

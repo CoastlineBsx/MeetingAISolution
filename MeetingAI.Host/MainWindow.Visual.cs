@@ -20,6 +20,9 @@ namespace MeetingAI.Host;
 
 public partial class MainWindow : Window
 {
+    // Helper method to get LLaVAPage
+    private Pages.LLaVAPage? GetLLaVAPage() => LLaVAFrame?.Content as Pages.LLaVAPage;
+
     // Visual Understanding chat history
     public ObservableCollection<ChatMessage> VisualChatHistory { get; set; } = new();
 
@@ -31,7 +34,7 @@ public partial class MainWindow : Window
     private int _visualScrollThrottle = 0;
 
     // Clear Visual Understanding chat
-    private void BtnClearVisualChat_Click(object sender, RoutedEventArgs e)
+    public void BtnClearVisualChat_Click(object sender, RoutedEventArgs e)
     {
         VisualChatHistory.Clear();
         _visualStreamingMessage = null;
@@ -40,19 +43,19 @@ public partial class MainWindow : Window
     }
 
     // Upload image button click
-    private async void BtnUploadImageVisual_Click(object sender, RoutedEventArgs e)
+    public async void BtnUploadImageVisual_Click(object sender, RoutedEventArgs e)
     {
         await PickAndLoadImageVisual();
     }
 
     // Send message in Visual Understanding
-    private async void BtnSendVisual_Click(object sender, RoutedEventArgs e)
+    public async void BtnSendVisual_Click(object sender, RoutedEventArgs e)
     {
         await SendVisualMessage();
     }
 
     // Handle Enter key in input box
-    private async void InputBoxVisual_KeyDown(object sender, KeyRoutedEventArgs e)
+    public async void InputBoxVisual_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Enter &&
             !Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
@@ -63,7 +66,7 @@ public partial class MainWindow : Window
     }
 
     // Drag-drop event handlers
-    private void OnDragEnter_Visual(object sender, DragEventArgs e)
+    public void OnDragEnter_Visual(object sender, DragEventArgs e)
     {
         if (e.DataView.Contains(StandardDataFormats.StorageItems))
         {
@@ -75,12 +78,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnDragLeave_Visual(object sender, DragEventArgs e)
+    public void OnDragLeave_Visual(object sender, DragEventArgs e)
     {
         // Visual feedback when drag leaves
     }
 
-    private void OnDragOver_Visual(object sender, DragEventArgs e)
+    public void OnDragOver_Visual(object sender, DragEventArgs e)
     {
         if (e.DataView.Contains(StandardDataFormats.StorageItems))
         {
@@ -88,7 +91,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnDrop_Visual(object sender, DragEventArgs e)
+    public async void OnDrop_Visual(object sender, DragEventArgs e)
     {
         if (e.DataView.Contains(StandardDataFormats.StorageItems))
         {
@@ -110,23 +113,28 @@ public partial class MainWindow : Window
     }
 
     // Image tap handler for preview
-    private void OnImageTapped_Visual(object sender, TappedRoutedEventArgs e)
+    public void OnImageTapped_Visual(object sender, TappedRoutedEventArgs e)
     {
-        if (sender is Image image && image.Tag is ImageAttachment attachment && attachment.FullImage != null)
+        var page = GetLLaVAPage();
+        if (page != null && sender is Image image && image.Tag is ImageAttachment attachment && attachment.FullImage != null)
         {
-            PreviewImageVisual.Source = attachment.FullImage;
-            ImagePreviewOverlayVisual.Visibility = Visibility.Visible;
+            page.PreviewImageVisual.Source = attachment.FullImage;
+            page.ImagePreviewOverlayVisual.Visibility = Visibility.Visible;
         }
     }
 
     // Close image preview
-    private void CloseImagePreview_Visual(object sender, TappedRoutedEventArgs e)
+    public void CloseImagePreview_Visual(object sender, TappedRoutedEventArgs e)
     {
-        ImagePreviewOverlayVisual.Visibility = Visibility.Collapsed;
+        var page = GetLLaVAPage();
+        if (page != null)
+        {
+            page.ImagePreviewOverlayVisual.Visibility = Visibility.Collapsed;
+        }
     }
 
     // Remove current image
-    private void RemoveImage_Visual(object sender, RoutedEventArgs e)
+    public void RemoveImage_Visual(object sender, RoutedEventArgs e)
     {
         _currentVisualImage = null;
         UpdateVisualImageUI();
@@ -221,15 +229,19 @@ public partial class MainWindow : Window
     // Helper: Update UI for current image
     private void UpdateVisualImageUI()
     {
-        if (_currentVisualImage != null)
+        var page = GetLLaVAPage();
+        if (page != null)
         {
-            CurrentImageBarVisual.Visibility = Visibility.Visible;
-            CurrentImageThumbnailVisual.Source = _currentVisualImage.Thumbnail;
-            CurrentImageNameVisual.Text = _currentVisualImage.FileName;
-        }
-        else
-        {
-            CurrentImageBarVisual.Visibility = Visibility.Collapsed;
+            if (_currentVisualImage != null)
+            {
+                page.CurrentImageBarVisual.Visibility = Visibility.Visible;
+                page.CurrentImageThumbnailVisual.Source = _currentVisualImage.Thumbnail;
+                page.CurrentImageNameVisual.Text = _currentVisualImage.FileName;
+            }
+            else
+            {
+                page.CurrentImageBarVisual.Visibility = Visibility.Collapsed;
+            }
         }
     }
 
@@ -243,7 +255,10 @@ public partial class MainWindow : Window
     // Helper: Send Visual Understanding message
     private async Task SendVisualMessage()
     {
-        var input = InputBoxVisual.Text.Trim();
+        var page = GetLLaVAPage();
+        if (page == null) return;
+
+        var input = page.InputBoxVisual.Text.Trim();
 
         // Check if we have input or image
         if (string.IsNullOrEmpty(input) && _currentVisualImage == null)
@@ -284,7 +299,7 @@ public partial class MainWindow : Window
         };
 
         VisualChatHistory.Add(userMessage);
-        InputBoxVisual.Text = "";
+        page.InputBoxVisual.Text = "";
 
         await AppendLineAsync($"[Visual] Sending: {userMessage.Content}");
 
@@ -307,14 +322,14 @@ public partial class MainWindow : Window
         int maxTokens = 2048;
         string systemPrompt = GetVisualSystemPrompt();
 
-        if (CmbCreativityVisual?.SelectedItem is ComboBoxItem tempItem &&
+        if (page.CmbCreativityVisual?.SelectedItem is ComboBoxItem tempItem &&
             tempItem.Tag is string tempStr &&
             float.TryParse(tempStr, out float temp))
         {
             temperature = temp;
         }
 
-        if (CmbMaxLengthVisual?.SelectedItem is ComboBoxItem tokenItem &&
+        if (page.CmbMaxLengthVisual?.SelectedItem is ComboBoxItem tokenItem &&
             tokenItem.Tag is string tokenStr &&
             int.TryParse(tokenStr, out int tokens))
         {
@@ -350,9 +365,10 @@ public partial class MainWindow : Window
     // Helper: Get system prompt based on answer style
     private string GetVisualSystemPrompt()
     {
+        var page = GetLLaVAPage();
         string basePrompt = "You are a helpful visual AI assistant. ";
 
-        if (CmbAnswerStyleVisual?.SelectedItem is ComboBoxItem selectedItem)
+        if (page?.CmbAnswerStyleVisual?.SelectedItem is ComboBoxItem selectedItem)
         {
             var tag = selectedItem.Tag?.ToString();
             return basePrompt + tag switch
@@ -372,11 +388,12 @@ public partial class MainWindow : Window
     // Helper: Scroll to bottom of Visual Understanding chat
     private void ScrollToBottomVisual()
     {
+        var page = GetLLaVAPage();
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (ScrollViewerVisual != null)
+            if (page?.ScrollViewerVisual != null)
             {
-                ScrollViewerVisual.ScrollToVerticalOffset(ScrollViewerVisual.ScrollableHeight);
+                page.ScrollViewerVisual.ScrollToVerticalOffset(page.ScrollViewerVisual.ScrollableHeight);
             }
         });
     }

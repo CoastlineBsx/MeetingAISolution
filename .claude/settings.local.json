@@ -46,7 +46,12 @@
       "Bash(echo:*)",
       "Bash(git checkout:*)",
       "Bash(where:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(C:VisualStudioMeetingAISolutionold_content.txt)",
+      "Bash(\"C:\\VisualStudio\\MeetingAISolution\\old_content.txt\")",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" MeetingAISolution.sln /p:Configuration=Debug /p:Platform=x64 /t:MeetingAI_Host /v:minimal)",
+      "Bash(curl:*)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" MeetingAI.HostMeetingAI.Host.csproj /p:Configuration=Debug /p:Platform=x64 /v:minimal)"
     ],
     "deny": [],
     "ask": []

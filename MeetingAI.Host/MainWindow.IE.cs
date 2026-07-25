@@ -215,12 +215,16 @@ public sealed partial class MainWindow : Window
             // 更新下拉菜单选择
             DispatcherQueue.TryEnqueue(() =>
             {
-                for (int i = 0; i < CmbIETemplate.Items.Count; i++)
+                var iePage = GetIEChatPage();
+                if (iePage != null)
                 {
-                    if (CmbIETemplate.Items[i] is ComboBoxItem item && item.Tag is string tag && tag == typeId)
+                    for (int i = 0; i < iePage.CmbIEChatTemplate.Items.Count; i++)
                     {
-                        CmbIETemplate.SelectedIndex = i;
-                        break;
+                        if (iePage.CmbIEChatTemplate.Items[i] is ComboBoxItem item && item.Tag is string tag && tag == typeId)
+                        {
+                            iePage.CmbIEChatTemplate.SelectedIndex = i;
+                            break;
+                        }
                     }
                 }
 
@@ -640,52 +644,42 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// 更新IE UI状态
+    /// TODO: IEChatPage uses different control naming (BtnIEChatExtract vs BtnIEExtract)
+    /// Need to update this method to use the new control names from IEChatPage
     /// </summary>
     private void UpdateIEUI()
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            var page = GetIEChatPage();
+            if (page == null) return;
+
+            // TODO: Update to use IEChatPage controls with "Chat" infix
             // 加载文档后的状态
             if (!string.IsNullOrEmpty(_ieDocumentName))
             {
-                BtnIEExtract.IsEnabled = true;
+                page.BtnIEChatExtract.IsEnabled = true;
 
                 var template = IETemplates.GetTemplate(_ieSelectedTemplateId ?? "general");
                 string sizeStr = FormatFileSize(_ieDocumentSize);
-                LblIEDoc.Text = $"文件: {_ieDocumentName} ({sizeStr}, {_ieTokenCount} tokens)";
+                page.LblIEChatDocStatus.Text = $"{_ieDocumentName} ({sizeStr}, {_ieTokenCount} tokens)";
             }
             else
             {
-                BtnIEExtract.IsEnabled = false;
-                LblIEDoc.Text = "未加载文档";
+                page.BtnIEChatExtract.IsEnabled = false;
+                page.LblIEChatDocStatus.Text = "No document loaded";
             }
 
-            // 提取完成后的状态
-            if (!string.IsNullOrEmpty(_ieExtractedJson))
-            {
-                BtnIECopyJSON.IsEnabled = true;
-                BtnIEExport.IsEnabled = true;
-                BtnIEReExtract.IsEnabled = true;
-                BtnIEContinueDialog.IsEnabled = true;
-
-                if (_isIEDialogMode)
-                {
-                    int currentTurn = _ieDialogHistory.Count;
-                    LblIEStatus.Text = $"💬 对话模式 ({currentTurn}/{MAX_IE_TURNS}轮)";
-                }
-                else
-                {
-                    LblIEStatus.Text = "✅ 提取完成";
-                }
-            }
-            else
-            {
-                BtnIECopyJSON.IsEnabled = false;
-                BtnIEExport.IsEnabled = false;
-                BtnIEReExtract.IsEnabled = false;
-                BtnIEContinueDialog.IsEnabled = false;
-                LblIEStatus.Text = "";
-            }
+            // 提取完成后的状态 - TODO: These buttons don't exist in IEChatPage
+            // The new IEChatPage has per-message Copy/Export buttons instead of global ones
+            // if (!string.IsNullOrEmpty(_ieExtractedJson))
+            // {
+            //     page.BtnIECopyJSON.IsEnabled = true;
+            //     page.BtnIEExport.IsEnabled = true;
+            //     page.BtnIEReExtract.IsEnabled = true;
+            //     page.BtnIEContinueDialog.IsEnabled = true;
+            //     ...
+            // }
         });
     }
 

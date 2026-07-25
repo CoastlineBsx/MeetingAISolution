@@ -258,4 +258,59 @@ namespace meetingai::proto {
         }
     }
 
+    // ==================== Sherpa-ONNX 实时流式转录相关 ====================
+
+    bool isStartStreaming(const std::string& s) {
+        auto t = trim(s);
+        return t.find("\"type\"") != std::string::npos &&
+            t.find("\"start_streaming\"") != std::string::npos;
+    }
+
+    bool isStreamingAudio(const std::string& s) {
+        auto t = trim(s);
+        return t.find("\"type\"") != std::string::npos &&
+            t.find("\"streaming_audio\"") != std::string::npos;
+    }
+
+    bool isStopStreaming(const std::string& s) {
+        auto t = trim(s);
+        return t.find("\"type\"") != std::string::npos &&
+            t.find("\"stop_streaming\"") != std::string::npos;
+    }
+
+    std::string extractAudioData(const std::string& json) {
+        size_t start = json.find("\"audio_data\":");
+        if (start == std::string::npos) return "";
+
+        start = json.find("\"", start + 13);  // 13 = len("audio_data":")
+        if (start == std::string::npos) return "";
+        start++;
+
+        size_t end = json.find("\"", start);
+        if (end == std::string::npos) return "";
+
+        return json.substr(start, end - start);
+    }
+
+    bool extractIsEnd(const std::string& json) {
+        size_t pos = json.find("\"is_end\"");
+        if (pos == std::string::npos) return false;
+
+        size_t colon = json.find(":", pos);
+        if (colon == std::string::npos) return false;
+
+        // Skip whitespace
+        size_t start = colon + 1;
+        while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) {
+            start++;
+        }
+
+        // Check for "true"
+        if (json.compare(start, 4, "true") == 0) {
+            return true;
+        }
+
+        return false;
+    }
+
 } // namespace meetingai::proto

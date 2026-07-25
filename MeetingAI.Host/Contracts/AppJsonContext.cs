@@ -21,6 +21,9 @@ namespace MeetingAI.Host.Contracts;
 [JsonSerializable(typeof(TestSimilarityCommand))]
 [JsonSerializable(typeof(SimilarityTestResult))]
 [JsonSerializable(typeof(SimilarityPair))]
+[JsonSerializable(typeof(StreamingAudioCommand))]
+[JsonSerializable(typeof(StartStreamingCommand))]
+[JsonSerializable(typeof(StopStreamingCommand))]
 internal partial class AppJsonContext : JsonSerializerContext
 {
     // 延迟初始化：创建一个允许直接输出中文字符（UTF-8）的上下文

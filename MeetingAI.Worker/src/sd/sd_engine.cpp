@@ -46,24 +46,45 @@ namespace meetingai::sd {
             // GPU 设备需要特殊配置
             if (actual_device == "GPU" || actual_device == "GPU.0" || actual_device == "GPU.1") {
                 std::cout << "[SD Engine] Applying GPU optimizations..." << std::endl;
-                // OpenVINO GPU 配置：添加设备属性
-                ov::AnyMap config;
-                config["GPU_THROTTLE_LEVEL"] = "0";  // 禁用节流
-                config["CACHE_DIR"] = "";  // 禁用缓存以避免冲突
 
-                std::cout << "[SD Engine] Loading Text2Image Pipeline with GPU config..." << std::endl;
+                bool gpu_init_success = false;
+
+                // 首先尝试完整的 GPU 配置（包括节流控制）
                 try {
+                    ov::AnyMap config;
+                    config["GPU_THROTTLE_LEVEL"] = "0";  // 禁用节流（某些 GPU 支持）
+                    config["CACHE_DIR"] = "";  // 禁用缓存以避免冲突
+
+                    std::cout << "[SD Engine] Loading pipelines with full GPU config..." << std::endl;
                     p_->text2img_pipe = std::make_unique<ov::genai::Text2ImagePipeline>(model_path, actual_device, config);
-                    std::cout << "[SD Engine] Loading Image2Image Pipeline with GPU config..." << std::endl;
                     p_->img2img_pipe = std::make_unique<ov::genai::Image2ImagePipeline>(model_path, actual_device, config);
-                } catch (const std::exception& gpu_err) {
-                    std::cerr << "[SD Engine] ⚠️ GPU initialization failed: " << gpu_err.what() << std::endl;
+                    gpu_init_success = true;
+                    std::cout << "[SD Engine] ✅ GPU initialization successful with throttle control" << std::endl;
+                } catch (const std::exception& config_err) {
+                    std::cerr << "[SD Engine] ⚠️ GPU config failed: " << config_err.what() << std::endl;
+
+                    // 尝试不带 GPU_THROTTLE_LEVEL 的 GPU 配置（Intel Arc iGPU 等）
+                    try {
+                        std::cout << "[SD Engine] Retrying GPU without throttle control..." << std::endl;
+                        ov::AnyMap minimal_config;
+                        minimal_config["CACHE_DIR"] = "";  // 仅保留缓存禁用
+
+                        p_->text2img_pipe = std::make_unique<ov::genai::Text2ImagePipeline>(model_path, actual_device, minimal_config);
+                        p_->img2img_pipe = std::make_unique<ov::genai::Image2ImagePipeline>(model_path, actual_device, minimal_config);
+                        gpu_init_success = true;
+                        std::cout << "[SD Engine] ✅ GPU initialization successful without throttle control" << std::endl;
+                    } catch (const std::exception& minimal_err) {
+                        std::cerr << "[SD Engine] ⚠️ GPU minimal config also failed: " << minimal_err.what() << std::endl;
+                    }
+                }
+
+                // 如果所有 GPU 尝试都失败，回退到 CPU
+                if (!gpu_init_success) {
                     std::cerr << "[SD Engine] Falling back to CPU..." << std::endl;
                     actual_device = "CPU";
                     p_->device = actual_device;
                     gpu_fallback_attempted = true;
 
-                    // 重试使用 CPU
                     p_->text2img_pipe = std::make_unique<ov::genai::Text2ImagePipeline>(model_path, actual_device);
                     p_->img2img_pipe = std::make_unique<ov::genai::Image2ImagePipeline>(model_path, actual_device);
                 }

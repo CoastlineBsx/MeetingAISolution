@@ -19,6 +19,9 @@ namespace MeetingAI.Host;
 
 public partial class MainWindow
 {
+    // Helper method to get SDPage
+    private Pages.SDPage? GetSDPage() => SDFrame?.Content as Pages.SDPage;
+
     // SD 相关字段
     private ObservableCollection<ChatMessage> _sdChatHistory = new();
     private bool _isSDMultiTurnMode = false;
@@ -30,26 +33,26 @@ public partial class MainWindow
     // SD 初始化
     private void InitializeSDPage()
     {
-        SDChatList.ItemsSource = _sdChatHistory;
+        // ItemsSource will be set when page is loaded
     }
 
     // 加载 SD 模型
-    private async void BtnLoadSD_Click(object sender, RoutedEventArgs e)
+    public async void BtnLoadSD_Click(object sender, RoutedEventArgs e)
     {
-        if (_pipe == null || !_pipe.IsConnected)
-        {
-            await ShowErrorDialog("Worker 未连接", "请先启动 Worker 进程");
-            return;
-        }
+        var page = GetStartupPage();
+        if (page == null) return;
 
-        BtnLoadSD.IsEnabled = false;
-        ProgressSD.IsActive = true;
-        ProgressSD.Visibility = Visibility.Visible;
+        page.BtnLoadSD.IsEnabled = false;
+        page.ProgressSD.IsActive = true;
+        page.ProgressSD.Visibility = Visibility.Visible;
 
         try
         {
+            // 确保管道连接
+            await EnsurePipeAsync();
+
             // 获取选择的设备
-            string device = CmbSDDevice.SelectedIndex switch
+            string device = page.CmbSDDevice.SelectedIndex switch
             {
                 1 => "GPU",
                 2 => "NPU",
@@ -76,30 +79,37 @@ public partial class MainWindow
         }
         finally
         {
-            ProgressSD.IsActive = false;
-            ProgressSD.Visibility = Visibility.Collapsed;
+            page.ProgressSD.IsActive = false;
+            page.ProgressSD.Visibility = Visibility.Collapsed;
+            page.BtnLoadSD.IsEnabled = true;
         }
     }
 
     // 单轮/多轮模式切换
-    private void BtnSDSingle_Click(object sender, RoutedEventArgs e)
+    public void BtnSDSingle_Click(object sender, RoutedEventArgs e)
     {
+        var page = GetSDPage();
+        if (page == null) return;
+
         _isSDMultiTurnMode = false;
-        LblSDMode.Text = "[单轮模式]";
-        BtnSDSingle.IsEnabled = false;
-        BtnSDMulti.IsEnabled = true;
+        page.LblSDMode.Text = "[单轮模式]";
+        page.BtnSDSingle.IsEnabled = false;
+        page.BtnSDMulti.IsEnabled = true;
     }
 
-    private void BtnSDMulti_Click(object sender, RoutedEventArgs e)
+    public void BtnSDMulti_Click(object sender, RoutedEventArgs e)
     {
+        var page = GetSDPage();
+        if (page == null) return;
+
         _isSDMultiTurnMode = true;
-        LblSDMode.Text = "[多轮模式 - 迭代修改]";
-        BtnSDSingle.IsEnabled = true;
-        BtnSDMulti.IsEnabled = false;
+        page.LblSDMode.Text = "[多轮模式 - 迭代修改]";
+        page.BtnSDSingle.IsEnabled = true;
+        page.BtnSDMulti.IsEnabled = false;
     }
 
     // 清空历史
-    private void BtnSDClear_Click(object sender, RoutedEventArgs e)
+    public void BtnSDClear_Click(object sender, RoutedEventArgs e)
     {
         _sdChatHistory.Clear();
         _lastSDImagePath = null;
@@ -108,13 +118,13 @@ public partial class MainWindow
     }
 
     // 发送生成请求
-    private async void BtnSDGenerate_Click(object sender, RoutedEventArgs e)
+    public async void BtnSDGenerate_Click(object sender, RoutedEventArgs e)
     {
         await GenerateSD();
     }
 
     // Ctrl+Enter 快捷键
-    private void TxtSDInput_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    public void TxtSDInput_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Enter)
         {
@@ -129,15 +139,23 @@ public partial class MainWindow
 
     private async Task GenerateSD()
     {
-        if (_pipe == null || !_pipe.IsConnected)
+        var page = GetSDPage();
+        if (page == null) return;
+
+        string prompt = page.TxtSDInput.Text.Trim();
+        if (string.IsNullOrEmpty(prompt))
         {
-            await ShowErrorDialog("错误", "Worker 未连接");
             return;
         }
 
-        string prompt = TxtSDInput.Text.Trim();
-        if (string.IsNullOrEmpty(prompt))
+        try
         {
+            // 确保管道连接
+            await EnsurePipeAsync();
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog("错误", $"无法连接到 Worker: {ex.Message}");
             return;
         }
 
@@ -149,7 +167,7 @@ public partial class MainWindow
             Timestamp = DateTime.Now
         };
         _sdChatHistory.Add(userMsg);
-        TxtSDInput.Text = "";
+        page.TxtSDInput.Text = "";
 
         // 创建 AI 生成中消息
         var aiMsg = new ChatMessage
@@ -164,9 +182,9 @@ public partial class MainWindow
         _currentSDGeneratingMessage = aiMsg;
 
         // 滚动到底部
-        if (SDChatList.Items.Count > 0)
+        if (page.SDChatList.Items.Count > 0)
         {
-            SDChatList.ScrollIntoView(SDChatList.Items[^1]);
+            page.SDChatList.ScrollIntoView(page.SDChatList.Items[^1]);
         }
 
         try
@@ -176,20 +194,20 @@ public partial class MainWindow
 
             // 获取参数
             int width = 512, height = 512;
-            if (CmbSDSize.SelectedIndex == 1) { width = 768; height = 768; }
-            else if (CmbSDSize.SelectedIndex == 2) { width = 1024; height = 1024; }
-            else if (CmbSDSize.SelectedIndex == 3) { width = 512; height = 768; }
-            else if (CmbSDSize.SelectedIndex == 4) { width = 768; height = 512; }
+            if (page.CmbSDSize.SelectedIndex == 1) { width = 768; height = 768; }
+            else if (page.CmbSDSize.SelectedIndex == 2) { width = 1024; height = 1024; }
+            else if (page.CmbSDSize.SelectedIndex == 3) { width = 512; height = 768; }
+            else if (page.CmbSDSize.SelectedIndex == 4) { width = 768; height = 512; }
 
             int steps = 20;
-            if (CmbSDQuality.SelectedIndex == 0) steps = 15;
-            else if (CmbSDQuality.SelectedIndex == 1) steps = 20;
-            else if (CmbSDQuality.SelectedIndex == 2) steps = 30;
+            if (page.CmbSDQuality.SelectedIndex == 0) steps = 15;
+            else if (page.CmbSDQuality.SelectedIndex == 1) steps = 20;
+            else if (page.CmbSDQuality.SelectedIndex == 2) steps = 30;
 
             float cfgScale = 7.5f;
             int seed = -1; // 随机
 
-            string negativePrompt = TxtNegativePrompt.Text.Trim();
+            string negativePrompt = page.TxtNegativePrompt.Text.Trim();
             if (string.IsNullOrEmpty(negativePrompt))
             {
                 negativePrompt = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry";
@@ -232,27 +250,30 @@ public partial class MainWindow
     // 应用风格预设
     private string ApplyStylePreset(string basePrompt)
     {
-        if (CmbSDStyle.SelectedIndex == 0)
+        var page = GetSDPage();
+        if (page == null) return basePrompt;
+
+        if (page.CmbSDStyle.SelectedIndex == 0)
         {
             // 默认
             return $"{basePrompt}, high quality, detailed";
         }
-        else if (CmbSDStyle.SelectedIndex == 1)
+        else if (page.CmbSDStyle.SelectedIndex == 1)
         {
             // 写实
             return $"{basePrompt}, photorealistic, 8k, ultra detailed, professional photography";
         }
-        else if (CmbSDStyle.SelectedIndex == 2)
+        else if (page.CmbSDStyle.SelectedIndex == 2)
         {
             // 卡通
             return $"{basePrompt}, cartoon style, cute, colorful, animated";
         }
-        else if (CmbSDStyle.SelectedIndex == 3)
+        else if (page.CmbSDStyle.SelectedIndex == 3)
         {
             // 油画
             return $"{basePrompt}, oil painting style, artistic, brush strokes";
         }
-        else if (CmbSDStyle.SelectedIndex == 4)
+        else if (page.CmbSDStyle.SelectedIndex == 4)
         {
             // 水彩
             return $"{basePrompt}, watercolor style, soft colors, artistic";
@@ -268,15 +289,18 @@ public partial class MainWindow
         {
             try
             {
+                var page = GetSDPage();
+                if (page == null) return;
+
                 Debug.WriteLine($"[SD] 收到消息类型: {type}");
                 switch (type)
                 {
                     case "sd_ready":
                         // SD 模型加载完成
-                        BtnSDGenerate.IsEnabled = true;
-                        BtnSDSingle.IsEnabled = true;
-                        BtnSDMulti.IsEnabled = true;
-                        BtnSDClear.IsEnabled = true;
+                        page.BtnSDGenerate.IsEnabled = true;
+                        page.BtnSDSingle.IsEnabled = true;
+                        page.BtnSDMulti.IsEnabled = true;
+                        page.BtnSDClear.IsEnabled = true;
                         Debug.WriteLine("[SD] 模型加载完成");
                         break;
 
@@ -324,9 +348,9 @@ public partial class MainWindow
                                 _lastSDPrompt = _currentSDGeneratingMessage.Content;
 
                                 // 启用图片操作按钮
-                                BtnSDSaveImage.IsEnabled = true;
-                                BtnSDCopyImage.IsEnabled = true;
-                                BtnSDRegenerate.IsEnabled = true;
+                                page.BtnSDSaveImage.IsEnabled = true;
+                                page.BtnSDCopyImage.IsEnabled = true;
+                                page.BtnSDRegenerate.IsEnabled = true;
                                 Debug.WriteLine($"[SD] 已启用保存/复制/重新生成按钮");
                             }
                             else
@@ -338,9 +362,9 @@ public partial class MainWindow
                             _currentSDGeneratingMessage = null;
 
                             // 滚动到底部
-                            if (SDChatList.Items.Count > 0)
+                            if (page.SDChatList.Items.Count > 0)
                             {
-                                SDChatList.ScrollIntoView(SDChatList.Items[^1]);
+                                page.SDChatList.ScrollIntoView(page.SDChatList.Items[^1]);
                             }
                             Debug.WriteLine($"[SD] sd_complete 消息处理完成");
                         }
@@ -386,7 +410,7 @@ public partial class MainWindow
     }
 
     // 保存图片
-    private async void BtnSaveImage_Click(object sender, RoutedEventArgs e)
+    public async void BtnSaveImage_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_lastSDImagePath) || !File.Exists(_lastSDImagePath))
         {
@@ -419,7 +443,7 @@ public partial class MainWindow
     }
 
     // 复制图片
-    private async void BtnCopyImage_Click(object sender, RoutedEventArgs e)
+    public async void BtnCopyImage_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_lastSDImagePath) || !File.Exists(_lastSDImagePath))
         {
@@ -444,8 +468,11 @@ public partial class MainWindow
     }
 
     // 重新生成
-    private async void BtnRegenerate_Click(object sender, RoutedEventArgs e)
+    public async void BtnRegenerate_Click(object sender, RoutedEventArgs e)
     {
+        var page = GetSDPage();
+        if (page == null) return;
+
         if (string.IsNullOrEmpty(_lastSDPrompt))
         {
             Debug.WriteLine("[SD] 没有可重新生成的提示词");
@@ -453,7 +480,7 @@ public partial class MainWindow
         }
 
         // 将上次的提示词填回输入框并重新生成
-        TxtSDInput.Text = _lastSDPrompt;
+        page.TxtSDInput.Text = _lastSDPrompt;
         await GenerateSD();
     }
 
