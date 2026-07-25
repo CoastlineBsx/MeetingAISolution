@@ -79,10 +79,8 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <!-- 暂不做说话人分离，标签隐藏（逻辑保留） -->
                                             <TextBlock Grid.Column="0"
                                                        Text="{Binding SpeakerName}"
-                                                       Visibility="Collapsed"
                                                        FontWeight="SemiBold"
                                                        Foreground="{Binding SpeakerColor}"/>
                                             <TextBlock Grid.Column="2"
@@ -170,16 +168,21 @@
                                    Margin="0,0,0,4"/>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Audio source:"
+                            <TextBlock Text="音频来源:"
                                        VerticalAlignment="Center"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <ComboBox x:Name="CmbAudioSource"
-                                      SelectedIndex="0"
-                                      MinWidth="170">
-                                <ComboBoxItem Content="Microphone"/>
-                                <ComboBoxItem Content="System audio"/>
+                                      SelectedIndex="2"
+                                      MinWidth="210">
+                                <ComboBoxItem Content="我方（麦克风）"/>
+                                <ComboBoxItem Content="对方（会议音频）"/>
+                                <ComboBoxItem Content="我方 + 对方（同时）"/>
                             </ComboBox>
                         </StackPanel>
+                        <TextBlock Text="同时监听建议佩戴耳机，避免对方声音被麦克风再次收录。"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="Duration:"

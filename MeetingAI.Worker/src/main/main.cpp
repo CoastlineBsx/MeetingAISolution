@@ -9,6 +9,8 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <unordered_map>
+#include <vector>
 #include <shlobj.h>
 #include <codecvt>
 
@@ -78,7 +80,8 @@ static std::unique_ptr<meetingai::transcribe::Punctuator> g_punct;
 static bool g_punct_attempted = false;
 // Sherpa endpoint 只是声学分段，不等于一句话。保留尚未获得足够语义前瞻的
 // 原始文本，直到标点模型确认句界或检测到长静音/停止。
-static std::string g_streaming_pending_raw;
+static std::unordered_map<std::string, std::string> g_streaming_pending_raw;
+static std::vector<std::string> g_streaming_active_sources;
 
 // ========== 设备配置 ==========
 static std::string g_granite_device = "GPU";   // Granite LLM 使用的设备
@@ -1001,28 +1004,34 @@ static void handleTranscribeOpenVINOCommand(HANDLE hPipe, const std::string& com
 static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& command) {
     auto sendTranscript = [hPipe](
         const char* type,
+        const std::string& source,
         const std::string& text) {
         if (text.empty()) {
             return;
         }
         std::string response = "{\"type\":\"" + std::string(type) +
+            "\",\"source\":\"" + meetingai::proto::jsonEscape(source) +
             "\",\"text\":\"" + meetingai::proto::jsonEscape(text) + "\"}\n";
         DWORD written;
         WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
     };
 
-    auto flushPendingTranscript = [&sendTranscript]() {
-        if (g_streaming_pending_raw.empty()) {
+    auto flushPendingTranscript = [&sendTranscript](const std::string& source) {
+        auto pendingIt = g_streaming_pending_raw.find(source);
+        if (pendingIt == g_streaming_pending_raw.end() ||
+            pendingIt->second.empty()) {
             return;
         }
 
+        std::string& pending = pendingIt->second;
         std::string text = g_punct
-            ? g_punct->AddPunctuation(g_streaming_pending_raw)
+            ? g_punct->AddPunctuation(pending)
             : meetingai::transcribe::NormalizeBilingualTranscript(
-                g_streaming_pending_raw);
-        sendTranscript("streaming_final", text);
-        std::cout << "[Worker] semantic final: " << text << std::endl;
-        g_streaming_pending_raw.clear();
+                pending);
+        sendTranscript("streaming_final", source, text);
+        std::cout << "[Worker] semantic final [" << source << "]: "
+                  << text << std::endl;
+        pending.clear();
     };
 
     try {
@@ -1119,27 +1128,77 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 }
             }
 
-            // 启动流式会话
-            if (!g_sherpa->StartSession()) {
-                std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
-                    meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
+            std::string requestedSource = meetingai::proto::extractSource(command);
+            if (requestedSource != "microphone" &&
+                requestedSource != "system" &&
+                requestedSource != "both") {
+                requestedSource = "microphone";
+            }
+
+            if (g_sherpa->IsRunning()) {
+                std::string err =
+                    "{\"type\":\"streaming_error\",\"message\":"
+                    "\"已有流式会话正在运行，请先停止\"}\n";
                 DWORD written;
                 WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
                 return;
             }
+
+            std::vector<std::string> requestedSources =
+                requestedSource == "both"
+                ? std::vector<std::string>{ "microphone", "system" }
+                : std::vector<std::string>{ requestedSource };
+
+            std::vector<std::string> startedSources;
+            for (const std::string& source : requestedSources) {
+                if (!g_sherpa->StartSession(source)) {
+                    for (const std::string& started : startedSources) {
+                        std::vector<meetingai::transcribe::SherpaStreamResult> ignored;
+                        g_sherpa->EndSession(started, ignored);
+                    }
+                    std::string err =
+                        "{\"type\":\"streaming_error\",\"message\":\"" +
+                        meetingai::proto::jsonEscape(g_sherpa->GetLastError()) +
+                        "\"}\n";
+                    DWORD written;
+                    WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                    return;
+                }
+                startedSources.push_back(source);
+            }
+
+            g_streaming_active_sources = std::move(startedSources);
             g_streaming_pending_raw.clear();
+            for (const std::string& source : g_streaming_active_sources) {
+                g_streaming_pending_raw.emplace(source, std::string{});
+            }
 
             // 发送成功响应
-            const char* ok = "{\"type\":\"streaming_started\"}\n";
+            std::string ok = "{\"type\":\"streaming_started\",\"source\":\"" +
+                meetingai::proto::jsonEscape(requestedSource) + "\"}\n";
             DWORD written;
-            WriteFile(hPipe, ok, (DWORD)strlen(ok), &written, nullptr);
-            std::cout << "[Worker] streaming session started" << std::endl;
+            WriteFile(hPipe, ok.data(), (DWORD)ok.size(), &written, nullptr);
+            std::cout << "[Worker] streaming session started: "
+                      << requestedSource << std::endl;
         }
 
         // ==================== streaming_audio ====================
         else if (meetingai::proto::isStreamingAudio(command)) {
-            if (!g_sherpa || !g_sherpa->IsRunning()) {
-                std::string err = "{\"type\":\"streaming_error\",\"message\":\"流式会话未启动\"}\n";
+            std::string source = meetingai::proto::extractSource(command);
+            if (source != "microphone" && source != "system") {
+                if (g_streaming_active_sources.size() == 1) {
+                    source = g_streaming_active_sources.front();
+                }
+                else {
+                    source = "microphone";
+                }
+            }
+
+            if (!g_sherpa || !g_sherpa->IsRunning(source)) {
+                std::string err =
+                    "{\"type\":\"streaming_error\",\"source\":\"" +
+                    meetingai::proto::jsonEscape(source) +
+                    "\",\"message\":\"该音频来源的流式会话未启动\"}\n";
                 DWORD written;
                 WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
                 return;
@@ -1174,8 +1233,13 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
 
             // 发送音频到转录器
             std::vector<meetingai::transcribe::SherpaStreamResult> results;
-            if (!g_sherpa->AcceptWaveform(samples.data(), (int)samples.size(), results)) {
-                std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
+            if (!g_sherpa->AcceptWaveform(
+                source,
+                samples.data(),
+                (int)samples.size(),
+                results)) {
+                std::string err = "{\"type\":\"streaming_error\",\"source\":\"" +
+                    meetingai::proto::jsonEscape(source) + "\",\"message\":\"" +
                     meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
                 DWORD written;
                 WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
@@ -1189,47 +1253,52 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 if (!result.is_final) {
                     const std::string combined =
                         meetingai::transcribe::JoinTranscriptFragments(
-                            g_streaming_pending_raw,
+                            g_streaming_pending_raw[source],
                             result.text);
                     sendTranscript(
                         "streaming_partial",
+                        source,
                         meetingai::transcribe::NormalizeBilingualTranscript(combined));
                     continue;
                 }
 
                 if (!result.text.empty()) {
-                    g_streaming_pending_raw =
+                    g_streaming_pending_raw[source] =
                         meetingai::transcribe::JoinTranscriptFragments(
-                            g_streaming_pending_raw,
+                            g_streaming_pending_raw[source],
                             result.text);
 
                     // 没有标点模型时无法可靠判断语义边界，保持旧的声学
                     // endpoint 行为，但仍进行大小写归一化。
                     if (!g_punct) {
-                        flushPendingTranscript();
+                        flushPendingTranscript(source);
                         continue;
                     }
 
                     const std::string punctuated =
-                        g_punct->AddPunctuation(g_streaming_pending_raw);
+                        g_punct->AddPunctuation(g_streaming_pending_raw[source]);
                     meetingai::transcribe::StableTranscriptPrefix stable;
                     if (meetingai::transcribe::TryExtractStableTranscriptPrefix(
-                        g_streaming_pending_raw,
+                        g_streaming_pending_raw[source],
                         punctuated,
                         stable)) {
-                        sendTranscript("streaming_final", stable.finalizedText);
-                        std::cout << "[Worker] semantic final: "
+                        sendTranscript(
+                            "streaming_final",
+                            source,
+                            stable.finalizedText);
+                        std::cout << "[Worker] semantic final [" << source << "]: "
                                   << stable.finalizedText << std::endl;
-                        g_streaming_pending_raw =
+                        g_streaming_pending_raw[source] =
                             std::move(stable.remainingRawText);
 
                         // final 会替换当前 partial；若还有尚未定稿的后半句，
                         // 立即作为下一条 partial 显示，画面不会丢字。
-                        if (!g_streaming_pending_raw.empty()) {
+                        if (!g_streaming_pending_raw[source].empty()) {
                             sendTranscript(
                                 "streaming_partial",
+                                source,
                                 meetingai::transcribe::NormalizeBilingualTranscript(
-                                    g_streaming_pending_raw));
+                                    g_streaming_pending_raw[source]));
                         }
                     }
                     continue;
@@ -1238,7 +1307,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 // reset 后再次触发空 endpoint，表示已经持续静音约
                 // rule1 的时长；此时没有更多前瞻，强制提交剩余文本。
                 if (result.endpoint_detected) {
-                    flushPendingTranscript();
+                    flushPendingTranscript(source);
                 }
             }
         }
@@ -1254,26 +1323,43 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 return;
             }
 
-            // 结束会话并获取最终结果
-            std::vector<meetingai::transcribe::SherpaStreamResult> finalResults;
-            if (!g_sherpa->EndSession(finalResults)) {
-                std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
-                    meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
-                DWORD written;
-                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                return;
-            }
-
-            // 把停止前仍在当前 Sherpa stream 中的文字并入语义缓冲。
-            for (const auto& result : finalResults) {
-                if (!result.text.empty()) {
-                    g_streaming_pending_raw =
-                        meetingai::transcribe::JoinTranscriptFragments(
-                            g_streaming_pending_raw,
-                            result.text);
+            std::string stopError;
+            for (const std::string& source : g_streaming_active_sources) {
+                if (!g_sherpa->IsRunning(source)) {
+                    continue;
                 }
+
+                std::vector<meetingai::transcribe::SherpaStreamResult> finalResults;
+                if (!g_sherpa->EndSession(source, finalResults)) {
+                    stopError = g_sherpa->GetLastError();
+                    continue;
+                }
+
+                // 把停止前该来源当前 stream 中的文字并入自己的语义缓冲。
+                for (const auto& result : finalResults) {
+                    if (!result.text.empty()) {
+                        g_streaming_pending_raw[source] =
+                            meetingai::transcribe::JoinTranscriptFragments(
+                                g_streaming_pending_raw[source],
+                                result.text);
+                    }
+                }
+                flushPendingTranscript(source);
             }
-            flushPendingTranscript();
+            g_streaming_active_sources.clear();
+            g_streaming_pending_raw.clear();
+
+            if (!stopError.empty()) {
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
+                    meetingai::proto::jsonEscape(stopError) + "\"}\n";
+                DWORD errorWritten;
+                WriteFile(
+                    hPipe,
+                    err.data(),
+                    (DWORD)err.size(),
+                    &errorWritten,
+                    nullptr);
+            }
 
             // 发送完成信号
             const char* complete = "{\"type\":\"streaming_stopped\"}\n";

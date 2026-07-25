@@ -8,6 +8,11 @@ public class StreamingAudioCommand
     public string type { get; set; } = "streaming_audio";
 
     /// <summary>
+    /// 音频来源：microphone（我方）或 system（对方/会议音频）
+    /// </summary>
+    public string source { get; set; } = "microphone";
+
+    /// <summary>
     /// Base64 编码的音频数据（16kHz, 16-bit, mono PCM）
     /// </summary>
     public string audio_data { get; set; } = "";
@@ -30,6 +35,10 @@ public class StartStreamingCommand
 {
     public string type { get; set; } = "start_streaming";
     public int sample_rate { get; set; } = 16000;
+    /// <summary>
+    /// microphone、system 或 both
+    /// </summary>
+    public string source { get; set; } = "microphone";
 }
 
 /// <summary>

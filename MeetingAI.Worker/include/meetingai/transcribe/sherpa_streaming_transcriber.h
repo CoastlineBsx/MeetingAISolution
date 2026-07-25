@@ -44,7 +44,7 @@ public:
     /// 开始流式转录会话
     /// </summary>
     /// <returns>成功返回 true</returns>
-    bool StartSession();
+    bool StartSession(const std::string& source);
 
     /// <summary>
     /// 接受音频流数据（PCM 16-bit, mono, 16kHz）
@@ -53,7 +53,8 @@ public:
     /// <param name="numSamples">样本数量</param>
     /// <param name="results">输出结果列表（可能包含 partial 和 final 结果）</param>
     /// <returns>成功返回 true</returns>
-    bool AcceptWaveform(const float* samples,
+    bool AcceptWaveform(const std::string& source,
+                        const float* samples,
                         int numSamples,
                         std::vector<SherpaStreamResult>& results);
 
@@ -62,7 +63,8 @@ public:
     /// </summary>
     /// <param name="finalResults">输出最终结果列表</param>
     /// <returns>成功返回 true</returns>
-    bool EndSession(std::vector<SherpaStreamResult>& finalResults);
+    bool EndSession(const std::string& source,
+                    std::vector<SherpaStreamResult>& finalResults);
 
     /// <summary>
     /// 停止转录器（释放资源）
@@ -78,6 +80,7 @@ public:
     /// 检查转录器是否正在运行
     /// </summary>
     bool IsRunning() const { return m_running; }
+    bool IsRunning(const std::string& source) const;
 
     /// <summary>
     /// 获取最后一次错误消息

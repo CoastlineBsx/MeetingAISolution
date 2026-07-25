@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iostream>
 #include <filesystem>
+#include <unordered_map>
 
 namespace meetingai::transcribe {
 
@@ -11,7 +12,9 @@ namespace meetingai::transcribe {
 struct SherpaStreamingTranscriber::Impl {
     // sherpa-onnx C API 的句柄一律以 const 指针形式返回并传入
     const SherpaOnnxOnlineRecognizer* recognizer = nullptr;
-    const SherpaOnnxOnlineStream* stream = nullptr;
+    // 同一个 recognizer（同一份模型）可以创建多个互相独立的 OnlineStream。
+    // microphone/system 各自保存解码状态，既能同时识别又不会混音。
+    std::unordered_map<std::string, const SherpaOnnxOnlineStream*> streams;
     std::string modelDir;
     std::string tokensPath;
     int sampleRate = 16000;
@@ -136,30 +139,32 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
 
 // ==================== 会话管理 ====================
 
-bool SherpaStreamingTranscriber::StartSession()
+bool SherpaStreamingTranscriber::StartSession(const std::string& source)
 {
     if (!m_initialized) {
         m_lastError = "Not initialized";
         return false;
     }
 
-    if (m_running) {
-        m_lastError = "Already running";
+    if (source.empty()) {
+        m_lastError = "Source is empty";
         return false;
     }
 
-    // 创建新的流
-    if (m_impl->stream != nullptr) {
-        SherpaOnnxDestroyOnlineStream(m_impl->stream);
-    }
-
-    m_impl->stream = SherpaOnnxCreateOnlineStream(m_impl->recognizer);
-
-    if (m_impl->stream == nullptr) {
-        m_lastError = "Failed to create stream";
+    if (m_impl->streams.contains(source)) {
+        m_lastError = "Source session already running: " + source;
         return false;
     }
 
+    const SherpaOnnxOnlineStream* stream =
+        SherpaOnnxCreateOnlineStream(m_impl->recognizer);
+
+    if (stream == nullptr) {
+        m_lastError = "Failed to create stream for source: " + source;
+        return false;
+    }
+
+    m_impl->streams.emplace(source, stream);
     m_running = true;
     m_lastError = "";
     return true;
@@ -167,28 +172,32 @@ bool SherpaStreamingTranscriber::StartSession()
 
 // ==================== 音频处理 ====================
 
-bool SherpaStreamingTranscriber::AcceptWaveform(const float* samples,
+bool SherpaStreamingTranscriber::AcceptWaveform(const std::string& source,
+                                                 const float* samples,
                                                  int numSamples,
                                                  std::vector<SherpaStreamResult>& results)
 {
-    if (!m_running || m_impl->stream == nullptr) {
-        m_lastError = "Not running or stream is null";
+    const auto streamIt = m_impl->streams.find(source);
+    if (!m_running || streamIt == m_impl->streams.end() ||
+        streamIt->second == nullptr) {
+        m_lastError = "Source session is not running: " + source;
         return false;
     }
+    const SherpaOnnxOnlineStream* stream = streamIt->second;
 
     results.clear();
 
     // 接受音频数据
-    SherpaOnnxOnlineStreamAcceptWaveform(m_impl->stream, m_sampleRate, samples, numSamples);
+    SherpaOnnxOnlineStreamAcceptWaveform(stream, m_sampleRate, samples, numSamples);
 
     // 检查是否准备好解码
-    while (SherpaOnnxIsOnlineStreamReady(m_impl->recognizer, m_impl->stream)) {
-        SherpaOnnxDecodeOnlineStream(m_impl->recognizer, m_impl->stream);
+    while (SherpaOnnxIsOnlineStreamReady(m_impl->recognizer, stream)) {
+        SherpaOnnxDecodeOnlineStream(m_impl->recognizer, stream);
     }
 
     // 获取部分结果 (partial result)
     const SherpaOnnxOnlineRecognizerResult* result =
-        SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, m_impl->stream);
+        SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, stream);
 
     if (result != nullptr) {
         if (result->text != nullptr && strlen(result->text) > 0) {
@@ -204,10 +213,10 @@ bool SherpaStreamingTranscriber::AcceptWaveform(const float* samples,
     }
 
     // 检查端点（是否完成一句话）
-    if (SherpaOnnxOnlineStreamIsEndpoint(m_impl->recognizer, m_impl->stream)) {
+    if (SherpaOnnxOnlineStreamIsEndpoint(m_impl->recognizer, stream)) {
         // 获取最终结果
         const SherpaOnnxOnlineRecognizerResult* finalResult =
-            SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, m_impl->stream);
+            SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, stream);
 
         SherpaStreamResult endpointResult;
         endpointResult.is_final = true;
@@ -227,7 +236,7 @@ bool SherpaStreamingTranscriber::AcceptWaveform(const float* samples,
         results.push_back(std::move(endpointResult));
 
         // 重置流以准备下一句话
-        SherpaOnnxOnlineStreamReset(m_impl->recognizer, m_impl->stream);
+        SherpaOnnxOnlineStreamReset(m_impl->recognizer, stream);
     }
 
     return true;
@@ -235,58 +244,72 @@ bool SherpaStreamingTranscriber::AcceptWaveform(const float* samples,
 
 // ==================== 结束会话 ====================
 
-bool SherpaStreamingTranscriber::EndSession(std::vector<SherpaStreamResult>& finalResults)
+bool SherpaStreamingTranscriber::EndSession(
+    const std::string& source,
+    std::vector<SherpaStreamResult>& finalResults)
 {
-    if (!m_running) {
-        m_lastError = "Not running";
+    const auto streamIt = m_impl->streams.find(source);
+    if (streamIt == m_impl->streams.end() || streamIt->second == nullptr) {
+        m_lastError = "Source session is not running: " + source;
         return false;
     }
+    const SherpaOnnxOnlineStream* stream = streamIt->second;
 
     finalResults.clear();
 
-    if (m_impl->stream != nullptr) {
+    if (stream != nullptr) {
         // 输入结束信号
-        SherpaOnnxOnlineStreamInputFinished(m_impl->stream);
+        SherpaOnnxOnlineStreamInputFinished(stream);
 
         // 解码剩余数据
-        while (SherpaOnnxIsOnlineStreamReady(m_impl->recognizer, m_impl->stream)) {
-            SherpaOnnxDecodeOnlineStream(m_impl->recognizer, m_impl->stream);
+        while (SherpaOnnxIsOnlineStreamReady(m_impl->recognizer, stream)) {
+            SherpaOnnxDecodeOnlineStream(m_impl->recognizer, stream);
         }
 
         // 获取最终结果
         const SherpaOnnxOnlineRecognizerResult* result =
-            SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, m_impl->stream);
+            SherpaOnnxGetOnlineStreamResult(m_impl->recognizer, stream);
 
-        if (result != nullptr && result->text != nullptr && strlen(result->text) > 0) {
-            SherpaStreamResult finalResult;
-            finalResult.text = result->text;
-            finalResult.is_final = true;
-            finalResult.endpoint_detected = true;
-            finalResult.speaker_id = -1;
-            finalResult.confidence = 1.0f;
+        if (result != nullptr) {
+            if (result->text != nullptr && strlen(result->text) > 0) {
+                SherpaStreamResult finalResult;
+                finalResult.text = result->text;
+                finalResult.is_final = true;
+                finalResult.endpoint_detected = true;
+                finalResult.speaker_id = -1;
+                finalResult.confidence = 1.0f;
 
-            finalResults.push_back(finalResult);
-
+                finalResults.push_back(finalResult);
+            }
             SherpaOnnxDestroyOnlineRecognizerResult(result);
         }
 
         // 销毁流
-        SherpaOnnxDestroyOnlineStream(m_impl->stream);
-        m_impl->stream = nullptr;
+        SherpaOnnxDestroyOnlineStream(stream);
     }
 
-    m_running = false;
+    m_impl->streams.erase(streamIt);
+    m_running = !m_impl->streams.empty();
     return true;
+}
+
+bool SherpaStreamingTranscriber::IsRunning(const std::string& source) const
+{
+    const auto it = m_impl->streams.find(source);
+    return it != m_impl->streams.end() && it->second != nullptr;
 }
 
 // ==================== 停止 ====================
 
 void SherpaStreamingTranscriber::Stop()
 {
-    if (m_impl->stream != nullptr) {
-        SherpaOnnxDestroyOnlineStream(m_impl->stream);
-        m_impl->stream = nullptr;
+    for (const auto& [source, stream] : m_impl->streams) {
+        (void)source;
+        if (stream != nullptr) {
+            SherpaOnnxDestroyOnlineStream(stream);
+        }
     }
+    m_impl->streams.clear();
 
     if (m_impl->recognizer != nullptr) {
         SherpaOnnxDestroyOnlineRecognizer(m_impl->recognizer);
