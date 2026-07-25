@@ -102,11 +102,11 @@ namespace meetingai::util {
             return fs::exists(dir, ec) && fs::is_directory(dir, ec);
             };
 
-        // 1) 如已缓存，直接拼接返回
+        // 1) 如已缓存，直接拼接返回（filename 也可能是模型目录名，不只是单个文件）
         if (!cachedModelDirW.empty()) {
             fs::path full = fs::path(cachedModelDirW) / filename;
             std::error_code ec;
-            if (fs::exists(full, ec) && fs::is_regular_file(full, ec)) {
+            if (fs::exists(full, ec) && (fs::is_regular_file(full, ec) || fs::is_directory(full, ec))) {
                 return wToUtf8(full.wstring());
             }
         }

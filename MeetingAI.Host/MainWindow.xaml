@@ -92,7 +92,7 @@
                     <FontIcon Glyph="&#xE8EB;"/>
                 </NavigationViewItem.Icon>
                 <ToolTipService.ToolTip>
-                    <ToolTip Content="Real-time streaming transcription with speaker diarization powered by Sherpa-ONNX Zipformer"/>
+                    <ToolTip Content="本地实时流式转录（中英双语，全程离线）· Sherpa-ONNX Zipformer"/>
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 

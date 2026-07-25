@@ -213,10 +213,11 @@ public sealed partial class MainWindow : Window
             await AppendLineAsync($"[Startup] OpenVINO Whisper device: {device}");
 
             // 发送加载 OpenVINO Whisper 命令
+            // 不传 model_path：路径由 Worker 按自己的 models 目录解析。
+            // Host 发相对路径的话会按 Worker 的 CWD（继承自 Host 的输出目录）去找，必然找不到。
             var loadCmd = new
             {
                 type = "load_whisper_openvino",
-                model_path = "models/whisper_large_v3",
                 device = device
             };
             var json = JsonSerializer.Serialize(loadCmd) + "\n";

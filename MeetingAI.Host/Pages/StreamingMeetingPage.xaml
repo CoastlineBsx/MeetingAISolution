@@ -18,7 +18,7 @@
             <TextBlock Text="🎙️ Streaming Meeting (Real-time Transcription)"
                        FontSize="28"
                        FontWeight="Bold"/>
-            <TextBlock Text="Powered by Sherpa-ONNX Zipformer · Real-time streaming transcription with speaker diarization"
+            <TextBlock Text="Powered by Sherpa-ONNX Zipformer · 本地实时流式转录（中英双语，全程离线）"
                        FontSize="14"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
         </StackPanel>
@@ -54,10 +54,13 @@
                                    FontSize="16"/>
                     </Border>
 
-                    <!-- 字幕列表 -->
-                    <ScrollViewer Grid.Row="1" Padding="16">
-                        <ListView x:Name="CaptionsList"
+                    <!-- 字幕列表。
+                         不要再套 ScrollViewer：那样 ListView 会拿到无限高度，
+                         UI 虚拟化失效，每插入一条就要重排整个列表（表现为页面闪一下）。 -->
+                    <ListView x:Name="CaptionsList"
                                   x:FieldModifier="public"
+                                  Grid.Row="1"
+                                  Padding="16"
                                   SelectionMode="None">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
@@ -76,8 +79,10 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
 
+                                            <!-- 暂不做说话人分离，标签隐藏（逻辑保留） -->
                                             <TextBlock Grid.Column="0"
                                                        Text="{Binding SpeakerName}"
+                                                       Visibility="Collapsed"
                                                        FontWeight="SemiBold"
                                                        Foreground="{Binding SpeakerColor}"/>
                                             <TextBlock Grid.Column="2"
@@ -93,16 +98,16 @@
                                     </StackPanel>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
-                        </ListView>
-                    </ScrollViewer>
+                    </ListView>
                 </Grid>
             </Border>
 
             <!-- 右侧：说话人列表 + 控制区 -->
             <StackPanel Grid.Column="2" Spacing="16">
 
-                <!-- 说话人列表 -->
-                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                <!-- 说话人列表：暂不做分离，整块隐藏（绑定与逻辑保留） -->
+                <Border Visibility="Collapsed"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         CornerRadius="8"
                         Background="{ThemeResource LayerFillColorDefaultBrush}">
@@ -173,12 +178,22 @@
                                        FontWeight="SemiBold"/>
                         </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
                             <TextBlock Text="Speakers:"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <TextBlock x:Name="TxtSpeakerCount"
                                        x:FieldModifier="public"
                                        Text="0"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="State:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="TxtStatus"
+                                       x:FieldModifier="public"
+                                       Text="Idle"
+                                       TextWrapping="Wrap"
                                        FontWeight="SemiBold"/>
                         </StackPanel>
 

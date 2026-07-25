@@ -7,6 +7,7 @@
 #include <functional>  // ← 新增：function
 #include <mutex>
 #include <thread>
+#include <chrono>
 #include <filesystem>
 #include <shlobj.h>
 #include <codecvt>
@@ -21,6 +22,9 @@
 #include "embedding/embedding_genai.hpp"  // ← 新增：Embedding GenAI
 #include "llava/llava_genai.h"  // ← 新增：LLaVA GenAI
 #include "sd/sd_engine.hpp"  // ← 新增：Stable Diffusion
+#include "sherpa_streaming_transcriber.h"  // ← 新增：Sherpa 流式转录
+#include "punctuator.hpp"                  // ← 新增：中英标点恢复
+#include "base64.h"  // ← 新增：Base64 解码
 #include "command_parser.h"
 #include "logging.h"
 #include "pipe_security.h"
@@ -48,6 +52,9 @@ static bool g_llava_loaded = false;
 static std::mutex g_sd_mutex;
 static bool g_sd_loaded = false;
 
+static std::mutex g_sherpa_mutex;
+static bool g_sherpa_loaded = false;
+
 // ========== Granite GenAI 全局实例 ==========
 static std::unique_ptr<meetingai::granite::GraniteGenAI> g_granite;
 static std::string g_system_prompt = "你是一个专业、简洁的中文助手。请用简体中文回答问题，注重逻辑性和条理性。";
@@ -62,6 +69,12 @@ static std::unique_ptr<llava::LLaVAGenAI> g_llava;
 
 // ========== Stable Diffusion 全局实例 ==========
 static std::unique_ptr<meetingai::sd::SDEngine> g_sd;
+
+// ========== Sherpa-ONNX 流式转录全局实例 ==========
+static std::unique_ptr<meetingai::transcribe::SherpaStreamingTranscriber> g_sherpa;
+// 标点模型：可选，缺失时转录照常工作，只是不加标点（受 g_sherpa_mutex 保护）
+static std::unique_ptr<meetingai::transcribe::Punctuator> g_punct;
+static bool g_punct_attempted = false;
 
 // ========== 设备配置 ==========
 static std::string g_granite_device = "GPU";   // Granite LLM 使用的设备
@@ -105,7 +118,7 @@ static std::string decodeJsonUnicode(const std::string& str) {
 }
 
 // ========== 工具函数：获取环境变量 ==========
-static std::string GetEnvOrDefault(const char* key, const char* fallback) {
+static std::string GetEnvOrDefault(const char* key, const std::string& fallback) {
     char* buf = nullptr;
     size_t len = 0;
     if (_dupenv_s(&buf, &len, key) == 0 && buf != nullptr) {
@@ -149,7 +162,7 @@ static void InitializeGraniteGenAI(HANDLE hPipe, const std::string& device = "CP
 
         const std::string model_dir = GetEnvOrDefault(
             "MEETINGAI_GRANITE_MODEL",
-            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/granite-3.3-2b-npu"
+            meetingai::util::resolveModelFileUtf8(L"granite-3.3-2b-npu")
         );
 
         g_granite = std::make_unique<meetingai::granite::GraniteGenAI>(model_dir, device);
@@ -192,7 +205,7 @@ static void InitializeEmbeddingGenAI(HANDLE hPipe, const std::string& device = "
 
         const std::string model_dir = GetEnvOrDefault(
             "MEETINGAI_EMBEDDING_MODEL",
-            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/bge-m3-npu"
+            meetingai::util::resolveModelFileUtf8(L"bge-m3-npu")
         );
 
         g_embedding = std::make_unique<meetingai::embedding::EmbeddingGenAI>(model_dir, device);
@@ -220,7 +233,7 @@ static void InitializeLLaVAGenAI(HANDLE hPipe, const std::string& device = "NPU"
         // 使用模型目录路径（包含所有 LLaVA 模型文件）
         const std::string model_path = GetEnvOrDefault(
             "MEETINGAI_LLAVA_MODEL",
-            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/llava"
+            meetingai::util::resolveModelFileUtf8(L"llava")
         );
 
         // 使用 VLMPipeline API，直接传入模型目录和设备
@@ -602,7 +615,7 @@ static void InitializeSDEngine(HANDLE hPipe, const std::string& device = "NPU") 
     try {
         const std::string model_dir = GetEnvOrDefault(
             "MEETINGAI_SD_MODEL",
-            "C:/VisualStudio/MeetingAISolution/MeetingAI.Worker/models/stable-deffusion-1.5"
+            meetingai::util::resolveModelFileUtf8(L"stable-deffusion-1.5")
         );
 
         std::string info_msg = "{\"type\":\"info\",\"message\":\"[SD] 正在加载模型: " + model_dir + " (" + device + ")\"}\n";
@@ -926,7 +939,7 @@ static void handleTranscribeOpenVINOCommand(HANDLE hPipe, const std::string& com
     std::cout << "[Worker] 语言设置: " << language << std::endl;
 
     // OpenVINO 模型路径（从已加载的模型获取）
-    std::string modelPath = "models/whisper_large_v3";
+    std::string modelPath = meetingai::util::resolveModelFileUtf8(L"whisper_large_v3");
     std::cout << "[Worker] 使用已加载的模型\n";
 
     // 定义进度回调函数
@@ -978,6 +991,232 @@ static void handleTranscribeOpenVINOCommand(HANDLE hPipe, const std::string& com
     WriteFile(hPipe, complete.data(), static_cast<DWORD>(complete.size()), &written, nullptr);
 
     std::wcout << L"[Worker] OpenVINO Whisper 转录完成\n";
+}
+
+// 新增：处理 Sherpa-ONNX 流式转录命令
+static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& command) {
+    try {
+        // ==================== start_streaming ====================
+        if (meetingai::proto::isStartStreaming(command)) {
+            // 注意：这条路径统一用 std::cout（窄字符 UTF-8）。
+            // std::wcout 遇到中文会置 failbit，之后该流的所有输出被静默丢弃，
+            // 排查时等于完全失明。
+            std::cout << "[Worker] recv start_streaming" << std::endl;
+
+            // 进度也通过管道回传一份，否则 Host 只能干等，看不出卡在哪一步
+            auto notify = [hPipe](const std::string& text) {
+                std::string msg = "{\"type\":\"info\",\"message\":\"" +
+                    meetingai::proto::jsonEscape(text) + "\"}\n";
+                DWORD written;
+                WriteFile(hPipe, msg.data(), (DWORD)msg.size(), &written, nullptr);
+            };
+
+            // 初始化 Sherpa 模型（仅一次）
+            {
+                std::lock_guard<std::mutex> lock(g_sherpa_mutex);
+                if (!g_sherpa_loaded) {
+                    g_sherpa = std::make_unique<meetingai::transcribe::SherpaStreamingTranscriber>();
+
+                    // 模型路径（用户手动下载并解压）。必须走 models 目录解析：
+                    // 相对路径会按 Worker 的 CWD 找，而 CWD 继承自 Host 的输出目录。
+                    std::string modelDir = meetingai::util::resolveModelFileUtf8(
+                        L"sherpa\\sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20");
+                    std::string tokensPath = modelDir + "\\tokens.txt";
+                    int sampleRate = meetingai::proto::extractSampleRate(command);
+
+                    // sherpa 创建失败只会回一句没信息量的错误，这里先自己报清楚缺什么
+                    {
+                        std::error_code ec;
+                        const char* missing = nullptr;
+                        if (!std::filesystem::is_directory(modelDir, ec)) missing = "模型目录不存在";
+                        else if (!std::filesystem::exists(tokensPath, ec)) missing = "tokens.txt 不存在";
+                        else if (!std::filesystem::exists(modelDir + "\\encoder-epoch-99-avg-1.onnx", ec))
+                            missing = "encoder-epoch-99-avg-1.onnx 不存在";
+                        if (missing) {
+                            std::string err = std::string("{\"type\":\"streaming_error\",\"message\":\"") +
+                                missing + ": " + meetingai::proto::jsonEscape(modelDir) + "\"}\n";
+                            DWORD written;
+                            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                            g_sherpa.reset();
+                            return;
+                        }
+                    }
+
+                    std::cout << "[Worker] sherpa model dir: " << modelDir << std::endl;
+                    notify("[Sherpa] 正在加载模型（首次约需数十秒）: " + modelDir);
+
+                    const auto t0 = std::chrono::steady_clock::now();
+                    bool ok = g_sherpa->Initialize(modelDir, tokensPath, sampleRate);
+                    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - t0).count();
+
+                    if (!ok) {
+                        std::cout << "[Worker] sherpa init FAILED after " << elapsedMs
+                                  << "ms: " << g_sherpa->GetLastError() << std::endl;
+                        std::string err = "{\"type\":\"streaming_error\",\"message\":\"Sherpa 模型初始化失败: " +
+                            meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
+                        DWORD written;
+                        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                        g_sherpa.reset();
+                        return;
+                    }
+
+                    g_sherpa_loaded = true;
+                    std::cout << "[Worker] sherpa model loaded in " << elapsedMs << "ms" << std::endl;
+                    notify("[Sherpa] 模型加载完成，耗时 " + std::to_string(elapsedMs) + " ms");
+                }
+
+                // 标点模型（可选）。只尝试一次，失败后不再重试，也不影响转录。
+                if (!g_punct_attempted) {
+                    g_punct_attempted = true;
+
+                    const std::string punctDir = meetingai::util::resolveModelFileUtf8(
+                        L"sherpa\\sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8");
+
+                    auto punct = std::make_unique<meetingai::transcribe::Punctuator>();
+                    const auto p0 = std::chrono::steady_clock::now();
+                    if (punct->Initialize(punctDir)) {
+                        const auto punctMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - p0).count();
+                        g_punct = std::move(punct);
+                        std::cout << "[Worker] punctuation model loaded in " << punctMs << "ms" << std::endl;
+                        notify("[Sherpa] 标点模型已加载，耗时 " + std::to_string(punctMs) + " ms");
+                    }
+                    else {
+                        std::cout << "[Worker] punctuation disabled: " << punct->GetLastError() << std::endl;
+                        notify("[Sherpa] 未启用标点（" + punct->GetLastError() + "），转录不受影响");
+                    }
+                }
+            }
+
+            // 启动流式会话
+            if (!g_sherpa->StartSession()) {
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
+                    meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
+                DWORD written;
+                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                return;
+            }
+
+            // 发送成功响应
+            const char* ok = "{\"type\":\"streaming_started\"}\n";
+            DWORD written;
+            WriteFile(hPipe, ok, (DWORD)strlen(ok), &written, nullptr);
+            std::cout << "[Worker] streaming session started" << std::endl;
+        }
+
+        // ==================== streaming_audio ====================
+        else if (meetingai::proto::isStreamingAudio(command)) {
+            if (!g_sherpa || !g_sherpa->IsRunning()) {
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"流式会话未启动\"}\n";
+                DWORD written;
+                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                return;
+            }
+
+            // 提取 Base64 音频数据
+            std::string audioData = meetingai::proto::extractAudioData(command);
+            if (audioData.empty()) {
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"音频数据为空\"}\n";
+                DWORD written;
+                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                return;
+            }
+
+            // Base64 解码为 float32 样本
+            std::vector<float> samples = meetingai::util::Base64DecodeToFloat(audioData);
+            if (samples.empty()) {
+                // 把实际收到的内容报出来，否则"解码失败"没有任何可查线索
+                std::string head = audioData.substr(0, 48);
+                std::cout << "[Worker] base64 decode failed."
+                          << " cmd_len=" << command.size()
+                          << " b64_len=" << audioData.size()
+                          << " head=[" << head << "]" << std::endl;
+
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"音频解码失败 b64_len=" +
+                    std::to_string(audioData.size()) + " head=" +
+                    meetingai::proto::jsonEscape(head) + "\"}\n";
+                DWORD written;
+                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                return;
+            }
+
+            // 发送音频到转录器
+            std::vector<meetingai::transcribe::SherpaStreamResult> results;
+            if (!g_sherpa->AcceptWaveform(samples.data(), (int)samples.size(), results)) {
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
+                    meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
+                DWORD written;
+                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                return;
+            }
+
+            // 发送转录结果（如果有）
+            for (const auto& result : results) {
+                std::string type = result.is_final ? "streaming_final" : "streaming_partial";
+
+                // 只给定稿结果加标点：partial 每 100ms 变一次，加标点既费 CPU
+                // 又会让已显示的文字反复跳动
+                std::string text = (result.is_final && g_punct)
+                    ? g_punct->AddPunctuation(result.text)
+                    : result.text;
+
+                std::string response = "{\"type\":\"" + type + "\",\"text\":\"" +
+                    meetingai::proto::jsonEscape(text) + "\"}\n";
+
+                DWORD written;
+                WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
+
+                if (result.is_final) {
+                    std::cout << "[Worker] final: " << text << std::endl;
+                }
+            }
+        }
+
+        // ==================== stop_streaming ====================
+        else if (meetingai::proto::isStopStreaming(command)) {
+            std::wcout << L"[Worker] 收到 stop_streaming 命令\n";
+
+            if (!g_sherpa || !g_sherpa->IsRunning()) {
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"流式会话未启动\"}\n";
+                DWORD written;
+                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                return;
+            }
+
+            // 结束会话并获取最终结果
+            std::vector<meetingai::transcribe::SherpaStreamResult> finalResults;
+            if (!g_sherpa->EndSession(finalResults)) {
+                std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
+                    meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
+                DWORD written;
+                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                return;
+            }
+
+            // 发送最终结果（如果有）
+            for (const auto& result : finalResults) {
+                std::string text = g_punct ? g_punct->AddPunctuation(result.text) : result.text;
+                std::string response = "{\"type\":\"streaming_final\",\"text\":\"" +
+                    meetingai::proto::jsonEscape(text) + "\"}\n";
+                DWORD written;
+                WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
+                std::cout << "[Worker] final: " << text << std::endl;
+            }
+
+            // 发送完成信号
+            const char* complete = "{\"type\":\"streaming_stopped\"}\n";
+            DWORD written;
+            WriteFile(hPipe, complete, (DWORD)strlen(complete), &written, nullptr);
+            std::wcout << L"[Worker] 流式会话已停止\n";
+        }
+    }
+    catch (const std::exception& e) {
+        std::string err = std::string("{\"type\":\"streaming_error\",\"message\":\"") +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n";
+        DWORD written;
+        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+    }
 }
 
 // 处理控制台关闭/注销/关机等信号，优雅退出
@@ -1073,8 +1312,28 @@ int wmain() {
     // --- 单实例互斥量（当前会话） ---
     HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\MeetingAI_Worker_Singleton");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        std::wcerr << L"[Worker] another instance is running. exit.\n";
-        return 0;
+        // 退出码 2 让 Host 能把这种情况和正常退出区分开（见 MainWindow.Pipe.cs）
+        std::wcerr << L"[Worker] another instance is already running, exiting.\n";
+        std::wcerr.flush();
+        return 2;
+    }
+
+    // 父进程看门狗。
+    // 主循环顶部那次 hParent 检查只在两次连接之间才轮得到，而 ConnectNamedPipe
+    // 是无超时的阻塞调用，客户端进程死掉并不会让它返回。Host 退出时 Worker 往往
+    // 正卡在那一行，于是变成占着互斥量和管道的僵尸进程。这里单开一个线程专门等
+    // 父进程句柄，不受主循环阻塞影响。
+    if (hParent) {
+        std::thread([hParent] {
+            ::WaitForSingleObject(hParent, INFINITE);
+            std::cerr << "[Worker] host process exited, terminating.\n";
+            std::cerr.flush();
+            ::ExitProcess(3);
+        }).detach();
+    }
+    else if (parentPid) {
+        std::cerr << "[Worker] warning: OpenProcess(" << parentPid
+                  << ") failed, parent watchdog disabled.\n";
     }
 
     std::wcout << L"[Worker PID " << GetCurrentProcessId() << L"] starting pipe server...\n";
@@ -1099,7 +1358,9 @@ int wmain() {
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
             1,              // 单实例即可；需要并发再开多实例
-            4096, 4096, 0,
+            // 流式音频每包约 4.3KB（100ms PCM 经 base64 膨胀），原来的 4096 比单个包还小，
+            // 每次写入都要等对端边读边腾地方。放大到 256KB 让收发都不必来回阻塞。
+            256 * 1024, 256 * 1024, 0,
             &sa
         );
         if (hPipe == INVALID_HANDLE_VALUE) {
@@ -1324,7 +1585,7 @@ int wmain() {
                     DWORD written;
 
                     // 解析模型路径
-                    std::string modelPath = "models/whisper_large_v3";  // 默认路径
+                    std::string modelPath = meetingai::util::resolveModelFileUtf8(L"whisper_large_v3");
                     auto pathPos = buffer.find("\"model_path\":\"");
                     if (pathPos != std::string::npos) {
                         auto start = pathPos + 14;
@@ -1332,6 +1593,13 @@ int wmain() {
                         if (end != std::string::npos) {
                             modelPath = buffer.substr(start, end - start);
                         }
+                    }
+
+                    // 命令里给的相对路径会按进程 CWD 解析，而 Worker 的 CWD 继承自 Host，
+                    // 不是模型所在目录。统一折算到 models 目录下，绝对路径则原样使用。
+                    if (!modelPath.empty() && std::filesystem::path(modelPath).is_relative()) {
+                        const auto leaf = std::filesystem::path(modelPath).filename().wstring();
+                        modelPath = meetingai::util::resolveModelFileUtf8(leaf.c_str());
                     }
 
                     // 解析设备选择
@@ -1509,6 +1777,15 @@ int wmain() {
                 // ---- 新增：OpenVINO Whisper 转录命令处理 ----
                 if (meetingai::proto::isTranscribeOpenVINO(buffer)) {
                     handleTranscribeOpenVINOCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- 新增：Sherpa-ONNX 实时流式转录命令处理 ----
+                if (meetingai::proto::isStartStreaming(buffer) ||
+                    meetingai::proto::isStreamingAudio(buffer) ||
+                    meetingai::proto::isStopStreaming(buffer)) {
+                    handleSherpaStreamingCommand(hPipe, buffer);
                     buffer.clear();
                     continue;
                 }

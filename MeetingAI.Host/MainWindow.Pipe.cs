@@ -17,6 +17,13 @@ namespace MeetingAI.Host;
 
 public sealed partial class MainWindow : Window
 {
+    // 与 Worker 端 main.cpp 的退出码约定保持一致
+    private const int ExitCodeWorkerAlreadyRunning = 2;
+
+    // 管道是单条字节流，多个并发 WriteAsync 会把 JSON 交错写坏。
+    // 流式转录每秒会发多条音频包，必须串行化。
+    private readonly SemaphoreSlim _pipeWriteLock = new(1, 1);
+
     private void StopWorkerOnExit()
     {
         try
@@ -133,10 +140,38 @@ public sealed partial class MainWindow : Window
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 Arguments = $"--ppid {Environment.ProcessId} --granite-device {graniteDevice} --embedding-device {embeddingDevice}"
             });
 
+            if (_worker is null)
+            {
+                await AppendLineAsync("[Host] Worker 启动失败：Process.Start 返回 null。");
+                return;
+            }
+
+            // Worker 没有可见窗口，不转发的话它的启动失败原因会静默丢失
+            _worker.OutputDataReceived += (_, ev) => { if (ev.Data is not null) _ = AppendLineAsync($"[Worker] {ev.Data}"); };
+            _worker.ErrorDataReceived += (_, ev) => { if (ev.Data is not null) _ = AppendLineAsync($"[Worker] {ev.Data}"); };
+            _worker.BeginOutputReadLine();
+            _worker.BeginErrorReadLine();
+
             await Task.Delay(700);
+
+            // Worker 起来就死了的话，后面连管道只会白等 30 秒超时
+            if (_worker.HasExited)
+            {
+                var code = _worker.ExitCode;
+                await AppendLineAsync($"[Host] Worker 启动后立即退出（exit code {code}）。");
+                if (code == ExitCodeWorkerAlreadyRunning)
+                {
+                    await AppendLineAsync("[Host] 原因：已有 Worker 实例在运行。请结束残留的 MeetingAI.Worker.exe 后重试。");
+                }
+                _worker = null;
+                return;
+            }
+
             startupPage.BtnPreloadModels.IsEnabled = true;
             BtnPing.IsEnabled = true;
             BtnTranscribe.IsEnabled = true;
@@ -341,7 +376,12 @@ public sealed partial class MainWindow : Window
                 }
                 if (line.Length == 0) continue;
 
-                await AppendLineAsync($"[Pipe] {line}");
+                // partial 每秒约 10 条，而 AppendLineAsync 是 OutputBox.Text += 的 O(n²) 拼接，
+                // 全量写进去会让日志框越来越卡。定稿结果保留，便于排查。
+                if (!line.Contains("\"type\":\"streaming_partial\""))
+                {
+                    await AppendLineAsync($"[Pipe] {line}");
+                }
 
                 // Split concatenated JSON messages (e.g., "}{"type":"embedding_ready")
                 var jsonMessages = SplitJsonMessages(line);
@@ -384,6 +424,23 @@ public sealed partial class MainWindow : Window
 
     private async Task ProcessJsonMessage(string jsonMsg)
     {
+        // ========== 实时流式转录消息优先转发 ==========
+        // streaming_started / streaming_stopped 早先不在任何分支里，会一路落到函数末尾被丢弃，
+        // 导致页面的启动握手永远等不到回应（界面卡在 Loading model）。这里按前缀统一转发。
+        if (StreamingMessageHandler is { } streamingHandler)
+        {
+            if (jsonMsg.Contains("\"type\":\"streaming_"))
+            {
+                streamingHandler.Invoke(jsonMsg);
+                return;
+            }
+            // info 仍按原逻辑写日志，这里只是抄送一份给页面显示模型加载进度
+            if (jsonMsg.Contains("\"type\":\"info\""))
+            {
+                streamingHandler.Invoke(jsonMsg);
+            }
+        }
+
         // ========== Info 消息处理（设备枚举等） ==========
         if (jsonMsg.Contains("\"type\":\"info\""))
         {
@@ -850,15 +907,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // ========== 实时流式转录消息处理 ==========
-        if (jsonMsg.Contains("\"type\":\"streaming_partial\"") ||
-            jsonMsg.Contains("\"type\":\"streaming_final\"") ||
-            jsonMsg.Contains("\"type\":\"streaming_error\""))
-        {
-            // 转发给 StreamingMeetingPage（如果有处理器）
-            StreamingMessageHandler?.Invoke(jsonMsg);
-            return;
-        }
+        // 流式转录消息已在本方法开头统一转发
     }
 
     private async void BtnPing_Click(object sender, RoutedEventArgs e)
@@ -964,12 +1013,20 @@ public sealed partial class MainWindow : Window
 
     public async Task SendJsonAsync(string json)
     {
-        if (_pipe == null || !_pipe.IsConnected)
-        {
-            throw new InvalidOperationException("Worker 未连接。请先启动 Worker。");
-        }
         var buf = Encoding.UTF8.GetBytes(json);
-        await _pipe.WriteAsync(buf, 0, buf.Length);
-        await _pipe.FlushAsync();
+        await _pipeWriteLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_pipe == null || !_pipe.IsConnected)
+            {
+                throw new InvalidOperationException("Worker 未连接。请先启动 Worker。");
+            }
+            await _pipe.WriteAsync(buf, 0, buf.Length).ConfigureAwait(false);
+            await _pipe.FlushAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _pipeWriteLock.Release();
+        }
     }
 }

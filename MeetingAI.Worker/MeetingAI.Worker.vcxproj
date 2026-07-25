@@ -120,7 +120,7 @@
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src;$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAs>
       </CompileAs>
@@ -128,13 +128,14 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib;openvino_genaid.lib;openvinod.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib;openvino_genaid.lib;openvinod.lib;sherpa-onnx-c-api.lib</AdditionalDependencies>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
       <Command>if not exist "$(OutDir)" mkdir "$(OutDir)"
 xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration)\*.dll" "$(OutDir)"
+xcopy /Y /D "$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib\*.dll" "$(OutDir)"
 </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -149,7 +150,7 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src;$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <OpenMPSupport>true</OpenMPSupport>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -160,13 +161,14 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib;openvino_genai.lib;openvino.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib;openvino_genai.lib;openvino.lib;sherpa-onnx-c-api.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
       <Command>if not exist "$(OutDir)" mkdir "$(OutDir)"
 xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration)\*.dll" "$(OutDir)"
+xcopy /Y /D "$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib\*.dll" "$(OutDir)"
 </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -209,6 +211,9 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
     </ClCompile>
     <ClCompile Include="src\transcribe\whisper_transcriber.cpp" />
     <ClCompile Include="src\transcribe\whisper_openvino_transcriber.cpp" />
+    <ClCompile Include="src\transcribe\sherpa_streaming_transcriber.cpp" />
+    <ClCompile Include="src\transcribe\punctuator.cpp" />
+    <ClCompile Include="src\util\base64.cpp" />
     <ClCompile Include="src\util\logging.cpp" />
     <ClCompile Include="src\util\paths.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
@@ -277,6 +282,7 @@ xcopy /Y /D "$(ProjectDir)third_party\openvino_genai\bin\intel64\$(Configuration
     <ClInclude Include="include\meetingai\storage\database.hpp" />
     <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
     <ClInclude Include="include\meetingai\transcribe\whisper_openvino_transcriber.hpp" />
+    <ClInclude Include="include\meetingai\transcribe\punctuator.hpp" />
     <ClInclude Include="include\meetingai\util\logging.h" />
     <ClInclude Include="include\meetingai\util\paths.h" />
     <ClInclude Include="src\llava\image_processor.h" />

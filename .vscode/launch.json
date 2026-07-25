@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Host (WinUI, x64 Debug)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build all (x64 Debug)",
+      "program": "${workspaceFolder}/artifacts/bin/Debug/x64/x64/Debug/net8.0-windows10.0.19041.0/MeetingAI.Host.exe",
+      "cwd": "${workspaceFolder}/artifacts/bin/Debug/x64/x64/Debug/net8.0-windows10.0.19041.0",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": "Worker only (native, 手动调试用)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "preLaunchTask": "build worker",
+      "program": "${workspaceFolder}/artifacts/bin/Debug/x64/MeetingAI.Worker/MeetingAI.Worker.exe",
+      "cwd": "${workspaceFolder}/artifacts/bin/Debug/x64/MeetingAI.Worker",
+      "args": [],
+      "console": "integratedTerminal"
+    }
+  ]
+}
