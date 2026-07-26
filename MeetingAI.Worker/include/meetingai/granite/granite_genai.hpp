@@ -83,6 +83,14 @@ namespace meetingai::granite {
             int max_tokens = 256,
             float temperature = 0.7f);
 
+        // —— 使用 OpenVINO 结构化解码的一次性指令调用 —— //
+        std::string generateStructuredInstruct(
+            const std::string& system_message,
+            const std::string& user_prompt,
+            const std::string& json_schema,
+            int max_tokens = 256,
+            float temperature = 0.0f);
+
         // —— 多轮聊天：在多轮之间保留 KV cache（上下文） —— //
         void startChat(const std::string& system_message = "");
 

@@ -313,4 +313,31 @@ namespace meetingai::proto {
         return false;
     }
 
+    std::string extractTranslationMode(const std::string& json) {
+        const std::string mode = extractStringField(
+            json,
+            "translation_mode",
+            "off");
+        if (mode == "auto" || mode == "to_zh" || mode == "to_en") {
+            return mode;
+        }
+        return "off";
+    }
+
+    bool extractSummaryEnabled(const std::string& jsonStr) {
+        try {
+            const auto value = json::parse(jsonStr);
+            return value.value("summary_enabled", true);
+        }
+        catch (...) {
+            return true;
+        }
+    }
+
+    bool isRequestMeetingSummary(const std::string& json) {
+        const auto text = trim(json);
+        return text.find("\"type\"") != std::string::npos &&
+            text.find("\"request_meeting_summary\"") != std::string::npos;
+    }
+
 } // namespace meetingai::proto

@@ -83,4 +83,14 @@ namespace meetingai::proto {
 	// 从 {"is_end":true/false} 提取结束标记；失败返回 false
 	bool extractIsEnd(const std::string& json);
 
+	// 从 {"translation_mode":"off|auto|to_zh|to_en"} 提取实时翻译模式；
+	// 非法值和缺省值统一返回 "off"。
+	std::string extractTranslationMode(const std::string& json);
+
+	// 从 start_streaming 提取本地滚动摘要开关；缺省为开启。
+	bool extractSummaryEnabled(const std::string& json);
+
+	// {"type":"request_meeting_summary"}，用于 UI 手动立即生成一版。
+	bool isRequestMeetingSummary(const std::string& json);
+
 } // namespace meetingai::proto

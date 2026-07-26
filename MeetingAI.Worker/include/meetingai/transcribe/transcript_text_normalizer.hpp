@@ -5,6 +5,7 @@
 namespace meetingai::transcribe {
 
 struct StableTranscriptPrefix {
+    std::string finalizedRawText;
     std::string finalizedText;
     std::string remainingRawText;
 };

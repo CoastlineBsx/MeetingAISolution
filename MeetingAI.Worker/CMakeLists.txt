@@ -28,6 +28,10 @@ add_executable(MeetingAIWorker
     
     # Data storage module
     src/storage/sqlite_store.cpp
+
+    # Grounded rolling/final meeting summaries
+    src/summary/meeting_summary_policy.cpp
+    src/summary/meeting_summary_service.cpp
     
     # Speech transcription module
     src/transcribe/whisper_transcriber.cpp

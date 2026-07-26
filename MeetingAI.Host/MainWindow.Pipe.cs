@@ -378,7 +378,9 @@ public sealed partial class MainWindow : Window
 
                 // partial 每秒约 10 条，而 AppendLineAsync 是 OutputBox.Text += 的 O(n²) 拼接，
                 // 全量写进去会让日志框越来越卡。定稿结果保留，便于排查。
-                if (!line.Contains("\"type\":\"streaming_partial\""))
+                if (!line.Contains("\"type\":\"streaming_partial\"") &&
+                    !line.Contains("\"type\":\"streaming_translation_partial\"") &&
+                    !line.Contains("\"type\":\"streaming_summary_partial\""))
                 {
                     await AppendLineAsync($"[Pipe] {line}");
                 }

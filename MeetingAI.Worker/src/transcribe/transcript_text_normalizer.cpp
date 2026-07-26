@@ -543,6 +543,9 @@ bool TryExtractStableTranscriptPrefix(
     std::vector<char32_t> finalized(
         punctuated.begin(),
         punctuated.begin() + static_cast<std::ptrdiff_t>(stable.punctuatedEnd));
+    std::vector<char32_t> finalizedRaw(
+        raw.begin(),
+        raw.begin() + static_cast<std::ptrdiff_t>(stable.rawBoundary));
     std::vector<char32_t> remaining(
         raw.begin() + static_cast<std::ptrdiff_t>(stable.rawBoundary),
         raw.end());
@@ -550,10 +553,14 @@ bool TryExtractStableTranscriptPrefix(
     while (!finalized.empty() && IsWhitespace(finalized.back())) {
         finalized.pop_back();
     }
+    while (!finalizedRaw.empty() && IsWhitespace(finalizedRaw.back())) {
+        finalizedRaw.pop_back();
+    }
     while (!remaining.empty() && IsWhitespace(remaining.front())) {
         remaining.erase(remaining.begin());
     }
 
+    result.finalizedRawText = EncodeUtf8(finalizedRaw);
     result.finalizedText = EncodeUtf8(finalized);
     result.remainingRawText = EncodeUtf8(remaining);
     return !result.finalizedText.empty();

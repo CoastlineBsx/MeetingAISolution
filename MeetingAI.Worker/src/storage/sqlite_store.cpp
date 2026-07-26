@@ -5,6 +5,97 @@
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <cstdint>
+#include <mutex>
+
+namespace {
+
+std::mutex g_meetingWriteMutex;
+
+bool OpenMeetingDatabase(sqlite3** db) {
+    *db = nullptr;
+    const std::string path = meetingai::util::getDatabasePath();
+    if (sqlite3_open(path.c_str(), db) != SQLITE_OK) {
+        std::cerr << "[DB] open failed: "
+                  << (*db ? sqlite3_errmsg(*db) : "unknown") << "\n";
+        if (*db) {
+            sqlite3_close(*db);
+            *db = nullptr;
+        }
+        return false;
+    }
+
+    sqlite3_busy_timeout(*db, 5000);
+    if (sqlite3_exec(*db, "PRAGMA foreign_keys=ON;", nullptr, nullptr, nullptr)
+        != SQLITE_OK) {
+        std::cerr << "[DB] enabling foreign keys failed: "
+                  << sqlite3_errmsg(*db) << "\n";
+        sqlite3_close(*db);
+        *db = nullptr;
+        return false;
+    }
+    return true;
+}
+
+bool BeginTransaction(sqlite3* db) {
+    return sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr)
+        == SQLITE_OK;
+}
+
+bool CommitTransaction(sqlite3* db) {
+    return sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) == SQLITE_OK;
+}
+
+void RollbackTransaction(sqlite3* db) {
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+}
+
+int EnsureModel(
+    sqlite3* db,
+    const char* name,
+    const char* version,
+    const char* type,
+    const char* runtime) {
+    sqlite3_stmt* select = nullptr;
+    const char* query =
+        "SELECT id FROM model_registry "
+        "WHERE name=? AND version=? AND type=? AND runtime=? LIMIT 1;";
+    if (sqlite3_prepare_v2(db, query, -1, &select, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    sqlite3_bind_text(select, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(select, 2, version, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(select, 3, type, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(select, 4, runtime, -1, SQLITE_TRANSIENT);
+
+    int modelId = 0;
+    if (sqlite3_step(select) == SQLITE_ROW) {
+        modelId = sqlite3_column_int(select, 0);
+    }
+    sqlite3_finalize(select);
+    if (modelId != 0) {
+        return modelId;
+    }
+
+    sqlite3_stmt* insert = nullptr;
+    const char* sql =
+        "INSERT INTO model_registry(name,version,type,runtime) "
+        "VALUES(?,?,?,?);";
+    if (sqlite3_prepare_v2(db, sql, -1, &insert, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    sqlite3_bind_text(insert, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert, 2, version, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert, 3, type, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert, 4, runtime, -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(insert) == SQLITE_DONE) {
+        modelId = static_cast<int>(sqlite3_last_insert_rowid(db));
+    }
+    sqlite3_finalize(insert);
+    return modelId;
+}
+
+} // namespace
 
 // ===== 余弦相似度计算函数 =====
 static void cosine_similarity_func(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
@@ -190,6 +281,8 @@ CREATE TABLE IF NOT EXISTS model_registry (
   params_json      TEXT,
   runtime          TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_model_registry
+ON model_registry(name, version, type, runtime);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS fts_revision USING fts5(
   text_final, content='revision', content_rowid='id'
@@ -225,6 +318,31 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunk_doc ON document_chunks(doc_id);
 
+CREATE TABLE IF NOT EXISTS meeting_summary (
+  id                         INTEGER PRIMARY KEY,
+  meeting_id                 INTEGER NOT NULL REFERENCES meeting(id) ON DELETE CASCADE,
+  revision_no                INTEGER NOT NULL,
+  covered_through_segment_id INTEGER REFERENCES segment(id) ON DELETE SET NULL,
+  created_at_utc             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  model_name                 TEXT NOT NULL,
+  prompt_version             TEXT NOT NULL,
+  summary_text               TEXT NOT NULL,
+  is_final                   INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(meeting_id, revision_no)
+);
+CREATE INDEX IF NOT EXISTS idx_summary_meeting
+ON meeting_summary(meeting_id, revision_no);
+
+-- 清理由早期 Worker 启动自检写入的测试字幕。条件刻意收紧，
+-- 不会删除用户转录出来的正常内容。
+DELETE FROM segment
+WHERE speaker_hint='system'
+  AND text_raw='worker started'
+  AND start_ms=0
+  AND end_ms=0;
+
+PRAGMA user_version=2;
+
 COMMIT;
 )SQL";
 
@@ -251,7 +369,10 @@ bool InsertTranscript(const std::string& speaker,
     // 1) 若无 meeting，建一条
     sqlite3_int64 mid = 0;
     {
-        const char* q = "SELECT id FROM meeting ORDER BY id DESC LIMIT 1;";
+        const char* q =
+            "SELECT id FROM meeting "
+            "WHERE ended_at_utc IS NULL AND ext_source='local' "
+            "ORDER BY id DESC LIMIT 1;";
         sqlite3_stmt* st = nullptr;
         if (sqlite3_prepare_v2(db, q, -1, &st, nullptr) == SQLITE_OK) {
             if (sqlite3_step(st) == SQLITE_ROW) mid = sqlite3_column_int64(st, 0);
@@ -363,6 +484,460 @@ bool InsertTranscript(const std::string& speaker,
     sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
     sqlite3_close(db);
     return true;
+}
+
+std::int64_t BeginStreamingMeeting(
+    const std::vector<std::string>& sources,
+    int sampleRateHz) {
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db) || !BeginTransaction(db)) {
+        if (db) sqlite3_close(db);
+        return 0;
+    }
+
+    // Worker/Host 异常退出可能留下 ended_at_utc=NULL 的旧会话。
+    // 新会议开始时先封口旧会话，确保每次 Start 都有独立 meeting。
+    if (sqlite3_exec(
+        db,
+        "UPDATE meeting SET ended_at_utc=datetime('now') "
+        "WHERE ended_at_utc IS NULL;",
+        nullptr,
+        nullptr,
+        nullptr) != SQLITE_OK) {
+        std::cerr << "[DB] closing stale meetings failed: "
+                  << sqlite3_errmsg(db) << "\n";
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    const char* insertMeeting =
+        "INSERT INTO meeting(ext_source,title,tz,started_at_utc) "
+        "VALUES('streaming','Streaming Meeting','Europe/London',datetime('now'));";
+    if (sqlite3_exec(db, insertMeeting, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB] insert streaming meeting failed: "
+                  << sqlite3_errmsg(db) << "\n";
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    const std::int64_t meetingId = sqlite3_last_insert_rowid(db);
+
+    const char* insertStream =
+        "INSERT INTO stream(meeting_id,type,channel,sample_rate_hz) "
+        "VALUES(?,?,'mono',?);";
+    for (const std::string& source : sources) {
+        sqlite3_stmt* statement = nullptr;
+        if (sqlite3_prepare_v2(
+            db,
+            insertStream,
+            -1,
+            &statement,
+            nullptr) != SQLITE_OK) {
+            RollbackTransaction(db);
+            sqlite3_close(db);
+            return 0;
+        }
+        sqlite3_bind_int64(statement, 1, meetingId);
+        sqlite3_bind_text(
+            statement,
+            2,
+            source.c_str(),
+            -1,
+            SQLITE_TRANSIENT);
+        sqlite3_bind_int(statement, 3, sampleRateHz);
+        const int rc = sqlite3_step(statement);
+        sqlite3_finalize(statement);
+        if (rc != SQLITE_DONE) {
+            std::cerr << "[DB] insert streaming source failed: "
+                      << sqlite3_errmsg(db) << "\n";
+            RollbackTransaction(db);
+            sqlite3_close(db);
+            return 0;
+        }
+    }
+
+    if (!CommitTransaction(db)) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    sqlite3_close(db);
+    std::cout << "[DB] streaming meeting started, id="
+              << meetingId << "\n";
+    return meetingId;
+}
+
+bool EndStreamingMeeting(std::int64_t meetingId) {
+    if (meetingId <= 0) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db)) {
+        return false;
+    }
+    sqlite3_stmt* statement = nullptr;
+    const char* sql =
+        "UPDATE meeting SET ended_at_utc=datetime('now') "
+        "WHERE id=? AND ended_at_utc IS NULL;";
+    if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_bind_int64(statement, 1, meetingId);
+    const bool ok = sqlite3_step(statement) == SQLITE_DONE;
+    sqlite3_finalize(statement);
+    sqlite3_close(db);
+    return ok;
+}
+
+std::int64_t InsertStreamingFinal(
+    std::int64_t meetingId,
+    const std::string& source,
+    std::int64_t utteranceId,
+    std::int64_t startMs,
+    std::int64_t endMs,
+    const std::string& rawText,
+    const std::string& normalizedText) {
+    if (meetingId <= 0 || normalizedText.empty()) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db) || !BeginTransaction(db)) {
+        if (db) sqlite3_close(db);
+        return 0;
+    }
+
+    std::int64_t streamId = 0;
+    {
+        sqlite3_stmt* statement = nullptr;
+        const char* sql =
+            "SELECT id FROM stream WHERE meeting_id=? AND type=? LIMIT 1;";
+        if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int64(statement, 1, meetingId);
+            sqlite3_bind_text(
+                statement,
+                2,
+                source.c_str(),
+                -1,
+                SQLITE_TRANSIENT);
+            if (sqlite3_step(statement) == SQLITE_ROW) {
+                streamId = sqlite3_column_int64(statement, 0);
+            }
+        }
+        sqlite3_finalize(statement);
+    }
+    if (streamId == 0) {
+        std::cerr << "[DB] no stream for meeting=" << meetingId
+                  << " source=" << source << "\n";
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    std::int64_t segmentId = 0;
+    {
+        sqlite3_stmt* statement = nullptr;
+        const char* sql =
+            "INSERT INTO segment("
+            "meeting_id,stream_id,seq,start_ms,end_ms,speaker_hint,origin,"
+            "source_meta,text_raw,confidence_avg,is_final"
+            ") VALUES(?,?,?,?,?,?,?,?,?,NULL,1);";
+        if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+            RollbackTransaction(db);
+            sqlite3_close(db);
+            return 0;
+        }
+        const std::string speaker =
+            source == "system" ? "对方" : "我方";
+        const std::string origin = "asr_" + source;
+        const std::string sourceMeta =
+            "{\"source\":\"" + source + "\",\"utterance_id\":"
+            + std::to_string(utteranceId) + "}";
+        sqlite3_bind_int64(statement, 1, meetingId);
+        sqlite3_bind_int64(statement, 2, streamId);
+        sqlite3_bind_int64(statement, 3, utteranceId);
+        sqlite3_bind_int64(statement, 4, startMs);
+        sqlite3_bind_int64(statement, 5, endMs);
+        sqlite3_bind_text(
+            statement, 6, speaker.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(
+            statement, 7, origin.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(
+            statement, 8, sourceMeta.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(
+            statement, 9, rawText.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(statement) == SQLITE_DONE) {
+            segmentId = sqlite3_last_insert_rowid(db);
+        }
+        else {
+            std::cerr << "[DB] insert streaming segment failed: "
+                      << sqlite3_errmsg(db) << "\n";
+        }
+        sqlite3_finalize(statement);
+    }
+    if (segmentId == 0) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    const int modelId = EnsureModel(
+        db,
+        "Sherpa-ONNX Zipformer",
+        "2023-02-20",
+        "asr",
+        "onnxruntime");
+    if (modelId == 0) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    std::int64_t rawRevisionId = 0;
+    {
+        sqlite3_stmt* statement = nullptr;
+        const char* sql =
+            "INSERT INTO revision("
+            "segment_id,stage,model_id,text_final,confidence_avg"
+            ") VALUES(?,'asr_raw',?,?,NULL);";
+        if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int64(statement, 1, segmentId);
+            sqlite3_bind_int(statement, 2, modelId);
+            sqlite3_bind_text(
+                statement,
+                3,
+                rawText.c_str(),
+                -1,
+                SQLITE_TRANSIENT);
+            if (sqlite3_step(statement) == SQLITE_DONE) {
+                rawRevisionId = sqlite3_last_insert_rowid(db);
+            }
+        }
+        sqlite3_finalize(statement);
+    }
+    if (rawRevisionId == 0) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    {
+        sqlite3_stmt* statement = nullptr;
+        const char* sql =
+            "INSERT INTO revision("
+            "segment_id,parent_rev_id,stage,model_id,text_final,confidence_avg"
+            ") VALUES(?,?,'asr_normalized',?,?,NULL);";
+        if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+            RollbackTransaction(db);
+            sqlite3_close(db);
+            return 0;
+        }
+        sqlite3_bind_int64(statement, 1, segmentId);
+        sqlite3_bind_int64(statement, 2, rawRevisionId);
+        sqlite3_bind_int(statement, 3, modelId);
+        sqlite3_bind_text(
+            statement,
+            4,
+            normalizedText.c_str(),
+            -1,
+            SQLITE_TRANSIENT);
+        const int rc = sqlite3_step(statement);
+        sqlite3_finalize(statement);
+        if (rc != SQLITE_DONE) {
+            std::cerr << "[DB] insert normalized revision failed: "
+                      << sqlite3_errmsg(db) << "\n";
+            RollbackTransaction(db);
+            sqlite3_close(db);
+            return 0;
+        }
+    }
+
+    if (!CommitTransaction(db)) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    sqlite3_close(db);
+    return segmentId;
+}
+
+bool InsertStreamingTranslation(
+    std::int64_t segmentId,
+    const std::string& targetLanguage,
+    const std::string& translatedText) {
+    if (segmentId <= 0 || translatedText.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db) || !BeginTransaction(db)) {
+        if (db) sqlite3_close(db);
+        return false;
+    }
+
+    const int modelId = EnsureModel(
+        db,
+        "OPUS-MT",
+        "local",
+        "translation",
+        "CTranslate2");
+    if (modelId == 0) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return false;
+    }
+
+    std::string language = targetLanguage;
+    if (language != "zh" && language != "en") {
+        language = "unknown";
+    }
+    const std::string stage = "translation_" + language;
+    sqlite3_stmt* statement = nullptr;
+    const char* sql =
+        "INSERT INTO revision("
+        "segment_id,parent_rev_id,stage,model_id,text_final"
+        ") VALUES("
+        "?,(SELECT id FROM revision "
+        "   WHERE segment_id=? AND stage='asr_normalized' LIMIT 1),?,?,?"
+        ") ON CONFLICT(segment_id,stage) DO UPDATE SET "
+        "model_id=excluded.model_id,"
+        "text_final=excluded.text_final,"
+        "created_at_utc=CURRENT_TIMESTAMP;";
+    if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_bind_int64(statement, 1, segmentId);
+    sqlite3_bind_int64(statement, 2, segmentId);
+    sqlite3_bind_text(
+        statement, 3, stage.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(statement, 4, modelId);
+    sqlite3_bind_text(
+        statement,
+        5,
+        translatedText.c_str(),
+        -1,
+        SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(statement) == SQLITE_DONE;
+    if (!ok) {
+        std::cerr << "[DB] insert translation revision failed: "
+                  << sqlite3_errmsg(db) << "\n";
+    }
+    sqlite3_finalize(statement);
+
+    if (!ok || !CommitTransaction(db)) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_close(db);
+    return true;
+}
+
+std::vector<MeetingTranscriptEntry> LoadMeetingTranscriptSince(
+    std::int64_t meetingId,
+    std::int64_t afterSegmentId) {
+    std::vector<MeetingTranscriptEntry> entries;
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db)) {
+        return entries;
+    }
+
+    sqlite3_stmt* statement = nullptr;
+    const char* sql =
+        "SELECT s.id,st.type,r.text_final "
+        "FROM segment s "
+        "JOIN stream st ON st.id=s.stream_id "
+        "JOIN revision r ON r.segment_id=s.id "
+        "WHERE s.meeting_id=? AND s.id>? "
+        "  AND s.is_final=1 AND r.stage='asr_normalized' "
+        "ORDER BY s.start_ms,s.id;";
+    if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(statement, 1, meetingId);
+        sqlite3_bind_int64(statement, 2, afterSegmentId);
+        while (sqlite3_step(statement) == SQLITE_ROW) {
+            MeetingTranscriptEntry entry;
+            entry.segmentId = sqlite3_column_int64(statement, 0);
+            const char* source = reinterpret_cast<const char*>(
+                sqlite3_column_text(statement, 1));
+            const char* text = reinterpret_cast<const char*>(
+                sqlite3_column_text(statement, 2));
+            entry.source = source ? source : "";
+            entry.text = text ? text : "";
+            entries.push_back(std::move(entry));
+        }
+    }
+    else {
+        std::cerr << "[DB] load transcript failed: "
+                  << sqlite3_errmsg(db) << "\n";
+    }
+    sqlite3_finalize(statement);
+    sqlite3_close(db);
+    return entries;
+}
+
+bool InsertMeetingSummary(
+    std::int64_t meetingId,
+    std::int64_t coveredThroughSegmentId,
+    const std::string& modelName,
+    const std::string& promptVersion,
+    const std::string& summaryText,
+    bool isFinal) {
+    if (meetingId <= 0 || summaryText.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db)) {
+        return false;
+    }
+    sqlite3_stmt* statement = nullptr;
+    const char* sql =
+        "INSERT INTO meeting_summary("
+        "meeting_id,revision_no,covered_through_segment_id,model_name,"
+        "prompt_version,summary_text,is_final"
+        ") VALUES("
+        "?,(SELECT COALESCE(MAX(revision_no),0)+1 "
+        "   FROM meeting_summary WHERE meeting_id=?),?,?,?,?,?"
+        ");";
+    if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_bind_int64(statement, 1, meetingId);
+    sqlite3_bind_int64(statement, 2, meetingId);
+    if (coveredThroughSegmentId > 0) {
+        sqlite3_bind_int64(statement, 3, coveredThroughSegmentId);
+    }
+    else {
+        // 允许“只有实时 partial、尚无 final”的早期摘要落库。
+        sqlite3_bind_null(statement, 3);
+    }
+    sqlite3_bind_text(
+        statement, 4, modelName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(
+        statement, 5, promptVersion.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(
+        statement, 6, summaryText.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(statement, 7, isFinal ? 1 : 0);
+    const bool ok = sqlite3_step(statement) == SQLITE_DONE;
+    if (!ok) {
+        std::cerr << "[DB] insert meeting summary failed: "
+                  << sqlite3_errmsg(db) << "\n";
+    }
+    sqlite3_finalize(statement);
+    sqlite3_close(db);
+    return ok;
 }
 
 // ===== RAG 文档入库 =====

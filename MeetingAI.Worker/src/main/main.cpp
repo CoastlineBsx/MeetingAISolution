@@ -8,7 +8,9 @@
 #include <mutex>
 #include <thread>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 #include <shlobj.h>
@@ -27,6 +29,8 @@
 #include "sherpa_streaming_transcriber.h"  // ← 新增：Sherpa 流式转录
 #include "punctuator.hpp"                  // ← 新增：中英标点恢复
 #include "transcript_text_normalizer.hpp"
+#include "translation/offline_translator.hpp"
+#include "summary/meeting_summary_service.hpp"
 #include "base64.h"  // ← 新增：Base64 解码
 #include "command_parser.h"
 #include "logging.h"
@@ -82,12 +86,164 @@ static bool g_punct_attempted = false;
 // 原始文本，直到标点模型确认句界或检测到长静音/停止。
 static std::unordered_map<std::string, std::string> g_streaming_pending_raw;
 static std::vector<std::string> g_streaming_active_sources;
+static std::unordered_map<std::string, long long> g_streaming_utterance_ids;
+static std::unordered_map<std::string, long long> g_streaming_last_end_ms;
+static std::chrono::steady_clock::time_point g_streaming_started_at;
+static std::int64_t g_streaming_meeting_id = 0;
+
+// final 原文先写 segment，译文回调再按 source + utterance_id 找回同一条
+// segment，作为后续 revision 保存。
+static std::mutex g_streaming_segment_mutex;
+static std::unordered_map<
+    std::string,
+    std::unordered_map<long long, std::int64_t>>
+    g_streaming_segment_ids;
+
+// Granite 摘要运行在独立线程，绝不能占用命名管道的音频读取循环。
+static meetingai::summary::MeetingSummaryService g_meeting_summary;
+
+// CTranslate2 翻译和 Sherpa 转录会从不同线程回写同一根命名管道。
+// WriteFile 本身不能保证两个 JSON 消息不会交叉，因此统一串行化流式页面的回包。
+static std::mutex g_streaming_pipe_write_mutex;
+static meetingai::translation::OfflineTranslator g_offline_translator;
+
+static void WriteStreamingMessage(
+    HANDLE hPipe,
+    const std::string& message) {
+    std::lock_guard<std::mutex> lock(g_streaming_pipe_write_mutex);
+    DWORD written = 0;
+    WriteFile(
+        hPipe,
+        message.data(),
+        static_cast<DWORD>(message.size()),
+        &written,
+        nullptr);
+}
 
 // ========== 设备配置 ==========
 static std::string g_granite_device = "GPU";   // Granite LLM 使用的设备
 static std::string g_embedding_device = "GPU"; // Embedding 使用的设备
 static std::string g_llava_device = "NPU";     // LLaVA 使用的设备
 static std::string g_sd_device = "NPU";        // Stable Diffusion 使用的设备
+
+static std::string GetEnvOrDefault(
+    const char* key,
+    const std::string& fallback);
+
+static void StartMeetingSummaryService(HANDLE hPipe) {
+    const std::int64_t meetingId = g_streaming_meeting_id;
+    if (meetingId <= 0) {
+        return;
+    }
+
+    // 这条状态从管道主线程同步发送。服务线程随后可以直接加载模型，
+    // 不会因为同步 Named Pipe 正在等待下一包音频而卡在第一条状态回写上。
+    WriteStreamingMessage(
+        hPipe,
+        "{\"type\":\"streaming_summary_status\","
+        "\"state\":\"loading\","
+        "\"message\":\"正在后台加载 Granite 会议摘要模型…\"}\n");
+
+    g_meeting_summary.Start(
+        meetingId,
+        [](std::string& error) -> bool {
+            std::lock_guard<std::mutex> lock(g_granite_mutex);
+            if (g_granite) {
+                g_granite_loaded = true;
+                return true;
+            }
+
+            try {
+                const std::string modelDir = GetEnvOrDefault(
+                    "MEETINGAI_GRANITE_MODEL",
+                    meetingai::util::resolveModelFileUtf8(
+                        L"granite-3.3-2b-npu"));
+                g_granite =
+                    std::make_unique<meetingai::granite::GraniteGenAI>(
+                        modelDir,
+                        g_granite_device);
+                g_granite_loaded = true;
+                std::cout
+                    << "[Summary] Granite loaded on "
+                    << g_granite_device << "\n";
+                return true;
+            }
+            catch (const std::exception& e) {
+                error = std::string("Granite 加载失败: ") + e.what();
+                g_granite.reset();
+                g_granite_loaded = false;
+                return false;
+            }
+        },
+        [](const std::string& prompt,
+           const std::string& jsonSchema,
+           const meetingai::summary::MeetingSummaryService::PartialCallback&
+               onPartial) -> std::string {
+            std::lock_guard<std::mutex> lock(g_granite_mutex);
+            if (!g_granite) {
+                throw std::runtime_error("Granite 模型未加载");
+            }
+
+            const std::string output =
+                g_granite->generateStructuredInstruct(
+                "你是完全离线运行的专业会议纪要助手。"
+                "你必须只依据用户提供的带编号会议原文回答。"
+                "如果原文没有提供某项信息，就明确写未提及或未明确。"
+                "绝不编造公司、产品、人物、金额、日期、决定和行动项。",
+                prompt,
+                jsonSchema,
+                768,
+                0.0f);
+            onPartial(output);
+            return output;
+        },
+        [hPipe](
+            const std::string& state,
+            const std::string& text,
+            bool isFinal,
+            std::int64_t coveredThroughSegmentId) {
+            std::string message;
+            if (state == "partial" || state == "final") {
+                const char* type = state == "partial"
+                    ? "streaming_summary_partial"
+                    : "streaming_summary_final";
+                message =
+                    "{\"type\":\"" + std::string(type)
+                    + "\",\"text\":\""
+                    + meetingai::proto::jsonEscape(text)
+                    + "\",\"is_final\":"
+                    + (isFinal ? "true" : "false")
+                    + ",\"covered_through_segment_id\":"
+                    + std::to_string(coveredThroughSegmentId)
+                    + "}\n";
+            }
+            else {
+                message =
+                    "{\"type\":\"streaming_summary_status\",\"state\":\""
+                    + meetingai::proto::jsonEscape(state)
+                    + "\",\"message\":\""
+                    + meetingai::proto::jsonEscape(text)
+                    + "\"}\n";
+            }
+            WriteStreamingMessage(hPipe, message);
+        });
+}
+
+static void CloseStreamingMeetingRecord() {
+    if (g_streaming_meeting_id > 0) {
+        if (!EndStreamingMeeting(g_streaming_meeting_id)) {
+            std::cerr << "[DB] failed to close streaming meeting id="
+                      << g_streaming_meeting_id << "\n";
+        }
+        g_streaming_meeting_id = 0;
+    }
+}
+
+static void ResetStreamingPersistenceState() {
+    std::lock_guard<std::mutex> lock(g_streaming_segment_mutex);
+    g_streaming_segment_ids.clear();
+    g_streaming_last_end_ms.clear();
+}
 
 // ========== 工具函数：解码 JSON Unicode 转义序列 ==========
 static std::string decodeJsonUnicode(const std::string& str) {
@@ -1005,15 +1161,81 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
     auto sendTranscript = [hPipe](
         const char* type,
         const std::string& source,
+        const std::string& rawText,
         const std::string& text) {
         if (text.empty()) {
             return;
         }
+
+        const bool isFinal = std::string(type) == "streaming_final";
+        long long& utteranceId = g_streaming_utterance_ids[source];
+        if (utteranceId <= 0) {
+            utteranceId = 1;
+        }
+
+        std::int64_t segmentId = 0;
+        if (isFinal && g_streaming_meeting_id > 0) {
+            const auto now = std::chrono::steady_clock::now();
+            const long long endMs =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - g_streaming_started_at).count();
+            const long long startMs =
+                std::min(g_streaming_last_end_ms[source], endMs);
+            segmentId = InsertStreamingFinal(
+                g_streaming_meeting_id,
+                source,
+                utteranceId,
+                startMs,
+                endMs,
+                rawText.empty() ? text : rawText,
+                text);
+            if (segmentId > 0) {
+                {
+                    std::lock_guard<std::mutex> lock(
+                        g_streaming_segment_mutex);
+                    g_streaming_segment_ids[source][utteranceId] =
+                        segmentId;
+                }
+                g_streaming_last_end_ms[source] = endMs;
+                g_meeting_summary.NotifyFinalTranscript(
+                    source,
+                    utteranceId,
+                    text.size());
+            }
+            else {
+                std::string dbError =
+                    "{\"type\":\"streaming_persistence_error\","
+                    "\"message\":\"最终字幕写入数据库失败\"}\n";
+                WriteStreamingMessage(hPipe, dbError);
+            }
+        }
+
         std::string response = "{\"type\":\"" + std::string(type) +
             "\",\"source\":\"" + meetingai::proto::jsonEscape(source) +
-            "\",\"text\":\"" + meetingai::proto::jsonEscape(text) + "\"}\n";
-        DWORD written;
-        WriteFile(hPipe, response.data(), (DWORD)response.size(), &written, nullptr);
+            "\",\"utterance_id\":" + std::to_string(utteranceId) +
+            ",\"segment_id\":" + std::to_string(segmentId) +
+            ",\"text\":\"" + meetingai::proto::jsonEscape(text) + "\"}\n";
+        WriteStreamingMessage(hPipe, response);
+
+        if (!isFinal) {
+            g_meeting_summary.UpdateLiveTranscript(
+                source,
+                utteranceId,
+                text);
+        }
+
+        // 原文先发给 UI，再把翻译任务放入旁路线程；翻译速度不会反压音频。
+        if (g_offline_translator.IsActive()) {
+            g_offline_translator.Submit(
+                source,
+                utteranceId,
+                text,
+                isFinal);
+        }
+
+        if (isFinal) {
+            ++utteranceId;
+        }
     };
 
     auto flushPendingTranscript = [&sendTranscript](const std::string& source) {
@@ -1024,11 +1246,12 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
         }
 
         std::string& pending = pendingIt->second;
+        const std::string rawText = pending;
         std::string text = g_punct
             ? g_punct->AddPunctuation(pending)
             : meetingai::transcribe::NormalizeBilingualTranscript(
                 pending);
-        sendTranscript("streaming_final", source, text);
+        sendTranscript("streaming_final", source, rawText, text);
         std::cout << "[Worker] semantic final [" << source << "]: "
                   << text << std::endl;
         pending.clear();
@@ -1046,8 +1269,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             auto notify = [hPipe](const std::string& text) {
                 std::string msg = "{\"type\":\"info\",\"message\":\"" +
                     meetingai::proto::jsonEscape(text) + "\"}\n";
-                DWORD written;
-                WriteFile(hPipe, msg.data(), (DWORD)msg.size(), &written, nullptr);
+                WriteStreamingMessage(hPipe, msg);
             };
 
             // 初始化 Sherpa 模型（仅一次）
@@ -1074,8 +1296,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                         if (missing) {
                             std::string err = std::string("{\"type\":\"streaming_error\",\"message\":\"") +
                                 missing + ": " + meetingai::proto::jsonEscape(modelDir) + "\"}\n";
-                            DWORD written;
-                            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                            WriteStreamingMessage(hPipe, err);
                             g_sherpa.reset();
                             return;
                         }
@@ -1094,8 +1315,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                                   << "ms: " << g_sherpa->GetLastError() << std::endl;
                         std::string err = "{\"type\":\"streaming_error\",\"message\":\"Sherpa 模型初始化失败: " +
                             meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
-                        DWORD written;
-                        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                        WriteStreamingMessage(hPipe, err);
                         g_sherpa.reset();
                         return;
                     }
@@ -1139,9 +1359,110 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 std::string err =
                     "{\"type\":\"streaming_error\",\"message\":"
                     "\"已有流式会话正在运行，请先停止\"}\n";
-                DWORD written;
-                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                WriteStreamingMessage(hPipe, err);
                 return;
+            }
+
+            const std::string translationMode =
+                meetingai::proto::extractTranslationMode(command);
+            if (translationMode != "off") {
+                notify("[Translation] 正在加载 CTranslate2 / OPUS-MT 离线模型…");
+            }
+
+            const std::string enZhModelDir =
+                meetingai::util::resolveModelFileUtf8(
+                    L"translation\\opus-mt-en-zh");
+            const std::string zhEnModelDir =
+                meetingai::util::resolveModelFileUtf8(
+                    L"translation\\opus-mt-zh-en");
+
+            const auto translationStartedAt =
+                std::chrono::steady_clock::now();
+            const bool translationReady = g_offline_translator.Start(
+                translationMode,
+                enZhModelDir,
+                zhEnModelDir,
+                [hPipe](const meetingai::translation::TranslationEvent& event) {
+                    if (event.targetLanguage.rfind("error:", 0) == 0) {
+                        const std::string errorText =
+                            event.targetLanguage.substr(6);
+                        const std::string message =
+                            "{\"type\":\"streaming_translation_error\",\"source\":\"" +
+                            meetingai::proto::jsonEscape(event.source) +
+                            "\",\"utterance_id\":" +
+                            std::to_string(event.utteranceId) +
+                            ",\"message\":\"" +
+                            meetingai::proto::jsonEscape(errorText) +
+                            "\"}\n";
+                        WriteStreamingMessage(hPipe, message);
+                        return;
+                    }
+
+                    const char* type = event.isFinal
+                        ? "streaming_translation_final"
+                        : "streaming_translation_partial";
+
+                    if (event.isFinal) {
+                        std::int64_t segmentId = 0;
+                        {
+                            std::lock_guard<std::mutex> lock(
+                                g_streaming_segment_mutex);
+                            const auto sourceIt =
+                                g_streaming_segment_ids.find(event.source);
+                            if (sourceIt != g_streaming_segment_ids.end()) {
+                                const auto utteranceIt =
+                                    sourceIt->second.find(event.utteranceId);
+                                if (utteranceIt != sourceIt->second.end()) {
+                                    segmentId = utteranceIt->second;
+                                }
+                            }
+                        }
+                        if (segmentId > 0 &&
+                            !InsertStreamingTranslation(
+                                segmentId,
+                                event.targetLanguage,
+                                event.text)) {
+                            WriteStreamingMessage(
+                                hPipe,
+                                "{\"type\":\"streaming_persistence_error\","
+                                "\"message\":\"最终译文写入数据库失败\"}\n");
+                        }
+                    }
+
+                    const std::string message =
+                        "{\"type\":\"" + std::string(type) +
+                        "\",\"source\":\"" +
+                        meetingai::proto::jsonEscape(event.source) +
+                        "\",\"utterance_id\":" +
+                        std::to_string(event.utteranceId) +
+                        ",\"target_language\":\"" +
+                        meetingai::proto::jsonEscape(event.targetLanguage) +
+                        "\",\"text\":\"" +
+                        meetingai::proto::jsonEscape(event.text) +
+                        "\"}\n";
+                    WriteStreamingMessage(hPipe, message);
+                });
+
+            std::string activeTranslationMode = translationMode;
+            if (!translationReady) {
+                activeTranslationMode = "off";
+                const std::string err =
+                    "{\"type\":\"streaming_translation_error\",\"message\":\"离线翻译未启用: " +
+                    meetingai::proto::jsonEscape(
+                        g_offline_translator.GetLastError()) +
+                    "\"}\n";
+                WriteStreamingMessage(hPipe, err);
+            }
+
+            if (activeTranslationMode != "off") {
+                const auto translationMs =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now()
+                        - translationStartedAt).count();
+                notify(
+                    "[Translation] 离线翻译模型已就绪，耗时 "
+                    + std::to_string(translationMs)
+                    + " ms");
             }
 
             std::vector<std::string> requestedSources =
@@ -1160,8 +1481,8 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                         "{\"type\":\"streaming_error\",\"message\":\"" +
                         meetingai::proto::jsonEscape(g_sherpa->GetLastError()) +
                         "\"}\n";
-                    DWORD written;
-                    WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                    g_offline_translator.Stop(false);
+                    WriteStreamingMessage(hPipe, err);
                     return;
                 }
                 startedSources.push_back(source);
@@ -1169,15 +1490,64 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
 
             g_streaming_active_sources = std::move(startedSources);
             g_streaming_pending_raw.clear();
+            g_streaming_utterance_ids.clear();
+            ResetStreamingPersistenceState();
             for (const std::string& source : g_streaming_active_sources) {
                 g_streaming_pending_raw.emplace(source, std::string{});
+                g_streaming_utterance_ids.emplace(source, 1);
+                g_streaming_last_end_ms.emplace(source, 0);
             }
+
+            const int streamingSampleRate =
+                meetingai::proto::extractSampleRate(command);
+            g_streaming_meeting_id = BeginStreamingMeeting(
+                g_streaming_active_sources,
+                streamingSampleRate);
+            if (g_streaming_meeting_id <= 0) {
+                for (const std::string& source :
+                     g_streaming_active_sources) {
+                    std::vector<
+                        meetingai::transcribe::SherpaStreamResult> ignored;
+                    g_sherpa->EndSession(source, ignored);
+                }
+                g_offline_translator.Stop(false);
+                g_streaming_active_sources.clear();
+                g_streaming_pending_raw.clear();
+                g_streaming_utterance_ids.clear();
+                ResetStreamingPersistenceState();
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_error\","
+                    "\"message\":\"创建会议数据库记录失败\"}\n");
+                return;
+            }
+            g_streaming_started_at = std::chrono::steady_clock::now();
+
+            const bool summaryEnabled =
+                meetingai::proto::extractSummaryEnabled(command);
 
             // 发送成功响应
             std::string ok = "{\"type\":\"streaming_started\",\"source\":\"" +
-                meetingai::proto::jsonEscape(requestedSource) + "\"}\n";
-            DWORD written;
-            WriteFile(hPipe, ok.data(), (DWORD)ok.size(), &written, nullptr);
+                meetingai::proto::jsonEscape(requestedSource) +
+                "\",\"translation_mode\":\"" +
+                meetingai::proto::jsonEscape(activeTranslationMode) +
+                "\",\"meeting_id\":" +
+                std::to_string(g_streaming_meeting_id) +
+                ",\"summary_enabled\":" +
+                (summaryEnabled ? "true" : "false") +
+                "}\n";
+            WriteStreamingMessage(hPipe, ok);
+
+            if (summaryEnabled) {
+                StartMeetingSummaryService(hPipe);
+            }
+            else {
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_summary_status\","
+                    "\"state\":\"disabled\","
+                    "\"message\":\"本地会议摘要已关闭\"}\n");
+            }
             std::cout << "[Worker] streaming session started: "
                       << requestedSource << std::endl;
         }
@@ -1199,8 +1569,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                     "{\"type\":\"streaming_error\",\"source\":\"" +
                     meetingai::proto::jsonEscape(source) +
                     "\",\"message\":\"该音频来源的流式会话未启动\"}\n";
-                DWORD written;
-                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                WriteStreamingMessage(hPipe, err);
                 return;
             }
 
@@ -1208,8 +1577,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             std::string audioData = meetingai::proto::extractAudioData(command);
             if (audioData.empty()) {
                 std::string err = "{\"type\":\"streaming_error\",\"message\":\"音频数据为空\"}\n";
-                DWORD written;
-                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                WriteStreamingMessage(hPipe, err);
                 return;
             }
 
@@ -1226,8 +1594,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 std::string err = "{\"type\":\"streaming_error\",\"message\":\"音频解码失败 b64_len=" +
                     std::to_string(audioData.size()) + " head=" +
                     meetingai::proto::jsonEscape(head) + "\"}\n";
-                DWORD written;
-                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                WriteStreamingMessage(hPipe, err);
                 return;
             }
 
@@ -1241,8 +1608,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 std::string err = "{\"type\":\"streaming_error\",\"source\":\"" +
                     meetingai::proto::jsonEscape(source) + "\",\"message\":\"" +
                     meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
-                DWORD written;
-                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                WriteStreamingMessage(hPipe, err);
                 return;
             }
 
@@ -1258,6 +1624,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                     sendTranscript(
                         "streaming_partial",
                         source,
+                        combined,
                         meetingai::transcribe::NormalizeBilingualTranscript(combined));
                     continue;
                 }
@@ -1285,6 +1652,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                         sendTranscript(
                             "streaming_final",
                             source,
+                            stable.finalizedRawText,
                             stable.finalizedText);
                         std::cout << "[Worker] semantic final [" << source << "]: "
                                   << stable.finalizedText << std::endl;
@@ -1297,6 +1665,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                             sendTranscript(
                                 "streaming_partial",
                                 source,
+                                g_streaming_pending_raw[source],
                                 meetingai::transcribe::NormalizeBilingualTranscript(
                                     g_streaming_pending_raw[source]));
                         }
@@ -1317,9 +1686,12 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             std::wcout << L"[Worker] 收到 stop_streaming 命令\n";
 
             if (!g_sherpa || !g_sherpa->IsRunning()) {
+                g_offline_translator.Stop(false);
+                g_meeting_summary.Stop(false);
+                CloseStreamingMeetingRecord();
+                ResetStreamingPersistenceState();
                 std::string err = "{\"type\":\"streaming_error\",\"message\":\"流式会话未启动\"}\n";
-                DWORD written;
-                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                WriteStreamingMessage(hPipe, err);
                 return;
             }
 
@@ -1346,33 +1718,42 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 }
                 flushPendingTranscript(source);
             }
+
+            // flushPendingTranscript 已把最后原文和 final 翻译任务排入队列。
+            // 先等 final 译文全部回到 Host，再发 streaming_stopped，避免停止时丢译文。
+            g_offline_translator.Stop(true);
+
+            // 摘要线程独立于音频读取循环。停止会议时生成最后一版并确认落库，
+            // 再封口 meeting，确保 UI 收到的最终摘要和数据库一致。
+            g_meeting_summary.Stop(true);
+            CloseStreamingMeetingRecord();
+
             g_streaming_active_sources.clear();
             g_streaming_pending_raw.clear();
+            g_streaming_utterance_ids.clear();
+            ResetStreamingPersistenceState();
 
             if (!stopError.empty()) {
                 std::string err = "{\"type\":\"streaming_error\",\"message\":\"" +
                     meetingai::proto::jsonEscape(stopError) + "\"}\n";
-                DWORD errorWritten;
-                WriteFile(
-                    hPipe,
-                    err.data(),
-                    (DWORD)err.size(),
-                    &errorWritten,
-                    nullptr);
+                WriteStreamingMessage(hPipe, err);
             }
 
             // 发送完成信号
-            const char* complete = "{\"type\":\"streaming_stopped\"}\n";
-            DWORD written;
-            WriteFile(hPipe, complete, (DWORD)strlen(complete), &written, nullptr);
+            WriteStreamingMessage(
+                hPipe,
+                "{\"type\":\"streaming_stopped\"}\n");
             std::wcout << L"[Worker] 流式会话已停止\n";
         }
     }
     catch (const std::exception& e) {
+        g_offline_translator.Stop(false);
+        g_meeting_summary.Stop(false);
+        CloseStreamingMeetingRecord();
+        ResetStreamingPersistenceState();
         std::string err = std::string("{\"type\":\"streaming_error\",\"message\":\"") +
             meetingai::proto::jsonEscape(e.what()) + "\"}\n";
-        DWORD written;
-        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+        WriteStreamingMessage(hPipe, err);
     }
 }
 
@@ -1403,40 +1784,13 @@ int wmain() {
         return 1;
     }
 
-    // ★ 新增 2: 插入一条测试记录
-    InsertTranscript("system", "worker started", 0.0);
-    bool ok = InsertTranscript("system", "worker started", 0.0);
-    std::cout << "[DB] insert result = " << (ok ? "ok" : "fail") << "\n";
-
-    // ★ 新增 3：打印 DB 路径、是否存在、记录总数（ASCII 输出，避免中文编码问题）
+    // 打印实际数据库位置。启动过程不再写入伪造的 worker started 字幕。
     {
         std::string dbPath = meetingai::util::getDatabasePath();
         std::cout << "[DB] path = " << dbPath << "\n";
 
         bool exists = std::filesystem::exists(dbPath);
         std::cout << "[DB] exists = " << (exists ? "true" : "false") << "\n";
-
-        sqlite3* db = nullptr;
-        if (sqlite3_open(dbPath.c_str(), &db) == SQLITE_OK) {   // 用 UTF-8 版本打开
-            sqlite3_stmt* st = nullptr;
-            if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM transcripts;", -1, &st, nullptr) == SQLITE_OK) {
-                if (sqlite3_step(st) == SQLITE_ROW) {
-                    int cnt = sqlite3_column_int(st, 0);
-                    std::cout << "[DB] count = " << cnt << "\n";
-                }
-                else {
-                    std::cout << "[DB] step() failed\n";
-                }
-                sqlite3_finalize(st);
-            }
-            else {
-                std::cout << "[DB] prepare() failed: " << sqlite3_errmsg(db) << "\n";
-            }
-            sqlite3_close(db);
-        }
-        else {
-            std::cout << "[DB] open failed\n";
-        }
     }
 
     // 解析命令行参数：--ppid, --granite-device, --embedding-device
@@ -1868,6 +2222,15 @@ int wmain() {
 
                 // ---- 新增：Granite 命令处理 ----
                 if (buffer.find("\"granite_") != std::string::npos) {
+                    if (g_meeting_summary.IsGenerating()) {
+                        WriteStreamingMessage(
+                            hPipe,
+                            "{\"type\":\"error\","
+                            "\"message\":\"会议摘要正在使用 Granite，"
+                            "请稍后再发送聊天请求\"}\n");
+                        buffer.clear();
+                        continue;
+                    }
                     handleGraniteCommand(hPipe, buffer);
                     buffer.clear();
                     continue;
@@ -1934,6 +2297,27 @@ int wmain() {
                 // ---- 新增：OpenVINO Whisper 转录命令处理 ----
                 if (meetingai::proto::isTranscribeOpenVINO(buffer)) {
                     handleTranscribeOpenVINOCommand(hPipe, buffer);
+                    buffer.clear();
+                    continue;
+                }
+
+                // ---- Streaming Meeting：手动立即生成一版滚动摘要 ----
+                if (meetingai::proto::isRequestMeetingSummary(buffer)) {
+                    if (g_meeting_summary.IsRunning()) {
+                        g_meeting_summary.RequestNow();
+                        WriteStreamingMessage(
+                            hPipe,
+                            "{\"type\":\"streaming_summary_status\","
+                            "\"state\":\"queued\","
+                            "\"message\":\"已捕获当前字幕快照，正在更新会议摘要\"}\n");
+                    }
+                    else {
+                        WriteStreamingMessage(
+                            hPipe,
+                            "{\"type\":\"streaming_summary_status\","
+                            "\"state\":\"error\","
+                            "\"message\":\"会议摘要服务尚未运行\"}\n");
+                    }
                     buffer.clear();
                     continue;
                 }
@@ -2092,6 +2476,30 @@ int wmain() {
         }
 
         // 4) 清理当前连接，回到外层 while 等待下一个客户端或退出
+        // Host 异常退出时不会发送 stop_streaming。这里必须释放两路 Sherpa
+        // session、摘要线程并封口数据库会议，否则下一次连接会误判已有会话。
+        if (!g_streaming_active_sources.empty() ||
+            g_streaming_meeting_id > 0) {
+            g_offline_translator.Stop(false);
+            g_meeting_summary.Stop(false);
+            if (g_sherpa) {
+                for (const std::string& source :
+                     g_streaming_active_sources) {
+                    if (!g_sherpa->IsRunning(source)) {
+                        continue;
+                    }
+                    std::vector<
+                        meetingai::transcribe::SherpaStreamResult> ignored;
+                    g_sherpa->EndSession(source, ignored);
+                }
+            }
+            CloseStreamingMeetingRecord();
+            g_streaming_active_sources.clear();
+            g_streaming_pending_raw.clear();
+            g_streaming_utterance_ids.clear();
+            ResetStreamingPersistenceState();
+        }
+
         FlushFileBuffers(hPipe);
         DisconnectNamedPipe(hPipe);
         CloseHandle(hPipe);

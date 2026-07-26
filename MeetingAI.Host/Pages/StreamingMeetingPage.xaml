@@ -18,7 +18,7 @@
             <TextBlock Text="🎙️ Streaming Meeting (Real-time Transcription)"
                        FontSize="28"
                        FontWeight="Bold"/>
-            <TextBlock Text="Powered by Sherpa-ONNX Zipformer · 本地实时流式转录（中英双语，全程离线）"
+            <TextBlock Text="Sherpa-ONNX 流式转录 + CTranslate2 / OPUS-MT 实时翻译（全程离线）"
                        FontSize="14"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
         </StackPanel>
@@ -49,9 +49,27 @@
                             Padding="16,12"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                             BorderThickness="0,0,0,1">
-                        <TextBlock Text="📝 Real-time Captions"
-                                   FontWeight="SemiBold"
-                                   FontSize="16"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="📝 Real-time Captions"
+                                       FontWeight="SemiBold"
+                                       FontSize="16"
+                                       VerticalAlignment="Center"/>
+                            <Button Grid.Column="1"
+                                    x:Name="BtnCopyCaptions"
+                                    Click="BtnCopyCaptions_Click"
+                                    Padding="10,4"
+                                    ToolTipService.ToolTip="复制当前显示的全部原文和译文">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE8C8;" FontSize="13"/>
+                                    <TextBlock Text="复制全部"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
                     </Border>
 
                     <!-- 字幕列表。
@@ -92,7 +110,14 @@
                                         <!-- 文本内容 -->
                                         <TextBlock Text="{Binding Text}"
                                                    TextWrapping="Wrap"
+                                                   IsTextSelectionEnabled="True"
                                                    Opacity="{Binding TextOpacity}"/>
+                                        <TextBlock Text="{Binding TranslatedDisplay}"
+                                                   TextWrapping="Wrap"
+                                                   IsTextSelectionEnabled="True"
+                                                   FontStyle="Italic"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   Opacity="{Binding TranslationOpacity}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
@@ -101,10 +126,16 @@
             </Border>
 
             <!-- 右侧：说话人列表 + 控制区 -->
-            <StackPanel Grid.Column="2" Spacing="16">
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="16"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
                 <!-- 说话人列表：暂不做分离，整块隐藏（绑定与逻辑保留） -->
-                <Border Visibility="Collapsed"
+                <Border Grid.Row="0"
+                        Visibility="Collapsed"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         CornerRadius="8"
@@ -156,7 +187,8 @@
                 </Border>
 
                 <!-- 状态信息 -->
-                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                <Border Grid.Row="0"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         CornerRadius="8"
                         Background="{ThemeResource LayerFillColorDefaultBrush}"
@@ -180,6 +212,40 @@
                             </ComboBox>
                         </StackPanel>
                         <TextBlock Text="同时监听建议佩戴耳机，避免对方声音被麦克风再次收录。"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="实时翻译:"
+                                       VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ComboBox x:Name="CmbTranslationMode"
+                                      SelectedIndex="1"
+                                      MinWidth="210">
+                                <ComboBoxItem Content="关闭"/>
+                                <ComboBoxItem Content="自动互译（中 ↔ 英）"/>
+                                <ComboBoxItem Content="译为中文（英文 → 中文）"/>
+                                <ComboBoxItem Content="译为英文（中文 → 英文）"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBlock Text="原文会立即显示，译文随后补到同一条字幕。"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="翻译状态:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="TxtTranslationStatus"
+                                       Text="未启动"
+                                       TextWrapping="Wrap"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+
+                        <CheckBox x:Name="ChkLiveSummary"
+                                  IsChecked="True"
+                                  Content="启用 Granite 本地滚动会议摘要"/>
+                        <TextBlock Text="约一分钟自动生成并持续更新；“立即总结”会包含当前尚未定稿的实时字幕。"
                                    FontSize="12"
                                    TextWrapping="Wrap"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
@@ -223,7 +289,67 @@
                     </StackPanel>
                 </Border>
 
-            </StackPanel>
+                <!-- Granite 本地滚动会议摘要 -->
+                <Border Grid.Row="2"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        Padding="16"
+                        MinHeight="160">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="🧠 本地 AI 会议摘要"
+                                       FontWeight="SemiBold"
+                                       FontSize="14"
+                                       VerticalAlignment="Center"/>
+                            <Button Grid.Column="1"
+                                    x:Name="BtnSummarizeNow"
+                                    Click="BtnSummarizeNow_Click"
+                                    IsEnabled="False"
+                                    Padding="10,4">
+                                <TextBlock Text="立即总结"/>
+                            </Button>
+                        </Grid>
+
+                        <TextBlock Grid.Row="1"
+                                   x:Name="TxtSummaryStatus"
+                                   Text="尚未启动"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="0,0,0,8"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                        <ScrollViewer Grid.Row="2"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <TextBlock x:Name="TxtMeetingSummary"
+                                       Text="会议开始后，Granite 会在后台加载并持续更新摘要。"
+                                       TextWrapping="Wrap"
+                                       IsTextSelectionEnabled="True"/>
+                        </ScrollViewer>
+
+                        <TextBlock Grid.Row="3"
+                                   x:Name="TxtSummaryUpdated"
+                                   Text=""
+                                   Margin="0,8,0,0"
+                                   FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                </Border>
+
+            </Grid>
         </Grid>
 
         <!-- 底部：控制按钮 -->

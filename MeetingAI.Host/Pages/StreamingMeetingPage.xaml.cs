@@ -29,6 +29,8 @@ public sealed partial class StreamingMeetingPage : Page
     {
         private string _text = "";
         private double _textOpacity = 1.0;
+        private string _translatedText = "";
+        private double _translationOpacity = 1.0;
 
         public string SpeakerName { get; set; } = "Unknown";
         public SolidColorBrush SpeakerColor { get; set; } = new SolidColorBrush(Colors.Gray);
@@ -45,6 +47,37 @@ public sealed partial class StreamingMeetingPage : Page
         {
             get => _textOpacity;
             set { if (Math.Abs(_textOpacity - value) > 0.001) { _textOpacity = value; OnPropertyChanged(); } }
+        }
+
+        public string TranslatedText
+        {
+            get => _translatedText;
+            set
+            {
+                if (_translatedText != value)
+                {
+                    _translatedText = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(TranslatedDisplay));
+                }
+            }
+        }
+
+        public string TranslatedDisplay => string.IsNullOrWhiteSpace(_translatedText)
+            ? ""
+            : $"译文  {_translatedText}";
+
+        public double TranslationOpacity
+        {
+            get => _translationOpacity;
+            set
+            {
+                if (Math.Abs(_translationOpacity - value) > 0.001)
+                {
+                    _translationOpacity = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -65,6 +98,13 @@ public sealed partial class StreamingMeetingPage : Page
         public string ConfirmedText { get; set; } = "";
         public bool HasActivePartial { get; set; }
         public DateTime LastFinalTime { get; set; } = DateTime.MinValue;
+    }
+
+    private sealed class CaptionTranslationState
+    {
+        public SortedDictionary<long, string> Confirmed { get; } = new();
+        public long? PartialUtteranceId { get; set; }
+        public string PartialText { get; set; } = "";
     }
 
     private sealed class AudioCapturePipeline
@@ -125,6 +165,10 @@ public sealed partial class StreamingMeetingPage : Page
     // 麦克风和系统声音可以同时讲话，每个来源必须有独立的 partial/final 状态。
     private readonly Dictionary<string, CaptionStreamState> _captionStates =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<(string Source, long UtteranceId), StreamingCaption>
+        _captionByUtterance = new();
+    private readonly Dictionary<StreamingCaption, CaptionTranslationState>
+        _translationStates = new();
     private DateTime _lastScrollTime = DateTime.MinValue;
 
     // ========== 音频捕获 ==========
@@ -135,6 +179,9 @@ public sealed partial class StreamingMeetingPage : Page
     private readonly List<Task> _pumpTasks = new();
     private string _activeAudioSourceName = "我方";
     private bool _workerStreamingStarted;
+    private string _requestedTranslationMode = "off";
+    private bool _summaryEnabled;
+    private bool _summaryReady;
 
     private MainWindow? _mainWindow;
 
@@ -158,6 +205,37 @@ public sealed partial class StreamingMeetingPage : Page
     public void BtnStopMeeting_Click(object sender, RoutedEventArgs e) => _ = StopMeetingAsync();
     public void BtnExport_Click(object sender, RoutedEventArgs e) => _ = ExportTranscriptAsync();
     public void BtnClear_Click(object sender, RoutedEventArgs e) => ClearAll();
+    public void BtnSummarizeNow_Click(object sender, RoutedEventArgs e)
+        => _ = RequestSummaryNowAsync();
+    public void BtnCopyCaptions_Click(object sender, RoutedEventArgs e)
+    {
+        var text = GenerateVisibleCaptionContent();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            SetStatus("没有可复制的字幕");
+            return;
+        }
+
+        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        package.SetText(text);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        SetStatus("字幕已复制到剪贴板");
+    }
+
+    private async Task RequestSummaryNowAsync()
+    {
+        if (!_isRecording || !_summaryEnabled || !_summaryReady ||
+            _mainWindow == null)
+        {
+            SetSummaryStatus("请先启动已启用摘要的会议");
+            return;
+        }
+
+        BtnSummarizeNow.IsEnabled = false;
+        SetSummaryStatus("正在请求立即总结…");
+        await _mainWindow.SendJsonAsync(
+            "{\"type\":\"request_meeting_summary\"}\n");
+    }
 
     // ========== 会议控制 ==========
     private async Task StartMeetingAsync()
@@ -174,6 +252,9 @@ public sealed partial class StreamingMeetingPage : Page
 
             BtnStartMeeting.IsEnabled = false;
             CmbAudioSource.IsEnabled = false;
+            CmbTranslationMode.IsEnabled = false;
+            ChkLiveSummary.IsEnabled = false;
+            BtnSummarizeNow.IsEnabled = false;
             SetStatus("Connecting…");
 
             await _mainWindow.EnsurePipeAsync();
@@ -182,10 +263,24 @@ public sealed partial class StreamingMeetingPage : Page
             _startedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _mainWindow.StreamingMessageHandler = OnStreamingMessageReceived;
 
+            _requestedTranslationMode = GetSelectedTranslationMode();
+            _summaryEnabled = ChkLiveSummary.IsChecked == true;
+            _summaryReady = false;
+            SetTranslationStatus(
+                _requestedTranslationMode == "off" ? "关闭" : "模型准备中…");
+            SetSummaryStatus(
+                _summaryEnabled ? "准备本地 Granite 摘要服务…" : "已关闭");
+            TxtMeetingSummary.Text = _summaryEnabled
+                ? "正在启动会议，摘要模型将在后台加载。"
+                : "本场会议未启用自动摘要。";
+            TxtSummaryUpdated.Text = "";
+
             var startCmd = new StartStreamingCommand
             {
                 sample_rate = TargetSampleRate,
-                source = GetSelectedSourceMode()
+                source = GetSelectedSourceMode(),
+                translation_mode = _requestedTranslationMode,
+                summary_enabled = _summaryEnabled
             };
             await _mainWindow.SendJsonAsync(
                 JsonSerializer.Serialize(startCmd, Contracts.AppJsonContext.Default.StartStreamingCommand) + "\n");
@@ -200,6 +295,8 @@ public sealed partial class StreamingMeetingPage : Page
                 _mainWindow.StreamingMessageHandler = null;
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
+                CmbTranslationMode.IsEnabled = true;
+                ChkLiveSummary.IsEnabled = true;
                 SetStatus("Failed");
                 await ShowErrorAsync("等待 Worker 启动流式会话超时（3 分钟）。请检查日志窗口里 [Worker] 开头的输出。");
                 return;
@@ -210,6 +307,8 @@ public sealed partial class StreamingMeetingPage : Page
                 _mainWindow.StreamingMessageHandler = null;
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
+                CmbTranslationMode.IsEnabled = true;
+                ChkLiveSummary.IsEnabled = true;
                 return;
             }
             _workerStreamingStarted = true;
@@ -220,6 +319,8 @@ public sealed partial class StreamingMeetingPage : Page
                 _mainWindow.StreamingMessageHandler = null;
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
+                CmbTranslationMode.IsEnabled = true;
+                ChkLiveSummary.IsEnabled = true;
                 SetStatus("Failed");
                 await ShowErrorAsync("音频源初始化失败，请检查所选麦克风或系统播放设备。");
                 return;
@@ -231,6 +332,8 @@ public sealed partial class StreamingMeetingPage : Page
 
             // 上一场会议可能留着没封口的段落，新会议不该续写它
             _captionStates.Clear();
+            _captionByUtterance.Clear();
+            _translationStates.Clear();
 
             foreach (var pipeline in _audioPipelines)
             {
@@ -248,6 +351,7 @@ public sealed partial class StreamingMeetingPage : Page
             _durationTimer?.Start();
 
             BtnStopMeeting.IsEnabled = true;
+            BtnSummarizeNow.IsEnabled = _summaryEnabled && _summaryReady;
             BtnExport.IsEnabled = false;
             BtnClear.IsEnabled = false;
             SetStatus($"Listening · {_activeAudioSourceName}");
@@ -263,6 +367,8 @@ public sealed partial class StreamingMeetingPage : Page
             CleanupResources();
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
+            CmbTranslationMode.IsEnabled = true;
+            ChkLiveSummary.IsEnabled = true;
             SetStatus("Failed");
             await ShowErrorAsync($"启动失败：{ex.Message}");
         }
@@ -306,7 +412,9 @@ public sealed partial class StreamingMeetingPage : Page
 
                 // Worker 在 streaming_stopped 之前还会补发最后一段 final 结果，
                 // 立刻注销处理器会把它丢掉
-                await Task.WhenAny(_stoppedTcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+                await Task.WhenAny(
+                    _stoppedTcs.Task,
+                    Task.Delay(TimeSpan.FromMinutes(3)));
                 _mainWindow.StreamingMessageHandler = null;
                 _workerStreamingStarted = false;
             }
@@ -318,6 +426,10 @@ public sealed partial class StreamingMeetingPage : Page
 
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
+            CmbTranslationMode.IsEnabled = true;
+            ChkLiveSummary.IsEnabled = true;
+            BtnSummarizeNow.IsEnabled = false;
+            _summaryReady = false;
             BtnExport.IsEnabled = _captions.Count > 0;
             BtnClear.IsEnabled = _captions.Count > 0;
             SetStatus("Idle");
@@ -331,6 +443,10 @@ public sealed partial class StreamingMeetingPage : Page
             CleanupResources();
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
+            CmbTranslationMode.IsEnabled = true;
+            ChkLiveSummary.IsEnabled = true;
+            BtnSummarizeNow.IsEnabled = false;
+            _summaryReady = false;
             SetStatus("Idle");
             await ShowErrorAsync($"停止失败：{ex.Message}");
         }
@@ -568,21 +684,65 @@ public sealed partial class StreamingMeetingPage : Page
                 return source == SystemSource ? SystemSource : MicrophoneSource;
             }
             string Message() => root.TryGetProperty("message", out var m) ? m.GetString() ?? "未知错误" : "未知错误";
+            long UtteranceId() => root.TryGetProperty("utterance_id", out var id)
+                && id.TryGetInt64(out long value)
+                ? value
+                : 0;
 
             switch (type)
             {
                 case "streaming_started":
+                {
+                    string actualMode = root.TryGetProperty(
+                            "translation_mode",
+                            out var modeElement)
+                        ? modeElement.GetString() ?? "off"
+                        : "off";
+                    bool actualSummaryEnabled =
+                        root.TryGetProperty(
+                            "summary_enabled",
+                            out var summaryElement) &&
+                        summaryElement.ValueKind == JsonValueKind.True;
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (_requestedTranslationMode == "off")
+                        {
+                            SetTranslationStatus("关闭");
+                        }
+                        else if (actualMode == "off")
+                        {
+                            SetTranslationStatus(
+                                "未启用（Worker 未加载翻译模块）");
+                        }
+                        else
+                        {
+                            SetTranslationStatus("已启用 · 完全离线");
+                        }
+
+                        _summaryEnabled =
+                            _summaryEnabled && actualSummaryEnabled;
+                        BtnSummarizeNow.IsEnabled = false;
+                        if (!_summaryEnabled)
+                        {
+                            SetSummaryStatus("本场会议未启用摘要");
+                        }
+                    });
                     _startedTcs?.TrySetResult(true);
                     break;
+                }
 
                 // Worker 在加载模型的各阶段回传进度，否则界面只能干等
                 case "info":
                 {
                     var msg = Message();
                     Debug.WriteLine($"[StreamingMeeting] {msg}");
-                    if (msg.StartsWith("[Sherpa]"))
+                    if (msg.StartsWith("[Sherpa]") ||
+                        msg.StartsWith("[Translation]"))
                     {
-                        DispatcherQueue.TryEnqueue(() => SetStatus(msg.Replace("[Sherpa] ", "")));
+                        DispatcherQueue.TryEnqueue(
+                            () => SetStatus(
+                                msg.Replace("[Sherpa] ", "")
+                                   .Replace("[Translation] ", "")));
                     }
                     break;
                 }
@@ -597,8 +757,12 @@ public sealed partial class StreamingMeetingPage : Page
                     if (!string.IsNullOrWhiteSpace(text))
                     {
                         string source = Source();
+                        long utteranceId = UtteranceId();
                         DispatcherQueue.TryEnqueue(
-                            () => UpdatePartialTranscript(text, source));
+                            () => UpdatePartialTranscript(
+                                text,
+                                source,
+                                utteranceId));
                     }
                     break;
                 }
@@ -609,9 +773,119 @@ public sealed partial class StreamingMeetingPage : Page
                     if (!string.IsNullOrWhiteSpace(text))
                     {
                         string source = Source();
+                        long utteranceId = UtteranceId();
                         DispatcherQueue.TryEnqueue(
-                            () => AddFinalTranscript(text, source));
+                            () => AddFinalTranscript(
+                                text,
+                                source,
+                                utteranceId));
                     }
+                    break;
+                }
+
+                case "streaming_translation_partial":
+                case "streaming_translation_final":
+                {
+                    var text = Text();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        string source = Source();
+                        long utteranceId = UtteranceId();
+                        bool isFinal = type == "streaming_translation_final";
+                        DispatcherQueue.TryEnqueue(
+                            () =>
+                            {
+                                SetTranslationStatus("运行中 · 完全离线");
+                                UpdateTranslation(
+                                    text,
+                                    source,
+                                    utteranceId,
+                                    isFinal);
+                            });
+                    }
+                    break;
+                }
+
+                case "streaming_summary_status":
+                {
+                    string state = root.TryGetProperty(
+                            "state",
+                            out var stateElement)
+                        ? stateElement.GetString() ?? ""
+                        : "";
+                    string message = Message();
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        _summaryReady =
+                            state is "ready" or "waiting" or "final";
+                        SetSummaryStatus(message);
+                        BtnSummarizeNow.IsEnabled =
+                            _summaryEnabled && _summaryReady && _isRecording;
+                    });
+                    break;
+                }
+
+                case "streaming_summary_partial":
+                {
+                    string text = Text();
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            TxtMeetingSummary.Text = text;
+                        }
+                        SetSummaryStatus("Granite 正在生成摘要…");
+                        BtnSummarizeNow.IsEnabled = false;
+                    });
+                    break;
+                }
+
+                case "streaming_summary_final":
+                {
+                    string text = Text();
+                    bool isFinal = root.TryGetProperty(
+                            "is_final",
+                            out var finalElement) &&
+                        finalElement.ValueKind == JsonValueKind.True;
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            TxtMeetingSummary.Text = text;
+                        }
+                        SetSummaryStatus(
+                            isFinal
+                                ? "最终摘要已生成并保存"
+                                : "滚动摘要已更新并保存");
+                        TxtSummaryUpdated.Text =
+                            $"更新时间：{DateTime.Now:HH:mm:ss} · 已保存到本地数据库";
+                        _summaryReady = true;
+                        BtnSummarizeNow.IsEnabled =
+                            _summaryEnabled && _isRecording && !isFinal;
+                    });
+                    break;
+                }
+
+                case "streaming_persistence_error":
+                {
+                    string message = Message();
+                    DispatcherQueue.TryEnqueue(
+                        () => SetStatus($"数据库写入错误: {message}"));
+                    break;
+                }
+
+                case "streaming_translation_error":
+                case "translation_error":
+                {
+                    var msg = Message();
+                    Debug.WriteLine(
+                        $"[StreamingMeeting] Translation error: {msg}");
+                    DispatcherQueue.TryEnqueue(
+                        () =>
+                        {
+                            SetTranslationStatus($"错误: {msg}");
+                            SetStatus($"翻译错误（转录继续）: {msg}");
+                        });
                     break;
                 }
 
@@ -674,7 +948,10 @@ public sealed partial class StreamingMeetingPage : Page
         return state.CurrentParagraph;
     }
 
-    private void UpdatePartialTranscript(string text, string source)
+    private void UpdatePartialTranscript(
+        string text,
+        string source,
+        long utteranceId)
     {
         var now = DateTime.Now;
         var state = GetCaptionState(source);
@@ -693,13 +970,17 @@ public sealed partial class StreamingMeetingPage : Page
 
         state = GetCaptionState(source);
         var para = EnsureParagraph(source, state);
+        RegisterUtterance(source, utteranceId, para);
         para.Text = JoinText(state.ConfirmedText, text);
         state.HasActivePartial = true;
 
         ScrollToLatest(force: false);  // partial 每秒约 10 条，节流
     }
 
-    private void AddFinalTranscript(string text, string source)
+    private void AddFinalTranscript(
+        string text,
+        string source,
+        long utteranceId)
     {
         var now = DateTime.Now;
         var state = GetCaptionState(source);
@@ -716,6 +997,7 @@ public sealed partial class StreamingMeetingPage : Page
 
         state = GetCaptionState(source);
         var para = EnsureParagraph(source, state);
+        RegisterUtterance(source, utteranceId, para);
 
         state.ConfirmedText = JoinText(state.ConfirmedText, text);
         para.Text = state.ConfirmedText;
@@ -737,6 +1019,77 @@ public sealed partial class StreamingMeetingPage : Page
 
         ScrollToLatest(force: true);
         Debug.WriteLine($"[StreamingMeeting] Final [{source}]: {text}");
+    }
+
+    private void RegisterUtterance(
+        string source,
+        long utteranceId,
+        StreamingCaption caption)
+    {
+        if (utteranceId <= 0) return;
+
+        _captionByUtterance[(source, utteranceId)] = caption;
+        if (!_translationStates.ContainsKey(caption))
+        {
+            _translationStates[caption] = new CaptionTranslationState();
+        }
+    }
+
+    private void UpdateTranslation(
+        string text,
+        string source,
+        long utteranceId,
+        bool isFinal)
+    {
+        if (utteranceId <= 0 ||
+            !_captionByUtterance.TryGetValue(
+                (source, utteranceId),
+                out var caption))
+        {
+            // 页面已清空或上一场会议的迟到结果，不能误写到新字幕上。
+            return;
+        }
+
+        if (!_translationStates.TryGetValue(caption, out var state))
+        {
+            state = new CaptionTranslationState();
+            _translationStates[caption] = state;
+        }
+
+        if (isFinal)
+        {
+            state.Confirmed[utteranceId] = text;
+            if (state.PartialUtteranceId == utteranceId)
+            {
+                state.PartialUtteranceId = null;
+                state.PartialText = "";
+            }
+        }
+        else if (!state.Confirmed.ContainsKey(utteranceId))
+        {
+            state.PartialUtteranceId = utteranceId;
+            state.PartialText = text;
+        }
+
+        string combined = "";
+        foreach (string confirmed in state.Confirmed.Values)
+        {
+            combined = JoinText(combined, confirmed);
+        }
+        if (state.PartialUtteranceId.HasValue &&
+            !string.IsNullOrWhiteSpace(state.PartialText))
+        {
+            combined = JoinText(combined, state.PartialText);
+        }
+
+        caption.TranslatedText = combined;
+        caption.TranslationOpacity =
+            state.PartialUtteranceId.HasValue ? 0.65 : 1.0;
+
+        ScrollToLatest(force: isFinal);
+        Debug.WriteLine(
+            $"[StreamingMeeting] Translation {(isFinal ? "final" : "partial")} " +
+            $"[{source}/{utteranceId}]: {text}");
     }
 
     private static bool ShouldStartNewParagraph(
@@ -837,6 +1190,16 @@ public sealed partial class StreamingMeetingPage : Page
         if (TxtStatus != null) TxtStatus.Text = text;
     }
 
+    private void SetTranslationStatus(string text)
+    {
+        if (TxtTranslationStatus != null) TxtTranslationStatus.Text = text;
+    }
+
+    private void SetSummaryStatus(string text)
+    {
+        if (TxtSummaryStatus != null) TxtSummaryStatus.Text = text;
+    }
+
     private void UpdateDuration(object? sender, object e)
     {
         var duration = DateTime.Now - _meetingStartTime;
@@ -888,10 +1251,46 @@ public sealed partial class StreamingMeetingPage : Page
         {
             sb.AppendLine(
                 $"[{caption.Timestamp}] {caption.SpeakerName}: {caption.Text}");
+            if (!string.IsNullOrWhiteSpace(caption.TranslatedText))
+            {
+                sb.AppendLine($"  译文: {caption.TranslatedText}");
+            }
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrWhiteSpace(TxtMeetingSummary.Text) &&
+            TxtSummaryUpdated.Text.Length > 0)
+        {
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("# Local AI Meeting Summary");
+            sb.AppendLine();
+            sb.AppendLine(TxtMeetingSummary.Text);
             sb.AppendLine();
         }
 
         return sb.ToString();
+    }
+
+    private string GenerateVisibleCaptionContent()
+    {
+        var sb = new StringBuilder();
+        foreach (var caption in _captions.Where(
+            c => !string.IsNullOrWhiteSpace(c.Text)
+                 || !string.IsNullOrWhiteSpace(c.TranslatedText)))
+        {
+            if (!string.IsNullOrWhiteSpace(caption.Text))
+            {
+                sb.AppendLine(
+                    $"[{caption.Timestamp}] {caption.SpeakerName}: {caption.Text}");
+            }
+            if (!string.IsNullOrWhiteSpace(caption.TranslatedText))
+            {
+                sb.AppendLine($"译文: {caption.TranslatedText}");
+            }
+            sb.AppendLine();
+        }
+        return sb.ToString().TrimEnd();
     }
 
     // ========== 清理 ==========
@@ -902,13 +1301,21 @@ public sealed partial class StreamingMeetingPage : Page
         _segmentCount = 0;
 
         _captionStates.Clear();
+        _captionByUtterance.Clear();
+        _translationStates.Clear();
 
         TxtDuration.Text = "00:00:00";
         TxtSpeakerCount.Text = "0";
         TxtSegmentCount.Text = "0";
+        TxtMeetingSummary.Text =
+            "会议开始后，Granite 会在后台加载并持续更新摘要。";
+        TxtSummaryStatus.Text = "尚未启动";
+        TxtSummaryUpdated.Text = "";
+        _summaryReady = false;
 
         BtnExport.IsEnabled = false;
         BtnClear.IsEnabled = false;
+        BtnSummarizeNow.IsEnabled = false;
 
         Debug.WriteLine("[StreamingMeeting] Cleared");
     }
@@ -960,6 +1367,17 @@ public sealed partial class StreamingMeetingPage : Page
             1 => SystemSource,
             2 => "both",
             _ => MicrophoneSource
+        };
+    }
+
+    private string GetSelectedTranslationMode()
+    {
+        return CmbTranslationMode.SelectedIndex switch
+        {
+            1 => "auto",
+            2 => "to_zh",
+            3 => "to_en",
+            _ => "off"
         };
     }
 

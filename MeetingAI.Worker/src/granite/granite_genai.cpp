@@ -82,6 +82,44 @@ namespace meetingai::granite {
         p_->pipeline->generate(prompt, cfg, streamer);
     }
 
+    std::string GraniteGenAI::generateStructuredInstruct(
+        const std::string& system_message,
+        const std::string& user_prompt,
+        const std::string& json_schema,
+        int max_tokens,
+        float temperature) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (p_->chatting) {
+            throw std::runtime_error(
+                "Granite 正在进行多轮聊天，不能同时运行无状态摘要");
+        }
+
+        ov::genai::ChatHistory history;
+        history.push_back({
+            {"role", "system"},
+            {"content", system_message},
+        });
+        history.push_back({
+            {"role", "user"},
+            {"content", user_prompt},
+        });
+        const std::string templatedPrompt =
+            p_->pipeline->get_tokenizer().apply_chat_template(
+                history,
+                true);
+
+        ov::genai::GenerationConfig cfg;
+        cfg.max_new_tokens = max_tokens;
+        cfg.temperature = temperature;
+        cfg.do_sample = (temperature > 0.0f);
+        cfg.apply_chat_template = false;
+        cfg.structured_output_config =
+            ov::genai::StructuredOutputConfig({
+                {ov::genai::json_schema.name(), json_schema},
+            });
+        return p_->pipeline->generate(templatedPrompt, cfg);
+    }
+
     // ===================== 多轮上下文 =====================
 
     void GraniteGenAI::startChat(const std::string& system_message) {

@@ -39,6 +39,16 @@ public class StartStreamingCommand
     /// microphone、system 或 both
     /// </summary>
     public string source { get; set; } = "microphone";
+
+    /// <summary>
+    /// off、auto（中英自动互译）、to_zh（仅译为中文）或 to_en（仅译为英文）
+    /// </summary>
+    public string translation_mode { get; set; } = "off";
+
+    /// <summary>
+    /// 是否启用 Granite 本地滚动会议摘要。
+    /// </summary>
+    public bool summary_enabled { get; set; } = true;
 }
 
 /// <summary>
