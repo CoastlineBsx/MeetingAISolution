@@ -96,6 +96,15 @@
                 </ToolTipService.ToolTip>
             </NavigationViewItem>
 
+            <NavigationViewItem Content="会议准备" Tag="meeting_preparation">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE8A5;"/>
+                </NavigationViewItem.Icon>
+                <ToolTipService.ToolTip>
+                    <ToolTip Content="导入会前资料，生成按页知识库和术语热词"/>
+                </ToolTipService.ToolTip>
+            </NavigationViewItem>
+
             <NavigationViewItem Content="Intelligent Chat" Tag="chat">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE8F2;"/>
@@ -964,6 +973,10 @@
                 <!-- Streaming Meeting Page -->
                 <Grid x:Name="StreamingMeetingPageContainer" Visibility="Collapsed">
                     <Frame x:Name="StreamingMeetingFrame"/>
+                </Grid>
+
+                <Grid x:Name="MeetingPreparationPageContainer" Visibility="Collapsed">
+                    <Frame x:Name="MeetingPreparationFrame"/>
                 </Grid>
 
                 <!-- Settings Page -->

@@ -351,6 +351,7 @@ public:
             finals_.clear();
             partials_.clear();
             latestRevision_.clear();
+            lastPublishedRevision_.clear();
             nextPartialAllowed_.clear();
         }
 
@@ -536,13 +537,28 @@ private:
             }
 
             ResultCallback callback;
-            bool stale = false;
+            bool publish = true;
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (!request->isFinal) {
-                    const auto latest = latestRevision_.find(request->source);
-                    stale = latest == latestRevision_.end()
-                        || latest->second != request->revision;
+                    // partial 推理期间通常还会收到更长的新版本。旧实现只要
+                    // latestRevision 已变化就丢弃刚翻完的结果，连续讲话时
+                    // 因而几乎永远没有中文更新。现在只拦截真正倒退的结果：
+                    // 已完成的中间译文可以先显示，队列仍只保留最新输入，
+                    // 随后的 partial/final 会继续覆盖和校正。
+                    const uint64_t lastPublished =
+                        lastPublishedRevision_[request->source];
+                    publish = request->revision > lastPublished;
+                    if (publish && hasResult && error.empty()) {
+                        lastPublishedRevision_[request->source] =
+                            request->revision;
+                    }
+                }
+                else if (hasResult && error.empty()) {
+                    lastPublishedRevision_[request->source] =
+                        std::max(
+                            lastPublishedRevision_[request->source],
+                            request->revision);
                 }
                 if (!error.empty()) {
                     lastError_ = error;
@@ -552,7 +568,7 @@ private:
                 idle_.notify_all();
             }
 
-            if (callback && !stale) {
+            if (callback && publish) {
                 if (!error.empty()) {
                     TranslationEvent errorEvent = event;
                     errorEvent.text.clear();
@@ -586,6 +602,7 @@ private:
     std::deque<Request> finals_;
     std::unordered_map<std::string, Request> partials_;
     std::unordered_map<std::string, uint64_t> latestRevision_;
+    std::unordered_map<std::string, uint64_t> lastPublishedRevision_;
     std::unordered_map<
         std::string,
         std::chrono::steady_clock::time_point> nextPartialAllowed_;

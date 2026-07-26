@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Docnet.Core" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Tesseract" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\MeetingAI.Host\RAG\Models\DocumentModels.cs" Link="DocumentModels.cs" />
+    <Compile Include="..\MeetingAI.Host\RAG\Services\DocumentProcessor.cs" Link="DocumentProcessor.cs" />
+    <Compile Include="..\MeetingAI.Host\RAG\Services\DocumentChunker.cs" Link="DocumentChunker.cs" />
+    <Compile Include="..\MeetingAI.Host\RAG\VectorStore\SqliteVectorDatabase.cs" Link="SqliteVectorDatabase.cs" />
+    <Compile Include="..\MeetingAI.Host\MeetingPreparation\MeetingPreparationModels.cs" Link="MeetingPreparationModels.cs" />
+    <Compile Include="..\MeetingAI.Host\MeetingPreparation\HotwordExtractor.cs" Link="HotwordExtractor.cs" />
+  </ItemGroup>
+</Project>

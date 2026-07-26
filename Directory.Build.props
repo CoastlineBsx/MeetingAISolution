@@ -10,4 +10,9 @@
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>true</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'MeetingAI.Preparation.SmokeTests'">
+    <BaseOutputPath>$(MSBuildThisFileDirectory)artifacts\bin\MeetingAI.Preparation.SmokeTests\$(Configuration)\$(Platform)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)artifacts\obj\MeetingAI.Preparation.SmokeTests\$(Configuration)\$(Platform)\</BaseIntermediateOutputPath>
+  </PropertyGroup>
 </Project>

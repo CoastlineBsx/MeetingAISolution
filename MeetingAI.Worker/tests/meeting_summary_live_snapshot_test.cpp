@@ -82,6 +82,7 @@ int main() {
     std::condition_variable eventCondition;
     int finalEventCount = 0;
     bool ready = false;
+    bool allGeneratedSummariesWereDetailed = true;
 
     MeetingSummaryService service;
     service.Start(
@@ -98,20 +99,25 @@ int main() {
                 return std::string{};
             }
             return std::string(
-                R"({"overview":[{"text":"摘要包含当前实时字幕。","segment_id":1000000001}],)"
-                R"("key_points":[],"decisions":[],"action_items":[],)"
+                R"({"content_type":"discussion",)"
+                R"("overview":[{"text":"摘要包含当前实时字幕。","segment_id":1000000001}],)"
+                R"("key_points":[{"text":"当前实时字幕已进入摘要。","segment_id":1000000001}],)"
+                R"("decisions":[],"action_items":[],)"
                 R"("open_questions":[],"risks_disagreements":[]})");
         },
         [&](const std::string& state,
             const std::string&,
             bool,
-            std::int64_t) {
+            std::int64_t,
+            const std::string& summaryKind) {
             std::lock_guard<std::mutex> lock(eventMutex);
             if (state == "ready") {
                 ready = true;
             }
             if (state == "final") {
                 ++finalEventCount;
+                allGeneratedSummariesWereDetailed &=
+                    summaryKind == "detailed";
             }
             eventCondition.notify_all();
         });
@@ -164,6 +170,80 @@ int main() {
                     std::string::npos,
             "live snapshot summary must be saved with a readable citation");
     }
+    failures += Check(
+        allGeneratedSummariesWereDetailed,
+        "manual summary requests must produce detailed summaries");
+
+    // 模拟 Stop 完成后为同一个 meeting 重新启动只读摘要服务。
+    // 没有 live partial 通知时，每次手动点击仍应从数据库全文生成详细摘要。
+    std::mutex postEventMutex;
+    std::condition_variable postEventCondition;
+    bool postReady = false;
+    int postFinalEventCount = 0;
+    bool postKindsWereDetailed = true;
+    MeetingSummaryService postMeetingService;
+    postMeetingService.Start(
+        42,
+        [](std::string&) { return true; },
+        [](const std::string&,
+           const std::string&,
+           const MeetingSummaryService::PartialCallback&) {
+            return std::string(
+                R"({"content_type":"lecture",)"
+                R"("overview":[{"text":"会后摘要读取完整数据库记录。","segment_id":12}],)"
+                R"("key_points":[{"text":"可重复生成新的详细摘要。","segment_id":12}],)"
+                R"("decisions":[],"action_items":[],"open_questions":[],)"
+                R"("risks_disagreements":[]})");
+        },
+        [&](const std::string& state,
+            const std::string&,
+            bool,
+            std::int64_t,
+            const std::string& summaryKind) {
+            std::lock_guard<std::mutex> lock(postEventMutex);
+            if (state == "ready") {
+                postReady = true;
+            }
+            if (state == "final") {
+                ++postFinalEventCount;
+                postKindsWereDetailed &=
+                    summaryKind == "detailed";
+            }
+            postEventCondition.notify_all();
+        });
+    {
+        std::unique_lock<std::mutex> lock(postEventMutex);
+        failures += Check(
+            WaitFor(
+                postEventCondition,
+                lock,
+                [&] { return postReady; }),
+            "post-meeting summary service did not become ready");
+    }
+    postMeetingService.RequestNow();
+    {
+        std::unique_lock<std::mutex> lock(postEventMutex);
+        failures += Check(
+            WaitFor(
+                postEventCondition,
+                lock,
+                [&] { return postFinalEventCount >= 1; }),
+            "first post-meeting summary was not generated");
+    }
+    postMeetingService.RequestNow();
+    {
+        std::unique_lock<std::mutex> lock(postEventMutex);
+        failures += Check(
+            WaitFor(
+                postEventCondition,
+                lock,
+                [&] { return postFinalEventCount >= 2; }),
+            "second post-meeting summary was not generated");
+    }
+    postMeetingService.Stop(false);
+    failures += Check(
+        postKindsWereDetailed,
+        "post-meeting summary requests must remain detailed");
 
     if (failures != 0) {
         std::cerr << failures

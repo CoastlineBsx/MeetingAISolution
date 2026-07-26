@@ -24,7 +24,8 @@ public:
         const std::string& state,
         const std::string& text,
         bool isFinal,
-        std::int64_t coveredThroughSegmentId)>;
+        std::int64_t coveredThroughSegmentId,
+        const std::string& summaryKind)>;
 
     MeetingSummaryService() = default;
     ~MeetingSummaryService();
@@ -64,12 +65,13 @@ private:
     };
 
     void ThreadMain();
-    bool GenerateSummary(bool isFinal);
+    bool GenerateSummary(bool isFinal, bool isDetailed);
     void Emit(
         const std::string& state,
         const std::string& text = "",
         bool isFinal = false,
-        std::int64_t coveredThroughSegmentId = 0) const;
+        std::int64_t coveredThroughSegmentId = 0,
+        const std::string& summaryKind = "") const;
 
     mutable std::mutex mutex_;
     std::condition_variable condition_;

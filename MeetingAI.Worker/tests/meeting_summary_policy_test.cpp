@@ -36,7 +36,8 @@ int main() {
         {13, "Some people argue that generative AI recombines information."},
     };
     const std::string validJson =
-        R"({"overview":[{"text":"内容讨论基础模型和 AI。","segment_id":12}],)"
+        R"({"content_type":"lecture",)"
+        R"("overview":[{"text":"内容讨论基础模型和 AI。","segment_id":12}],)"
         R"("key_points":[{"text":"基础模型用于语言建模。","segment_id":12}],)"
         R"("decisions":[],"action_items":[],"open_questions":[],)"
         R"("risks_disagreements":[{"text":"有人对生成式 AI 是否创造新内容存在争议。","segment_id":13}]})";
@@ -45,16 +46,20 @@ int main() {
         FormatGroundedSummaryJson(
             validJson,
             evidence,
+            true,
             formatted).accepted,
         "grounded JSON summary should pass");
     failures += Check(
         formatted.find("[S12]") != std::string::npos &&
             formatted.find("[S13]") != std::string::npos &&
-            formatted.find("【行动项】\n- 未明确") != std::string::npos,
-        "grounded JSON must be formatted with evidence and empty sections");
+            formatted.find("【内容类型】\n- 课程或演讲") !=
+                std::string::npos &&
+            formatted.find("【行动项】") == std::string::npos,
+        "detailed summary must adapt to content type and hide empty sections");
 
     const std::string englishOverviewJson =
-        R"({"overview":[{"text":"Foundation models include large language models.","segment_id":12}],)"
+        R"({"content_type":"lecture",)"
+        R"("overview":[{"text":"Foundation models include large language models.","segment_id":12}],)"
         R"("key_points":[{"text":"基础模型包括大型语言模型。","segment_id":12}],)"
         R"("decisions":[],"action_items":[],"open_questions":[],)"
         R"("risks_disagreements":[]})";
@@ -62,30 +67,35 @@ int main() {
         FormatGroundedSummaryJson(
             englishOverviewJson,
             evidence,
+            false,
             formatted).accepted &&
             formatted.find("本次内容主要涉及：基础模型包括大型语言模型。") !=
                 std::string::npos,
         "English overview must fall back to grounded Chinese key points");
 
     const std::string unknownCitation =
-        R"({"overview":[{"text":"内容讨论基础模型。","segment_id":999}],)"
+        R"({"content_type":"other",)"
+        R"("overview":[{"text":"内容讨论基础模型。","segment_id":999}],)"
         R"("key_points":[],"decisions":[],"action_items":[],)"
         R"("open_questions":[],"risks_disagreements":[]})";
     failures += Check(
         !FormatGroundedSummaryJson(
             unknownCitation,
             evidence,
+            false,
             formatted).accepted,
         "unknown evidence id must be rejected");
 
     const std::string inventedNumber =
-        R"({"overview":[{"text":"市场价值为500万美元。","segment_id":12}],)"
+        R"({"content_type":"business_meeting",)"
+        R"("overview":[{"text":"市场价值为500万美元。","segment_id":12}],)"
         R"("key_points":[],"decisions":[],"action_items":[],)"
         R"("open_questions":[],"risks_disagreements":[]})";
     failures += Check(
         !FormatGroundedSummaryJson(
             inventedNumber,
             evidence,
+            false,
             formatted).accepted,
         "unsupported numbers must not become grounded facts");
 
@@ -95,20 +105,23 @@ int main() {
          "实时·我方"},
     };
     const std::string liveJson =
-        R"({"overview":[{"text":"当前正在讨论本地实时会议摘要。","segment_id":1000000001}],)"
-        R"("key_points":[],"decisions":[],"action_items":[],)"
-        R"("open_questions":[],"risks_disagreements":[]})";
+        R"({"content_type":"discussion",)"
+        R"("overview":[{"text":"当前正在讨论本地实时会议摘要。","segment_id":1000000001}],)"
+        R"("key_points":[{"text":"当前正在讨论本地实时会议摘要。","segment_id":1000000001}],)"
+        R"("decisions":[],"action_items":[],"open_questions":[],)"
+        R"("risks_disagreements":[]})";
     failures += Check(
         FormatGroundedSummaryJson(
             liveJson,
             liveEvidence,
+            false,
             formatted).accepted &&
             formatted.find("[实时·我方]") != std::string::npos &&
             formatted.find("[S1000000001]") == std::string::npos,
         "live partial evidence must use a readable live citation");
 
     const std::string overflowOverviewJson =
-        R"({"overview":[)"
+        R"({"content_type":"discussion","overview":[)"
         R"({"text":"第一项。","segment_id":1000000001},)"
         R"({"text":"第二项。","segment_id":1000000001}],)"
         R"("key_points":[],"decisions":[],"action_items":[],)"
@@ -117,8 +130,9 @@ int main() {
         FormatGroundedSummaryJson(
             overflowOverviewJson,
             liveEvidence,
+            false,
             formatted).accepted &&
-            formatted.find("【关键要点】\n- 第二项。 [实时·我方]") !=
+            formatted.find("【当前要点】\n- 第二项。 [实时·我方]") !=
                 std::string::npos,
         "overflow overview facts must be preserved as key points");
 

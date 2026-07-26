@@ -27,14 +27,17 @@ std::size_t CountMeaningfulTranscriptBytes(const std::string& transcript);
 std::string BuildGroundedSummaryPrompt(
     const std::string& transcript,
     bool isFinal,
+    bool isDetailed,
     bool isRetry);
 
 std::string BuildGroundedSummaryJsonSchema(
-    const std::vector<std::int64_t>& allowedSegmentIds);
+    const std::vector<std::int64_t>& allowedSegmentIds,
+    bool isDetailed);
 
 SummaryValidationResult FormatGroundedSummaryJson(
     const std::string& jsonOutput,
     const std::vector<SummaryEvidence>& evidence,
+    bool isDetailed,
     std::string& formattedSummary);
 
 } // namespace meetingai::summary

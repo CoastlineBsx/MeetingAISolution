@@ -26,9 +26,12 @@ def main() -> int:
 4. 每个事实对象的 segment_id 必须填写最直接支持它的原文证据编号；10亿以上的保留编号表示生成瞬间捕获的实时字幕快照，只能用于该实时行中的内容。
 5. 原文没有明确出现的类别必须返回空数组，不得为了填满结构而猜测。
 6. 区分我方和对方；中英文原文都用中文概括。
-7. open_questions 只能记录原文明确提出但尚未回答的问题，禁止自行提出新问题。
-8. risks_disagreements 只能记录原文明说的风险或不同观点，禁止根据主题推测潜在风险。
-9. 只输出符合约束的 JSON，不要输出分析过程。
+7. content_type 必须判断为 business_meeting、discussion、lecture、interview、presentation 或 other。
+8. overview 返回二至四条充分摘要，key_points 最多十项。
+9. open_questions 只能记录原文明确提出但尚未回答的问题，禁止自行提出新问题。
+10. risks_disagreements 只能记录原文明说的风险或不同观点，禁止根据主题推测潜在风险。
+11. 只输出符合约束的 JSON，不要输出分析过程。
+12. 对原文中每一条带有“[当前实时字幕快照]”的行，必须在 key_points 中生成一项并引用该行自己的 segment_id；即使它刚进入一个新话题也不能省略。
 
 <meeting_transcript>
 {transcript}</meeting_transcript>
@@ -70,9 +73,21 @@ def main() -> int:
         "required": ["text", "segment_id"],
         "additionalProperties": False,
     }
-    schema = {
-        "type": "object",
-        "properties": {
+    schema_properties = {
+        "content_type": {
+            "type": "string",
+            "enum": [
+                "business_meeting",
+                "discussion",
+                "lecture",
+                "interview",
+                "presentation",
+                "other",
+            ],
+        }
+    }
+    schema_properties.update(
+        {
             key: {"type": "array", "items": fact_item}
             for key in (
                 "overview",
@@ -82,8 +97,13 @@ def main() -> int:
                 "open_questions",
                 "risks_disagreements",
             )
-        },
+        }
+    )
+    schema = {
+        "type": "object",
+        "properties": schema_properties,
         "required": [
+            "content_type",
             "overview",
             "key_points",
             "decisions",
@@ -93,8 +113,8 @@ def main() -> int:
         ],
         "additionalProperties": False,
     }
-    schema["properties"]["overview"]["maxItems"] = 1
-    schema["properties"]["key_points"]["maxItems"] = 6
+    schema["properties"]["overview"]["maxItems"] = 4
+    schema["properties"]["key_points"]["maxItems"] = 10
     config.structured_output_config = ov_genai.StructuredOutputConfig(
         json_schema=json.dumps(schema, ensure_ascii=False)
     )
@@ -110,6 +130,7 @@ def main() -> int:
     cited = {
         evidence
         for values in payload.values()
+        if isinstance(values, list)
         for item in values
         for evidence in [item["segment_id"]]
     }

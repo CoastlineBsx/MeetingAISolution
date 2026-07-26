@@ -21,6 +21,33 @@
             <TextBlock Text="Sherpa-ONNX 流式转录 + CTranslate2 / OPUS-MT 实时翻译（全程离线）"
                        FontSize="14"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            <Border Padding="12" CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="360"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="会议上下文：" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                    <ComboBox Grid.Column="1" x:Name="CmbMeetingContext"
+                              HorizontalAlignment="Stretch"
+                              SelectionChanged="CmbMeetingContext_SelectionChanged">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Display}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Grid.Column="2" x:Name="BtnManageMeetingContext"
+                            Content="管理会议资料" Click="BtnManageMeetingContext_Click"/>
+                    <TextBlock Grid.Column="3" x:Name="TxtMeetingContextStatus"
+                               Text="通用模式 · 不使用会前资料和热词"
+                               VerticalAlignment="Center" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </Grid>
+            </Border>
         </StackPanel>
 
         <!-- 主内容区 -->
@@ -244,8 +271,8 @@
 
                         <CheckBox x:Name="ChkLiveSummary"
                                   IsChecked="True"
-                                  Content="启用 Granite 本地滚动会议摘要"/>
-                        <TextBlock Text="约一分钟自动生成并持续更新；“立即总结”会包含当前尚未定稿的实时字幕。"
+                                  Content="启用 Granite 本地实时速览与详细摘要"/>
+                        <TextBlock Text="约一分钟自动更新实时速览；“生成详细摘要”会自适应会议内容，并包含当前尚未定稿的实时字幕。"
                                    FontSize="12"
                                    TextWrapping="Wrap"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
@@ -296,7 +323,7 @@
                         CornerRadius="8"
                         Background="{ThemeResource LayerFillColorDefaultBrush}"
                         Padding="16"
-                        MinHeight="160">
+                        MinHeight="260">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -319,7 +346,7 @@
                                     Click="BtnSummarizeNow_Click"
                                     IsEnabled="False"
                                     Padding="10,4">
-                                <TextBlock Text="立即总结"/>
+                                <TextBlock Text="生成详细摘要"/>
                             </Button>
                         </Grid>
 
@@ -334,10 +361,27 @@
                         <ScrollViewer Grid.Row="2"
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
-                            <TextBlock x:Name="TxtMeetingSummary"
-                                       Text="会议开始后，Granite 会在后台加载并持续更新摘要。"
-                                       TextWrapping="Wrap"
-                                       IsTextSelectionEnabled="True"/>
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="实时速览"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                                <TextBlock x:Name="TxtMeetingSummary"
+                                           Text="会议开始后，Granite 会在后台加载并持续更新实时速览。"
+                                           TextWrapping="Wrap"
+                                           IsTextSelectionEnabled="True"/>
+                                <Rectangle Height="1"
+                                           Margin="0,6"
+                                           Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                                <TextBlock Text="自适应详细摘要"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                                <TextBlock x:Name="TxtDetailedMeetingSummary"
+                                           Text="会议进行中可随时点击“生成详细摘要”。"
+                                           TextWrapping="Wrap"
+                                           IsTextSelectionEnabled="True"/>
+                            </StackPanel>
                         </ScrollViewer>
 
                         <TextBlock Grid.Row="3"

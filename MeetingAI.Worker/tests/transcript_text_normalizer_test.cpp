@@ -73,6 +73,19 @@ int main()
         "THIS USES AI\xEF\xBC\x8C GPU\xEF\xBC\x8C AND ONNX\xE3\x80\x82",
         "This uses AI, GPU, and ONNX.");
     failures += Check(
+        "THIS IS FIRST\xE3\x80\x82THIS IS SECOND\xEF\xBC\x8C"
+        "AND THIS IS THIRD\xE3\x80\x82",
+        "This is first. This is second, and this is third.");
+    failures += Check(
+        "VERSION 3.14\xEF\xBC\x8CVALUE 1,000\xE3\x80\x82NEXT ITEM\xE3\x80\x82",
+        "Version 3.14, value 1,000. Next item.");
+    failures += Check(
+        "U.S. TEAMS USE AI\xE3\x80\x82",
+        "U.S. teams use AI.");
+    failures += Check(
+        "WE WORK IN THE U.S\xE3\x80\x82",
+        "We work in the U.S.");
+    failures += Check(
         "I'M USING THE OPENVINO API\xE3\x80\x82",
         "I'm using the OpenVINO API.");
     failures += Check(

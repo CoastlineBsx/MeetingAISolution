@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
@@ -61,6 +62,7 @@ static bool g_sd_loaded = false;
 
 static std::mutex g_sherpa_mutex;
 static bool g_sherpa_loaded = false;
+static std::string g_sherpa_recognizer_signature;
 
 // ========== Granite GenAI 全局实例 ==========
 static std::unique_ptr<meetingai::granite::GraniteGenAI> g_granite;
@@ -130,8 +132,10 @@ static std::string GetEnvOrDefault(
     const char* key,
     const std::string& fallback);
 
-static void StartMeetingSummaryService(HANDLE hPipe) {
-    const std::int64_t meetingId = g_streaming_meeting_id;
+static void StartMeetingSummaryService(
+    HANDLE hPipe,
+    std::int64_t meetingId,
+    bool postMeeting = false) {
     if (meetingId <= 0) {
         return;
     }
@@ -142,7 +146,12 @@ static void StartMeetingSummaryService(HANDLE hPipe) {
         hPipe,
         "{\"type\":\"streaming_summary_status\","
         "\"state\":\"loading\","
-        "\"message\":\"正在后台加载 Granite 会议摘要模型…\"}\n");
+        "\"message\":\""
+        + std::string(
+            postMeeting
+                ? "正在准备会后详细摘要服务…"
+                : "正在后台加载 Granite 会议摘要模型…")
+        + "\"}\n");
 
     g_meeting_summary.Start(
         meetingId,
@@ -188,11 +197,11 @@ static void StartMeetingSummaryService(HANDLE hPipe) {
                 g_granite->generateStructuredInstruct(
                 "你是完全离线运行的专业会议纪要助手。"
                 "你必须只依据用户提供的带编号会议原文回答。"
-                "如果原文没有提供某项信息，就明确写未提及或未明确。"
+                "原文没有提供某类信息时，将对应数组留空。"
                 "绝不编造公司、产品、人物、金额、日期、决定和行动项。",
                 prompt,
                 jsonSchema,
-                768,
+                1024,
                 0.0f);
             onPartial(output);
             return output;
@@ -201,7 +210,8 @@ static void StartMeetingSummaryService(HANDLE hPipe) {
             const std::string& state,
             const std::string& text,
             bool isFinal,
-            std::int64_t coveredThroughSegmentId) {
+            std::int64_t coveredThroughSegmentId,
+            const std::string& summaryKind) {
             std::string message;
             if (state == "partial" || state == "final") {
                 const char* type = state == "partial"
@@ -213,6 +223,9 @@ static void StartMeetingSummaryService(HANDLE hPipe) {
                     + meetingai::proto::jsonEscape(text)
                     + "\",\"is_final\":"
                     + (isFinal ? "true" : "false")
+                    + ",\"summary_kind\":\""
+                    + meetingai::proto::jsonEscape(summaryKind)
+                    + "\""
                     + ",\"covered_through_segment_id\":"
                     + std::to_string(coveredThroughSegmentId)
                     + "}\n";
@@ -1272,9 +1285,41 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 WriteStreamingMessage(hPipe, msg);
             };
 
-            // 初始化 Sherpa 模型（仅一次）
+            const auto meetingContext =
+                meetingai::proto::extractMeetingContext(command);
+            const std::string hotwordsBuffer =
+                meetingai::proto::buildSherpaHotwordsBuffer(
+                    meetingContext);
+            const int requestedSampleRate =
+                meetingai::proto::extractSampleRate(command);
+            const std::string requestedRecognizerSignature =
+                std::to_string(requestedSampleRate) +
+                (hotwordsBuffer.empty() ? ":greedy" : ":hotwords");
+
+            // 通用模式继续使用 greedy；有会议热词时改用
+            // modified_beam_search。两场都有热词的会议可复用模型，
+            // 具体词表在创建 stream 时注入，不需要每次重载模型。
             {
                 std::lock_guard<std::mutex> lock(g_sherpa_mutex);
+                if (g_sherpa && g_sherpa->IsRunning()) {
+                    WriteStreamingMessage(
+                        hPipe,
+                        "{\"type\":\"streaming_error\",\"message\":"
+                        "\"已有流式会话正在运行，请先停止\"}\n");
+                    return;
+                }
+
+                if (g_sherpa_loaded &&
+                    g_sherpa_recognizer_signature !=
+                        requestedRecognizerSignature) {
+                    notify(
+                        "[Sherpa] 会议热词模式发生变化，正在切换解码器…");
+                    g_sherpa->Stop();
+                    g_sherpa.reset();
+                    g_sherpa_loaded = false;
+                    g_sherpa_recognizer_signature.clear();
+                }
+
                 if (!g_sherpa_loaded) {
                     g_sherpa = std::make_unique<meetingai::transcribe::SherpaStreamingTranscriber>();
 
@@ -1283,7 +1328,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                     std::string modelDir = meetingai::util::resolveModelFileUtf8(
                         L"sherpa\\sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20");
                     std::string tokensPath = modelDir + "\\tokens.txt";
-                    int sampleRate = meetingai::proto::extractSampleRate(command);
+                    std::string bpeVocabPath = modelDir + "\\bpe.vocab";
 
                     // sherpa 创建失败只会回一句没信息量的错误，这里先自己报清楚缺什么
                     {
@@ -1291,6 +1336,9 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                         const char* missing = nullptr;
                         if (!std::filesystem::is_directory(modelDir, ec)) missing = "模型目录不存在";
                         else if (!std::filesystem::exists(tokensPath, ec)) missing = "tokens.txt 不存在";
+                        else if (!hotwordsBuffer.empty() &&
+                                 !std::filesystem::exists(bpeVocabPath, ec))
+                            missing = "bpe.vocab 不存在";
                         else if (!std::filesystem::exists(modelDir + "\\encoder-epoch-99-avg-1.onnx", ec))
                             missing = "encoder-epoch-99-avg-1.onnx 不存在";
                         if (missing) {
@@ -1298,6 +1346,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                                 missing + ": " + meetingai::proto::jsonEscape(modelDir) + "\"}\n";
                             WriteStreamingMessage(hPipe, err);
                             g_sherpa.reset();
+                            g_sherpa_recognizer_signature.clear();
                             return;
                         }
                     }
@@ -1306,7 +1355,12 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                     notify("[Sherpa] 正在加载模型（首次约需数十秒）: " + modelDir);
 
                     const auto t0 = std::chrono::steady_clock::now();
-                    bool ok = g_sherpa->Initialize(modelDir, tokensPath, sampleRate);
+                    bool ok = g_sherpa->Initialize(
+                        modelDir,
+                        tokensPath,
+                        requestedSampleRate,
+                        hotwordsBuffer,
+                        bpeVocabPath);
                     const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - t0).count();
 
@@ -1317,12 +1371,22 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                             meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
                         WriteStreamingMessage(hPipe, err);
                         g_sherpa.reset();
+                        g_sherpa_recognizer_signature.clear();
                         return;
                     }
 
                     g_sherpa_loaded = true;
+                    g_sherpa_recognizer_signature =
+                        requestedRecognizerSignature;
                     std::cout << "[Worker] sherpa model loaded in " << elapsedMs << "ms" << std::endl;
                     notify("[Sherpa] 模型加载完成，耗时 " + std::to_string(elapsedMs) + " ms");
+                }
+
+                if (!hotwordsBuffer.empty()) {
+                    notify(
+                        "[Sherpa] 本场会议已启用 " +
+                        std::to_string(meetingContext.hotwords.size()) +
+                        " 个上下文热词");
                 }
 
                 // 标点模型（可选）。只尝试一次，失败后不再重试，也不影响转录。
@@ -1353,14 +1417,6 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 requestedSource != "system" &&
                 requestedSource != "both") {
                 requestedSource = "microphone";
-            }
-
-            if (g_sherpa->IsRunning()) {
-                std::string err =
-                    "{\"type\":\"streaming_error\",\"message\":"
-                    "\"已有流式会话正在运行，请先停止\"}\n";
-                WriteStreamingMessage(hPipe, err);
-                return;
             }
 
             const std::string translationMode =
@@ -1472,7 +1528,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
 
             std::vector<std::string> startedSources;
             for (const std::string& source : requestedSources) {
-                if (!g_sherpa->StartSession(source)) {
+                if (!g_sherpa->StartSession(source, hotwordsBuffer)) {
                     for (const std::string& started : startedSources) {
                         std::vector<meetingai::transcribe::SherpaStreamResult> ignored;
                         g_sherpa->EndSession(started, ignored);
@@ -1500,9 +1556,22 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
 
             const int streamingSampleRate =
                 meetingai::proto::extractSampleRate(command);
+            const bool ragEnabled =
+                meetingContext.HasPreparation() &&
+                !meetingContext.documentIds.empty();
+            const std::string contextSnapshotJson =
+                meetingContext.HasPreparation()
+                ? meetingai::proto::buildMeetingContextSnapshotJson(
+                    meetingContext)
+                : std::string{};
             g_streaming_meeting_id = BeginStreamingMeeting(
                 g_streaming_active_sources,
-                streamingSampleRate);
+                streamingSampleRate,
+                meetingContext.title,
+                meetingContext.preparationId,
+                contextSnapshotJson,
+                static_cast<int>(meetingContext.hotwords.size()),
+                ragEnabled);
             if (g_streaming_meeting_id <= 0) {
                 for (const std::string& source :
                      g_streaming_active_sources) {
@@ -1533,13 +1602,25 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 meetingai::proto::jsonEscape(activeTranslationMode) +
                 "\",\"meeting_id\":" +
                 std::to_string(g_streaming_meeting_id) +
+                ",\"preparation_id\":" +
+                std::to_string(meetingContext.preparationId) +
+                ",\"context_title\":\"" +
+                meetingai::proto::jsonEscape(meetingContext.title) +
+                "\",\"hotword_count\":" +
+                std::to_string(meetingContext.hotwords.size()) +
+                ",\"context_document_count\":" +
+                std::to_string(meetingContext.documentIds.size()) +
+                ",\"rag_enabled\":" +
+                (ragEnabled ? "true" : "false") +
                 ",\"summary_enabled\":" +
                 (summaryEnabled ? "true" : "false") +
                 "}\n";
             WriteStreamingMessage(hPipe, ok);
 
             if (summaryEnabled) {
-                StartMeetingSummaryService(hPipe);
+                StartMeetingSummaryService(
+                    hPipe,
+                    g_streaming_meeting_id);
             }
             else {
                 WriteStreamingMessage(
@@ -1695,6 +1776,10 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 return;
             }
 
+            const std::int64_t completedMeetingId =
+                g_streaming_meeting_id;
+            const bool keepPostMeetingSummary =
+                g_meeting_summary.IsRunning();
             std::string stopError;
             for (const std::string& source : g_streaming_active_sources) {
                 if (!g_sherpa->IsRunning(source)) {
@@ -1720,13 +1805,42 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             }
 
             // flushPendingTranscript 已把最后原文和 final 翻译任务排入队列。
-            // 先等 final 译文全部回到 Host，再发 streaming_stopped，避免停止时丢译文。
-            g_offline_translator.Stop(true);
+            // 翻译队列排空和 Granite 最终详细摘要彼此独立，并行完成可显著
+            // 缩短停止后的等待时间；两者结束前仍不发送 streaming_stopped，
+            // 因而 Host 不会丢掉最后译文或最终摘要。
+            WriteStreamingMessage(
+                hPipe,
+                "{\"type\":\"streaming_stop_progress\","
+                "\"message\":\"正在完成最后译文和最终详细摘要…\"}\n");
+            auto translationFinalizer = std::async(
+                std::launch::async,
+                [] {
+                    g_offline_translator.Stop(true);
+                });
+            auto summaryFinalizer = std::async(
+                std::launch::async,
+                [] {
+                    g_meeting_summary.Stop(true);
+                });
+            translationFinalizer.get();
+            summaryFinalizer.get();
 
-            // 摘要线程独立于音频读取循环。停止会议时生成最后一版并确认落库，
-            // 再封口 meeting，确保 UI 收到的最终摘要和数据库一致。
-            g_meeting_summary.Stop(true);
+            WriteStreamingMessage(
+                hPipe,
+                "{\"type\":\"streaming_stop_progress\","
+                "\"message\":\"正在保存会议记录…\"}\n");
             CloseStreamingMeetingRecord();
+
+            // 最终摘要生成完以后，为刚结束的 meeting 重开一个“只读数据库、
+            // 仅响应手动请求”的摘要服务。此服务没有 live transcript 通知，
+            // 因而不会继续自动生成；用户每次点击按钮时才会从数据库全文
+            // 重新生成一版详细摘要。
+            if (keepPostMeetingSummary && completedMeetingId > 0) {
+                StartMeetingSummaryService(
+                    hPipe,
+                    completedMeetingId,
+                    true);
+            }
 
             g_streaming_active_sources.clear();
             g_streaming_pending_raw.clear();
@@ -2309,7 +2423,7 @@ int wmain() {
                             hPipe,
                             "{\"type\":\"streaming_summary_status\","
                             "\"state\":\"queued\","
-                            "\"message\":\"已捕获当前字幕快照，正在更新会议摘要\"}\n");
+                            "\"message\":\"已捕获当前字幕快照，正在生成详细摘要\"}\n");
                     }
                     else {
                         WriteStreamingMessage(
@@ -2498,6 +2612,11 @@ int wmain() {
             g_streaming_pending_raw.clear();
             g_streaming_utterance_ids.clear();
             ResetStreamingPersistenceState();
+        }
+        // 正常停止后可能保留了只响应手动请求的会后摘要服务。
+        // Pipe 已断开时必须一并释放，避免回调继续持有失效的句柄。
+        if (g_meeting_summary.IsRunning()) {
+            g_meeting_summary.Stop(false);
         }
 
         FlushFileBuffers(hPipe);

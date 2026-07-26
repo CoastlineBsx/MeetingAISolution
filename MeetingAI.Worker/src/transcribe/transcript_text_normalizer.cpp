@@ -46,6 +46,59 @@ bool IsSentenceTerminator(char32_t ch)
         ch == 0x3002 || ch == 0xFF0E || ch == 0xFF1F || ch == 0xFF01;
 }
 
+bool IsWhitespace(char32_t ch);
+
+bool IsSentenceBoundaryAt(
+    const std::vector<char32_t>& text,
+    size_t index)
+{
+    if (index >= text.size() || !IsSentenceTerminator(text[index])) {
+        return false;
+    }
+    if (text[index] != U'.' && text[index] != 0xFF0E) {
+        return true;
+    }
+
+    const char32_t previous =
+        index == 0 ? U'\0' : text[index - 1];
+    size_t nextIndex = index + 1;
+    while (nextIndex < text.size() && IsWhitespace(text[nextIndex])) {
+        ++nextIndex;
+    }
+    const char32_t next =
+        nextIndex < text.size() ? text[nextIndex] : U'\0';
+
+    // 小数点不是句界，例如 3.14。
+    if (previous >= U'0' && previous <= U'9' &&
+        next >= U'0' && next <= U'9') {
+        return false;
+    }
+
+    // 单字母缩写中的点不是句界，例如 U.S.、A.I.。
+    if (IsAsciiLetter(previous)) {
+        if (index + 1 < text.size() &&
+            IsAsciiLetter(text[index + 1])) {
+            size_t tokenLength = 0;
+            size_t cursor = index;
+            while (cursor > 0 && IsAsciiLetter(text[cursor - 1])) {
+                --cursor;
+                ++tokenLength;
+            }
+            if (tokenLength == 1) {
+                return false;
+            }
+        }
+        if (next != U'\0' &&
+            index >= 3 &&
+            text[index - 2] == U'.' &&
+            IsAsciiLetter(text[index - 3])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool IsWordConnector(char32_t ch)
 {
     return ch == U'\'' || ch == 0x2019 || ch == U'-';
@@ -82,6 +135,12 @@ bool IsPunctuation(char32_t ch)
     default:
         return false;
     }
+}
+
+bool IsAsciiSentencePunctuation(char32_t ch)
+{
+    return ch == U'.' || ch == U',' || ch == U'?' || ch == U'!' ||
+        ch == U':' || ch == U';';
 }
 
 bool DecodeUtf8(std::string_view input, std::vector<char32_t>& output)
@@ -222,13 +281,13 @@ std::pair<size_t, size_t> FindSentenceBounds(
     size_t position)
 {
     size_t begin = position;
-    while (begin > 0 && !IsSentenceTerminator(text[begin - 1])) {
+    while (begin > 0 && !IsSentenceBoundaryAt(text, begin - 1)) {
         --begin;
     }
 
     size_t end = position;
-    if (position < text.size() && !IsSentenceTerminator(text[position])) {
-        while (end < text.size() && !IsSentenceTerminator(text[end])) {
+    if (position < text.size() && !IsSentenceBoundaryAt(text, position)) {
+        while (end < text.size() && !IsSentenceBoundaryAt(text, end)) {
             ++end;
         }
     }
@@ -359,11 +418,15 @@ void NormalizeEnglishCasing(
         const size_t tokenEnd = i;
         const std::string upperToken = AsciiTokenUpper(text, tokenBegin, tokenEnd);
         const std::string_view canonical = CanonicalBrand(upperToken);
+        const bool dottedInitial =
+            tokenEnd == tokenBegin + 1 &&
+            ((tokenBegin > begin && text[tokenBegin - 1] == U'.') ||
+             (tokenEnd < end && text[tokenEnd] == U'.'));
 
         if (!canonical.empty()) {
             ReplaceAsciiToken(text, tokenBegin, tokenEnd, canonical);
         }
-        else if (!IsPreservedAcronym(upperToken)) {
+        else if (!IsPreservedAcronym(upperToken) && !dottedInitial) {
             for (size_t j = tokenBegin; j < tokenEnd; ++j) {
                 if (IsAsciiUpper(text[j])) {
                     text[j] = text[j] - U'A' + U'a';
@@ -383,6 +446,92 @@ void NormalizeEnglishCasing(
 
         firstWord = false;
     }
+}
+
+bool NeedsEnglishSpaceAfter(
+    const std::vector<char32_t>& text,
+    size_t punctuationIndex,
+    size_t nextIndex,
+    bool hadWhitespace)
+{
+    if (punctuationIndex >= text.size() || nextIndex >= text.size()) {
+        return false;
+    }
+
+    const char32_t punctuation = text[punctuationIndex];
+    const char32_t next = text[nextIndex];
+    const char32_t previous =
+        punctuationIndex == 0 ? U'\0' : text[punctuationIndex - 1];
+
+    if (!(IsAsciiLetter(next) ||
+          (next >= U'0' && next <= U'9') ||
+          next == U'(' || next == U'"' || next == U'\'')) {
+        return false;
+    }
+
+    if (hadWhitespace) {
+        return true;
+    }
+
+    // 小数和千位分隔符不能被拆开，例如 3.14、1,000。
+    if ((punctuation == U'.' || punctuation == U',') &&
+        previous >= U'0' && previous <= U'9' &&
+        next >= U'0' && next <= U'9') {
+        return false;
+    }
+
+    // 保留常见单字母缩写内部的点，例如 U.S.、A.I.。
+    if (punctuation == U'.' &&
+        IsAsciiLetter(previous) &&
+        IsAsciiLetter(next)) {
+        size_t tokenLength = 0;
+        size_t cursor = punctuationIndex;
+        while (cursor > 0 && IsAsciiLetter(text[cursor - 1])) {
+            --cursor;
+            ++tokenLength;
+        }
+        if (tokenLength == 1) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void NormalizeEnglishPunctuationSpacing(std::vector<char32_t>& text)
+{
+    std::vector<char32_t> normalized;
+    normalized.reserve(text.size() + text.size() / 12);
+
+    for (size_t i = 0; i < text.size(); ++i) {
+        const char32_t ch = text[i];
+        if (!IsAsciiSentencePunctuation(ch)) {
+            normalized.push_back(ch);
+            continue;
+        }
+
+        const auto [begin, end] = FindSentenceBounds(text, i);
+        if (!IsEnglishDominant(CountLanguages(text, begin, end))) {
+            normalized.push_back(ch);
+            continue;
+        }
+
+        while (!normalized.empty() && IsWhitespace(normalized.back())) {
+            normalized.pop_back();
+        }
+        normalized.push_back(ch);
+
+        size_t next = i + 1;
+        while (next < text.size() && IsWhitespace(text[next])) {
+            ++next;
+        }
+        if (NeedsEnglishSpaceAfter(text, i, next, next > i + 1)) {
+            normalized.push_back(U' ');
+        }
+        i = next == 0 ? i : next - 1;
+    }
+
+    text = std::move(normalized);
 }
 
 } // namespace
@@ -415,11 +564,16 @@ std::string NormalizeBilingualTranscript(const std::string& text)
     // Then sentence-case only all-caps English sentences.
     size_t sentenceBegin = 0;
     for (size_t i = 0; i <= characters.size(); ++i) {
-        if (i == characters.size() || IsSentenceTerminator(characters[i])) {
+        if (i == characters.size() ||
+            IsSentenceBoundaryAt(characters, i)) {
             NormalizeEnglishCasing(characters, sentenceBegin, i);
             sentenceBegin = i + 1;
         }
     }
+
+    // sherpa 标点模型会把英文句号/逗号直接粘到下一个词上。
+    // 在大小写和中英文标点已经确定后，再补齐英文排版空格。
+    NormalizeEnglishPunctuationSpacing(characters);
 
     return EncodeUtf8(characters);
 }
@@ -513,7 +667,7 @@ bool TryExtractStableTranscriptPrefix(
         // The punctuation model only inserts punctuation; record the raw
         // boundary represented by an inserted sentence terminator.
         if (IsPunctuation(output)) {
-            if (IsSentenceTerminator(output)) {
+            if (IsSentenceBoundaryAt(punctuated, punctuatedIndex)) {
                 candidates.push_back({ punctuatedIndex + 1, rawIndex });
             }
             ++punctuatedIndex;

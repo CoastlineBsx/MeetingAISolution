@@ -22,7 +22,12 @@ struct MeetingTranscriptEntry {
 // 返回 meeting.id；失败返回 0。
 std::int64_t BeginStreamingMeeting(
     const std::vector<std::string>& sources,
-    int sampleRateHz);
+    int sampleRateHz,
+    const std::string& contextTitle = {},
+    std::int64_t preparationId = 0,
+    const std::string& contextSnapshotJson = {},
+    int hotwordCount = 0,
+    bool ragEnabled = false);
 
 // 封口当前会议，记录 ended_at_utc。
 bool EndStreamingMeeting(std::int64_t meetingId);

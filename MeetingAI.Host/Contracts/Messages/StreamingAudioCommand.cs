@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace MeetingAI.Host.Contracts.Messages;
 
 /// <summary>
@@ -49,6 +51,20 @@ public class StartStreamingCommand
     /// 是否启用 Granite 本地滚动会议摘要。
     /// </summary>
     public bool summary_enabled { get; set; } = true;
+
+    /// <summary>
+    /// 可为空；为空表示通用会议，不绑定会前资料。
+    /// </summary>
+    public long? preparation_id { get; set; }
+    public string context_title { get; set; } = "";
+    public List<long> context_document_ids { get; set; } = new();
+    public List<StreamingHotword> hotwords { get; set; } = new();
+}
+
+public class StreamingHotword
+{
+    public string text { get; set; } = "";
+    public double score { get; set; } = 2.0;
 }
 
 /// <summary>

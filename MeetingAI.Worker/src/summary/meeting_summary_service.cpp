@@ -18,7 +18,10 @@ constexpr auto kFirstSummaryDelay = std::chrono::minutes(1);
 constexpr auto kRollingSummaryDelay = std::chrono::minutes(1);
 constexpr std::size_t kRollingSummaryMinimumBytes = 200;
 constexpr const char* kModelName = "IBM Granite 3.3 2B Instruct";
-constexpr const char* kPromptVersion = "grounded-live-snapshot-v3";
+constexpr const char* kPromptVersionQuick =
+    "adaptive-grounded-quick-v4";
+constexpr const char* kPromptVersionDetailed =
+    "adaptive-grounded-detailed-v4";
 
 std::string DisplaySource(const std::string& source) {
     return source == "system" ? "对方" : "我方";
@@ -206,10 +209,14 @@ void MeetingSummaryService::ThreadMain() {
     while (true) {
         bool shouldGenerate = false;
         bool shouldFinalize = false;
+        bool shouldGenerateDetailed = false;
+        bool generatedFinal = false;
 
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            condition_.wait_for(lock, std::chrono::seconds(1));
+            if (!stopRequested_) {
+                condition_.wait_for(lock, std::chrono::seconds(1));
+            }
 
             const auto now = std::chrono::steady_clock::now();
             const bool hasNewContent =
@@ -228,6 +235,7 @@ void MeetingSummaryService::ThreadMain() {
                 availableTextBytes >= kRollingSummaryMinimumBytes;
 
             shouldFinalize = stopRequested_ && finalRequested_;
+            shouldGenerateDetailed = forceRequested_ || shouldFinalize;
             shouldGenerate =
                 modelReady_ &&
                 (forceRequested_ || firstDue || rollingDue || shouldFinalize);
@@ -243,7 +251,8 @@ void MeetingSummaryService::ThreadMain() {
                 std::lock_guard<std::mutex> lock(mutex_);
                 generating_ = true;
             }
-            GenerateSummary(shouldFinalize);
+            GenerateSummary(shouldFinalize, shouldGenerateDetailed);
+            generatedFinal = shouldFinalize;
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 generating_ = false;
@@ -251,7 +260,8 @@ void MeetingSummaryService::ThreadMain() {
         }
 
         std::lock_guard<std::mutex> lock(mutex_);
-        if (stopRequested_) {
+        if (stopRequested_ &&
+            (!finalRequested_ || generatedFinal)) {
             break;
         }
     }
@@ -260,7 +270,11 @@ void MeetingSummaryService::ThreadMain() {
     running_ = false;
 }
 
-bool MeetingSummaryService::GenerateSummary(bool isFinal) {
+bool MeetingSummaryService::GenerateSummary(
+    bool isFinal,
+    bool isDetailed) {
+    const std::string summaryKind =
+        isDetailed ? "detailed" : "quick";
     std::int64_t meetingId = 0;
     std::size_t pendingBytesAtStart = 0;
     std::uint64_t contentVersionAtStart = 0;
@@ -285,7 +299,10 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
             "waiting",
             isFinal
                 ? "没有可总结的会议字幕"
-                : "还没有捕获到可总结的字幕");
+                : "还没有捕获到可总结的字幕",
+            isFinal,
+            0,
+            summaryKind);
         return false;
     }
 
@@ -331,7 +348,8 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
                 ? "会议有效字幕不足，未生成最终摘要"
                 : "当前会议内容还太少，继续说一会儿再总结",
             isFinal,
-            newestSegmentId);
+            newestSegmentId,
+            summaryKind);
         return false;
     }
 
@@ -339,9 +357,12 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
         "generating",
         isFinal
             ? "正在生成最终会议摘要…"
-            : "正在汇总已确认字幕和当前实时字幕…",
+            : (isDetailed
+                ? "正在生成自适应详细摘要…"
+                : "正在更新实时速览…"),
         isFinal,
-        newestSegmentId);
+        newestSegmentId,
+        summaryKind);
 
     std::string summary;
     SummaryValidationResult validation;
@@ -353,14 +374,21 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
         // 未通过事实校验前不把模型的 partial 文本展示给 UI，避免用户看到
         // 随后会被丢弃的幻觉内容。
         const std::string jsonSchema =
-            BuildGroundedSummaryJsonSchema(allowedSegmentIds);
+            BuildGroundedSummaryJsonSchema(
+                allowedSegmentIds,
+                isDetailed);
         const auto generateOnce =
-            [&generate, &transcriptText, &jsonSchema, isFinal](
+            [&generate,
+             &transcriptText,
+             &jsonSchema,
+             isFinal,
+             isDetailed](
                 bool isRetry) {
                 return generate(
                     BuildGroundedSummaryPrompt(
                         transcriptText,
                         isFinal,
+                        isDetailed,
                         isRetry),
                     jsonSchema,
                     [](const std::string&) {});
@@ -370,6 +398,7 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
         validation = FormatGroundedSummaryJson(
             jsonOutput,
             summaryEvidence,
+            isDetailed,
             summary);
         if (!validation.accepted) {
             std::cout << "[Summary] validation retry: "
@@ -378,16 +407,23 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
                 "retrying",
                 "摘要未通过事实证据校验，正在自动重新生成…",
                 isFinal,
-                newestSegmentId);
+                newestSegmentId,
+                summaryKind);
             jsonOutput = generateOnce(true);
             validation = FormatGroundedSummaryJson(
                 jsonOutput,
                 summaryEvidence,
+                isDetailed,
                 summary);
         }
     }
     catch (const std::exception& e) {
-        Emit("error", std::string("会议摘要生成失败: ") + e.what());
+        Emit(
+            "error",
+            std::string("会议摘要生成失败: ") + e.what(),
+            isFinal,
+            newestSegmentId,
+            summaryKind);
         return false;
     }
 
@@ -407,17 +443,23 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
             "error",
             "摘要未通过事实证据校验，已丢弃且不会写入数据库",
             isFinal,
-            newestSegmentId);
+            newestSegmentId,
+            summaryKind);
         return false;
     }
     if (!InsertMeetingSummary(
         meetingId,
         newestSegmentId,
         kModelName,
-        kPromptVersion,
+        isDetailed ? kPromptVersionDetailed : kPromptVersionQuick,
         summary,
         isFinal)) {
-        Emit("error", "摘要已生成，但写入数据库失败");
+        Emit(
+            "error",
+            "摘要已生成，但写入数据库失败",
+            isFinal,
+            newestSegmentId,
+            summaryKind);
         return false;
     }
 
@@ -432,7 +474,12 @@ bool MeetingSummaryService::GenerateSummary(bool isFinal) {
         summarizedContentVersion_ = contentVersionAtStart;
         lastSummaryAt_ = std::chrono::steady_clock::now();
     }
-    Emit("final", summary, isFinal, newestSegmentId);
+    Emit(
+        "final",
+        summary,
+        isFinal,
+        newestSegmentId,
+        summaryKind);
     return true;
 }
 
@@ -440,14 +487,20 @@ void MeetingSummaryService::Emit(
     const std::string& state,
     const std::string& text,
     bool isFinal,
-    std::int64_t coveredThroughSegmentId) const {
+    std::int64_t coveredThroughSegmentId,
+    const std::string& summaryKind) const {
     EventCallback callback;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         callback = onEvent_;
     }
     if (callback) {
-        callback(state, text, isFinal, coveredThroughSegmentId);
+        callback(
+            state,
+            text,
+            isFinal,
+            coveredThroughSegmentId,
+            summaryKind);
     }
 }
 

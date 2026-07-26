@@ -1,7 +1,12 @@
 #include "pch.h"
 #include "command_parser.h"
+#include <algorithm>
 #include <cstdio>
+#include <iomanip>
+#include <locale>
 #include <nlohmann/json.hpp>
+#include <sstream>
+#include <unordered_set>
 
 using json = nlohmann::json;
 
@@ -332,6 +337,168 @@ namespace meetingai::proto {
         catch (...) {
             return true;
         }
+    }
+
+    static void replaceAll(
+        std::string& text,
+        const std::string& from,
+        const std::string& to) {
+        if (from.empty()) {
+            return;
+        }
+        std::size_t position = 0;
+        while ((position = text.find(from, position)) != std::string::npos) {
+            text.replace(position, from.size(), to);
+            position += to.size();
+        }
+    }
+
+    static std::string normalizeSherpaHotwordText(std::string text) {
+        // Sherpa 使用 ASCII 冒号分隔“热词”和“分数”。PPT 标题本身如果
+        // 含有冒号（例如 "Application: useful"），底层会把冒号后的
+        // 单词交给 std::stof，从而令整场流式会议启动失败。
+        replaceAll(text, ":", " ");
+        replaceAll(text, "\xEF\xBC\x9A", " "); // 全角中文冒号 U+FF1A
+
+        for (char& character : text) {
+            const auto value = static_cast<unsigned char>(character);
+            if (value < 0x20 || value == 0x7f) {
+                character = ' ';
+            }
+        }
+
+        std::string normalized;
+        normalized.reserve(text.size());
+        bool previousWasSpace = true;
+        for (const char character : text) {
+            if (character == ' ') {
+                if (!previousWasSpace) {
+                    normalized.push_back(' ');
+                    previousWasSpace = true;
+                }
+                continue;
+            }
+            normalized.push_back(character);
+            previousWasSpace = false;
+        }
+        if (!normalized.empty() && normalized.back() == ' ') {
+            normalized.pop_back();
+        }
+        return normalized;
+    }
+
+    MeetingContextCommand extractMeetingContext(const std::string& jsonStr) {
+        MeetingContextCommand result;
+        try {
+            const auto value = json::parse(jsonStr);
+            if (value.contains("preparation_id") &&
+                value["preparation_id"].is_number_integer()) {
+                result.preparationId =
+                    std::max<std::int64_t>(
+                        0,
+                        value["preparation_id"].get<std::int64_t>());
+            }
+
+            if (value.contains("context_title") &&
+                value["context_title"].is_string()) {
+                result.title = trim(
+                    value["context_title"].get<std::string>());
+            }
+
+            std::unordered_set<std::int64_t> seenDocumentIds;
+            if (value.contains("context_document_ids") &&
+                value["context_document_ids"].is_array()) {
+                for (const auto& item : value["context_document_ids"]) {
+                    if (!item.is_number_integer()) {
+                        continue;
+                    }
+                    const auto documentId = item.get<std::int64_t>();
+                    if (documentId <= 0 ||
+                        !seenDocumentIds.insert(documentId).second) {
+                        continue;
+                    }
+                    result.documentIds.push_back(documentId);
+                    if (result.documentIds.size() == 5) {
+                        break;
+                    }
+                }
+            }
+
+            std::unordered_set<std::string> seenHotwords;
+            if (value.contains("hotwords") &&
+                value["hotwords"].is_array()) {
+                for (const auto& item : value["hotwords"]) {
+                    if (!item.is_object() ||
+                        !item.contains("text") ||
+                        !item["text"].is_string()) {
+                        continue;
+                    }
+
+                    std::string text = normalizeSherpaHotwordText(
+                        trim(item["text"].get<std::string>()));
+                    if (text.empty() || !seenHotwords.insert(text).second) {
+                        continue;
+                    }
+
+                    float score = 2.0f;
+                    if (item.contains("score") &&
+                        item["score"].is_number()) {
+                        score = item["score"].get<float>();
+                    }
+                    score = std::clamp(score, 1.0f, 5.0f);
+                    result.hotwords.push_back({ std::move(text), score });
+                    if (result.hotwords.size() == 100) {
+                        break;
+                    }
+                }
+            }
+
+            if (!result.HasPreparation()) {
+                result.title.clear();
+                result.documentIds.clear();
+                result.hotwords.clear();
+            }
+        }
+        catch (...) {
+            return {};
+        }
+        return result;
+    }
+
+    std::string buildSherpaHotwordsBuffer(
+        const MeetingContextCommand& context) {
+        std::ostringstream output;
+        output.imbue(std::locale::classic());
+        output << std::fixed << std::setprecision(2);
+        for (const auto& hotword : context.hotwords) {
+            const std::string text =
+                normalizeSherpaHotwordText(hotword.text);
+            if (text.empty()) {
+                continue;
+            }
+            output << text << " :"
+                   << std::clamp(hotword.score, 1.0f, 5.0f)
+                   << '\n';
+        }
+        return output.str();
+    }
+
+    std::string buildMeetingContextSnapshotJson(
+        const MeetingContextCommand& context) {
+        json snapshot = {
+            { "schema_version", 1 },
+            { "preparation_id", context.preparationId },
+            { "title", context.title },
+            { "document_ids", context.documentIds },
+            { "hotwords", json::array() }
+        };
+        for (const auto& hotword : context.hotwords) {
+            snapshot["hotwords"].push_back({
+                { "text", hotword.text },
+                { "score", hotword.score }
+            });
+        }
+        return snapshot.dump();
     }
 
     bool isRequestMeetingSummary(const std::string& json) {

@@ -17,6 +17,7 @@ using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using MeetingAI.Host.Contracts.Messages;
+using MeetingAI.Host.MeetingPreparation;
 
 namespace MeetingAI.Host.Pages;
 
@@ -151,10 +152,12 @@ public sealed partial class StreamingMeetingPage : Page
     // ========== UI 数据绑定 ==========
     private readonly ObservableCollection<StreamingCaption> _captions = new();
     private readonly ObservableCollection<Speaker> _speakers = new();
+    private readonly ObservableCollection<MeetingContextOption> _meetingContexts = new();
 
     // ========== 转录状态 ==========
     private bool _isRecording = false;
     private DateTime _meetingStartTime;
+    private DateTime? _meetingEndTime;
     private DispatcherTimer? _durationTimer;
     private int _segmentCount = 0;
 
@@ -182,6 +185,9 @@ public sealed partial class StreamingMeetingPage : Page
     private string _requestedTranslationMode = "off";
     private bool _summaryEnabled;
     private bool _summaryReady;
+    private bool _summaryServiceAvailable;
+    private bool _postMeetingSummaryAvailable;
+    private MeetingContextSnapshot _activeMeetingContext = new();
 
     private MainWindow? _mainWindow;
 
@@ -191,6 +197,8 @@ public sealed partial class StreamingMeetingPage : Page
 
         CaptionsList.ItemsSource = _captions;
         SpeakersList.ItemsSource = _speakers;
+        CmbMeetingContext.ItemsSource = _meetingContexts;
+        Loaded += Page_Loaded;
 
         _durationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _durationTimer.Tick += UpdateDuration;
@@ -199,6 +207,63 @@ public sealed partial class StreamingMeetingPage : Page
 
         Debug.WriteLine("[StreamingMeeting] Page initialized");
     }
+
+    private async void Page_Loaded(object sender, RoutedEventArgs e)
+    {
+        await ReloadMeetingContextsAsync();
+    }
+
+    private async Task ReloadMeetingContextsAsync()
+    {
+        if (_mainWindow == null || _isRecording) return;
+        try
+        {
+            var pending = MeetingContextCoordinator.PendingPreparationId;
+            _meetingContexts.Clear();
+            _meetingContexts.Add(new MeetingContextOption());
+            foreach (var preparation in await _mainWindow.GetMeetingPreparationsAsync())
+            {
+                _meetingContexts.Add(new MeetingContextOption
+                {
+                    PreparationId = preparation.PreparationId,
+                    Display = preparation.Display
+                });
+            }
+            CmbMeetingContext.SelectedItem = _meetingContexts.FirstOrDefault(
+                item => item.PreparationId == pending) ?? _meetingContexts[0];
+        }
+        catch (Exception ex)
+        {
+            TxtMeetingContextStatus.Text = $"会议资料暂不可用：{ex.Message}";
+            if (_meetingContexts.Count == 0) _meetingContexts.Add(new MeetingContextOption());
+            CmbMeetingContext.SelectedIndex = 0;
+        }
+    }
+
+    public async Task SelectMeetingContextAsync(long? preparationId)
+    {
+        MeetingContextCoordinator.SelectForNextMeeting(preparationId);
+        await ReloadMeetingContextsAsync();
+    }
+
+    private async void CmbMeetingContext_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isRecording || _mainWindow == null) return;
+        var option = CmbMeetingContext.SelectedItem as MeetingContextOption;
+        MeetingContextCoordinator.SelectForNextMeeting(option?.PreparationId);
+        try
+        {
+            var snapshot = await _mainWindow.GetMeetingContextSnapshotAsync(option?.PreparationId);
+            TxtMeetingContextStatus.Text = snapshot.StatusDisplay;
+        }
+        catch (Exception ex)
+        {
+            TxtMeetingContextStatus.Text = $"上下文读取失败：{ex.Message}";
+        }
+    }
+
+    private void BtnManageMeetingContext_Click(object sender, RoutedEventArgs e)
+        => _mainWindow?.OpenMeetingPreparationPage();
 
     // ========== 按钮事件 ==========
     public void BtnStartMeeting_Click(object sender, RoutedEventArgs e) => _ = StartMeetingAsync();
@@ -224,15 +289,21 @@ public sealed partial class StreamingMeetingPage : Page
 
     private async Task RequestSummaryNowAsync()
     {
-        if (!_isRecording || !_summaryEnabled || !_summaryReady ||
+        if ((!_isRecording && !_postMeetingSummaryAvailable) ||
+            !_summaryEnabled || !_summaryReady ||
             _mainWindow == null)
         {
-            SetSummaryStatus("请先启动已启用摘要的会议");
+            SetSummaryStatus("当前没有可用于生成摘要的会议");
             return;
         }
 
+        await _mainWindow.EnsurePipeAsync();
+        _mainWindow.StreamingMessageHandler = OnStreamingMessageReceived;
         BtnSummarizeNow.IsEnabled = false;
-        SetSummaryStatus("正在请求立即总结…");
+        SetSummaryStatus(
+            _isRecording
+                ? "正在生成自适应详细摘要…"
+                : "正在根据本场会议的完整数据库记录重新生成详细摘要…");
         await _mainWindow.SendJsonAsync(
             "{\"type\":\"request_meeting_summary\"}\n");
     }
@@ -253,8 +324,11 @@ public sealed partial class StreamingMeetingPage : Page
             BtnStartMeeting.IsEnabled = false;
             CmbAudioSource.IsEnabled = false;
             CmbTranslationMode.IsEnabled = false;
+            CmbMeetingContext.IsEnabled = false;
+            BtnManageMeetingContext.IsEnabled = false;
             ChkLiveSummary.IsEnabled = false;
             BtnSummarizeNow.IsEnabled = false;
+            _postMeetingSummaryAvailable = false;
             SetStatus("Connecting…");
 
             await _mainWindow.EnsurePipeAsync();
@@ -266,24 +340,41 @@ public sealed partial class StreamingMeetingPage : Page
             _requestedTranslationMode = GetSelectedTranslationMode();
             _summaryEnabled = ChkLiveSummary.IsChecked == true;
             _summaryReady = false;
+            _summaryServiceAvailable = false;
             SetTranslationStatus(
                 _requestedTranslationMode == "off" ? "关闭" : "模型准备中…");
             SetSummaryStatus(
                 _summaryEnabled ? "准备本地 Granite 摘要服务…" : "已关闭");
             TxtMeetingSummary.Text = _summaryEnabled
-                ? "正在启动会议，摘要模型将在后台加载。"
+                ? "正在启动会议，实时速览模型将在后台加载。"
+                : "本场会议未启用自动摘要。";
+            TxtDetailedMeetingSummary.Text = _summaryEnabled
+                ? "会议进行中可随时点击“生成详细摘要”。"
                 : "本场会议未启用自动摘要。";
             TxtSummaryUpdated.Text = "";
+
+            var selectedContext = CmbMeetingContext.SelectedItem as MeetingContextOption;
+            _activeMeetingContext = await _mainWindow.GetMeetingContextSnapshotAsync(
+                selectedContext?.PreparationId);
 
             var startCmd = new StartStreamingCommand
             {
                 sample_rate = TargetSampleRate,
                 source = GetSelectedSourceMode(),
                 translation_mode = _requestedTranslationMode,
-                summary_enabled = _summaryEnabled
+                summary_enabled = _summaryEnabled,
+                preparation_id = _activeMeetingContext.PreparationId,
+                context_title = _activeMeetingContext.Title,
+                context_document_ids = _activeMeetingContext.DocumentIds,
+                hotwords = _activeMeetingContext.Hotwords
+                    .Where(item => item.Enabled && !string.IsNullOrWhiteSpace(item.Text))
+                    .OrderByDescending(item => item.Score)
+                    .Take(100)
+                    .Select(item => new StreamingHotword { text = item.Text.Trim(), score = item.Score })
+                    .ToList()
             };
             await _mainWindow.SendJsonAsync(
-                JsonSerializer.Serialize(startCmd, Contracts.AppJsonContext.Default.StartStreamingCommand) + "\n");
+                JsonSerializer.Serialize(startCmd, Contracts.AppJsonContext.Utf8.StartStreamingCommand) + "\n");
 
             SetStatus("Loading model…");
 
@@ -296,6 +387,8 @@ public sealed partial class StreamingMeetingPage : Page
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
                 CmbTranslationMode.IsEnabled = true;
+                CmbMeetingContext.IsEnabled = true;
+                BtnManageMeetingContext.IsEnabled = true;
                 ChkLiveSummary.IsEnabled = true;
                 SetStatus("Failed");
                 await ShowErrorAsync("等待 Worker 启动流式会话超时（3 分钟）。请检查日志窗口里 [Worker] 开头的输出。");
@@ -308,6 +401,8 @@ public sealed partial class StreamingMeetingPage : Page
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
                 CmbTranslationMode.IsEnabled = true;
+                CmbMeetingContext.IsEnabled = true;
+                BtnManageMeetingContext.IsEnabled = true;
                 ChkLiveSummary.IsEnabled = true;
                 return;
             }
@@ -320,6 +415,8 @@ public sealed partial class StreamingMeetingPage : Page
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
                 CmbTranslationMode.IsEnabled = true;
+                CmbMeetingContext.IsEnabled = true;
+                BtnManageMeetingContext.IsEnabled = true;
                 ChkLiveSummary.IsEnabled = true;
                 SetStatus("Failed");
                 await ShowErrorAsync("音频源初始化失败，请检查所选麦克风或系统播放设备。");
@@ -328,6 +425,7 @@ public sealed partial class StreamingMeetingPage : Page
 
             _isRecording = true;
             _meetingStartTime = DateTime.Now;
+            _meetingEndTime = null;
             _segmentCount = 0;
 
             // 上一场会议可能留着没封口的段落，新会议不该续写它
@@ -368,6 +466,8 @@ public sealed partial class StreamingMeetingPage : Page
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
             CmbTranslationMode.IsEnabled = true;
+            CmbMeetingContext.IsEnabled = true;
+            BtnManageMeetingContext.IsEnabled = true;
             ChkLiveSummary.IsEnabled = true;
             SetStatus("Failed");
             await ShowErrorAsync($"启动失败：{ex.Message}");
@@ -380,9 +480,13 @@ public sealed partial class StreamingMeetingPage : Page
 
         try
         {
+            bool workerStopped = false;
             _isRecording = false;
+            _meetingEndTime = DateTime.Now;
+            _durationTimer?.Stop();
+            UpdateDuration(null, EventArgs.Empty);
             BtnStopMeeting.IsEnabled = false;
-            SetStatus("Finalizing…");
+            SetStatus("Finalizing · 正在整理最后字幕、译文和详细摘要…");
 
             // 先停采集和发送泵，再发 stop，避免 stop 之后还有音频包排在后面
             foreach (var pipeline in _audioPipelines)
@@ -412,27 +516,41 @@ public sealed partial class StreamingMeetingPage : Page
 
                 // Worker 在 streaming_stopped 之前还会补发最后一段 final 结果，
                 // 立刻注销处理器会把它丢掉
-                await Task.WhenAny(
+                var completed = await Task.WhenAny(
                     _stoppedTcs.Task,
                     Task.Delay(TimeSpan.FromMinutes(3)));
+                workerStopped =
+                    completed == _stoppedTcs.Task &&
+                    await _stoppedTcs.Task;
                 _mainWindow.StreamingMessageHandler = null;
                 _workerStreamingStarted = false;
             }
 
             CloseAllParagraphs(); // 两个来源的 final 都已收完
 
-            _durationTimer?.Stop();
             CleanupResources();
 
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
             CmbTranslationMode.IsEnabled = true;
+            CmbMeetingContext.IsEnabled = true;
+            BtnManageMeetingContext.IsEnabled = true;
             ChkLiveSummary.IsEnabled = true;
-            BtnSummarizeNow.IsEnabled = false;
-            _summaryReady = false;
+            _postMeetingSummaryAvailable =
+                _summaryEnabled && workerStopped;
+            _summaryServiceAvailable =
+                _postMeetingSummaryAvailable;
+            _summaryReady = _postMeetingSummaryAvailable;
+            BtnSummarizeNow.IsEnabled =
+                _postMeetingSummaryAvailable;
             BtnExport.IsEnabled = _captions.Count > 0;
             BtnClear.IsEnabled = _captions.Count > 0;
             SetStatus("Idle");
+            if (_postMeetingSummaryAvailable)
+            {
+                SetSummaryStatus(
+                    "会议已结束；可继续点击“生成详细摘要”重新生成");
+            }
 
             Debug.WriteLine("[StreamingMeeting] Meeting stopped");
         }
@@ -444,9 +562,13 @@ public sealed partial class StreamingMeetingPage : Page
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
             CmbTranslationMode.IsEnabled = true;
+            CmbMeetingContext.IsEnabled = true;
+            BtnManageMeetingContext.IsEnabled = true;
             ChkLiveSummary.IsEnabled = true;
             BtnSummarizeNow.IsEnabled = false;
             _summaryReady = false;
+            _summaryServiceAvailable = false;
+            _postMeetingSummaryAvailable = false;
             SetStatus("Idle");
             await ShowErrorAsync($"停止失败：{ex.Message}");
         }
@@ -684,6 +806,11 @@ public sealed partial class StreamingMeetingPage : Page
                 return source == SystemSource ? SystemSource : MicrophoneSource;
             }
             string Message() => root.TryGetProperty("message", out var m) ? m.GetString() ?? "未知错误" : "未知错误";
+            string SummaryKind() => root.TryGetProperty(
+                    "summary_kind",
+                    out var kind)
+                ? kind.GetString() ?? "quick"
+                : "quick";
             long UtteranceId() => root.TryGetProperty("utterance_id", out var id)
                 && id.TryGetInt64(out long value)
                 ? value
@@ -703,6 +830,18 @@ public sealed partial class StreamingMeetingPage : Page
                             "summary_enabled",
                             out var summaryElement) &&
                         summaryElement.ValueKind == JsonValueKind.True;
+                    int actualHotwordCount =
+                        root.TryGetProperty(
+                            "hotword_count",
+                            out var hotwordElement) &&
+                        hotwordElement.TryGetInt32(out int count)
+                            ? count
+                            : 0;
+                    bool actualRagEnabled =
+                        root.TryGetProperty(
+                            "rag_enabled",
+                            out var ragElement) &&
+                        ragElement.ValueKind == JsonValueKind.True;
                     DispatcherQueue.TryEnqueue(() =>
                     {
                         if (_requestedTranslationMode == "off")
@@ -726,6 +865,16 @@ public sealed partial class StreamingMeetingPage : Page
                         {
                             SetSummaryStatus("本场会议未启用摘要");
                         }
+
+                        TxtMeetingContextStatus.Text =
+                            _activeMeetingContext.HasPreparation
+                                ? $"{_activeMeetingContext.Title} · " +
+                                  $"{_activeMeetingContext.DocumentIds.Count}/5 份资料 · " +
+                                  $"{actualHotwordCount} 个热词已加载 · " +
+                                  (actualRagEnabled
+                                      ? "限定 RAG 已绑定"
+                                      : "本场无可检索资料")
+                                : "通用模式 · 未使用会前资料和热词";
                     });
                     _startedTcs?.TrySetResult(true);
                     break;
@@ -750,6 +899,13 @@ public sealed partial class StreamingMeetingPage : Page
                 case "streaming_stopped":
                     _stoppedTcs?.TrySetResult(true);
                     break;
+
+                case "streaming_stop_progress":
+                {
+                    string message = Message();
+                    DispatcherQueue.TryEnqueue(() => SetStatus(message));
+                    break;
+                }
 
                 case "streaming_partial":
                 {
@@ -816,11 +972,36 @@ public sealed partial class StreamingMeetingPage : Page
                     string message = Message();
                     DispatcherQueue.TryEnqueue(() =>
                     {
-                        _summaryReady =
-                            state is "ready" or "waiting" or "final";
+                        if (state is "ready" or "waiting" or "final")
+                        {
+                            _summaryServiceAvailable = true;
+                            _summaryReady = true;
+                        }
+                        else if (state is "loading" or "disabled")
+                        {
+                            _summaryServiceAvailable = false;
+                            _summaryReady = false;
+                        }
+                        else if (state is "queued" or "generating" or "retrying")
+                        {
+                            _summaryReady = false;
+                        }
+                        else if (state == "error")
+                        {
+                            // 生成或事实校验失败后允许用户重试；只有模型加载
+                            // 失败时服务才不可用。
+                            if (message.Contains("加载失败"))
+                            {
+                                _summaryServiceAvailable = false;
+                            }
+                            _summaryReady = _summaryServiceAvailable;
+                        }
                         SetSummaryStatus(message);
                         BtnSummarizeNow.IsEnabled =
-                            _summaryEnabled && _summaryReady && _isRecording;
+                            _summaryEnabled &&
+                            _summaryReady &&
+                            (_isRecording ||
+                             _postMeetingSummaryAvailable);
                     });
                     break;
                 }
@@ -828,13 +1009,24 @@ public sealed partial class StreamingMeetingPage : Page
                 case "streaming_summary_partial":
                 {
                     string text = Text();
+                    string summaryKind = SummaryKind();
                     DispatcherQueue.TryEnqueue(() =>
                     {
                         if (!string.IsNullOrWhiteSpace(text))
                         {
-                            TxtMeetingSummary.Text = text;
+                            if (summaryKind == "detailed")
+                            {
+                                TxtDetailedMeetingSummary.Text = text;
+                            }
+                            else
+                            {
+                                TxtMeetingSummary.Text = text;
+                            }
                         }
-                        SetSummaryStatus("Granite 正在生成摘要…");
+                        SetSummaryStatus(
+                            summaryKind == "detailed"
+                                ? "Granite 正在生成详细摘要…"
+                                : "Granite 正在更新实时速览…");
                         BtnSummarizeNow.IsEnabled = false;
                     });
                     break;
@@ -843,6 +1035,7 @@ public sealed partial class StreamingMeetingPage : Page
                 case "streaming_summary_final":
                 {
                     string text = Text();
+                    string summaryKind = SummaryKind();
                     bool isFinal = root.TryGetProperty(
                             "is_final",
                             out var finalElement) &&
@@ -851,17 +1044,30 @@ public sealed partial class StreamingMeetingPage : Page
                     {
                         if (!string.IsNullOrWhiteSpace(text))
                         {
-                            TxtMeetingSummary.Text = text;
+                            if (summaryKind == "detailed")
+                            {
+                                TxtDetailedMeetingSummary.Text = text;
+                            }
+                            else
+                            {
+                                TxtMeetingSummary.Text = text;
+                            }
                         }
                         SetSummaryStatus(
                             isFinal
-                                ? "最终摘要已生成并保存"
-                                : "滚动摘要已更新并保存");
+                                ? "最终详细摘要已生成并保存"
+                                : (summaryKind == "detailed"
+                                    ? "自适应详细摘要已生成并保存"
+                                    : "实时速览已更新并保存"));
                         TxtSummaryUpdated.Text =
                             $"更新时间：{DateTime.Now:HH:mm:ss} · 已保存到本地数据库";
+                        _summaryServiceAvailable = true;
                         _summaryReady = true;
                         BtnSummarizeNow.IsEnabled =
-                            _summaryEnabled && _isRecording && !isFinal;
+                            _summaryEnabled &&
+                            (_isRecording ||
+                             _postMeetingSummaryAvailable) &&
+                            !isFinal;
                     });
                     break;
                 }
@@ -1129,7 +1335,7 @@ public sealed partial class StreamingMeetingPage : Page
     private static bool EndsSentence(string text)
     {
         if (string.IsNullOrEmpty(text)) return false;
-        return "。！？!?…".Contains(text[^1]);
+        return "。！？.!?…".Contains(text[^1]);
     }
 
     /// <summary>
@@ -1202,7 +1408,7 @@ public sealed partial class StreamingMeetingPage : Page
 
     private void UpdateDuration(object? sender, object e)
     {
-        var duration = DateTime.Now - _meetingStartTime;
+        var duration = (_meetingEndTime ?? DateTime.Now) - _meetingStartTime;
         TxtDuration.Text = $"{duration:hh\\:mm\\:ss}";
     }
 
@@ -1240,7 +1446,8 @@ public sealed partial class StreamingMeetingPage : Page
 
         sb.AppendLine("# Meeting Transcript");
         sb.AppendLine($"Date: {_meetingStartTime:yyyy-MM-dd}");
-        sb.AppendLine($"Duration: {DateTime.Now - _meetingStartTime:hh\\:mm\\:ss}");
+        sb.AppendLine(
+            $"Duration: {(_meetingEndTime ?? DateTime.Now) - _meetingStartTime:hh\\:mm\\:ss}");
         sb.AppendLine($"Segments: {_segmentCount}");
         sb.AppendLine();
         sb.AppendLine("---");
@@ -1258,15 +1465,24 @@ public sealed partial class StreamingMeetingPage : Page
             sb.AppendLine();
         }
 
-        if (!string.IsNullOrWhiteSpace(TxtMeetingSummary.Text) &&
-            TxtSummaryUpdated.Text.Length > 0)
+        if (TxtSummaryUpdated.Text.Length > 0)
         {
             sb.AppendLine("---");
             sb.AppendLine();
-            sb.AppendLine("# Local AI Meeting Summary");
-            sb.AppendLine();
-            sb.AppendLine(TxtMeetingSummary.Text);
-            sb.AppendLine();
+            if (!string.IsNullOrWhiteSpace(TxtMeetingSummary.Text))
+            {
+                sb.AppendLine("# Real-time Quick Summary");
+                sb.AppendLine();
+                sb.AppendLine(TxtMeetingSummary.Text);
+                sb.AppendLine();
+            }
+            if (!string.IsNullOrWhiteSpace(TxtDetailedMeetingSummary.Text))
+            {
+                sb.AppendLine("# Adaptive Detailed Summary");
+                sb.AppendLine();
+                sb.AppendLine(TxtDetailedMeetingSummary.Text);
+                sb.AppendLine();
+            }
         }
 
         return sb.ToString();
@@ -1303,12 +1519,17 @@ public sealed partial class StreamingMeetingPage : Page
         _captionStates.Clear();
         _captionByUtterance.Clear();
         _translationStates.Clear();
+        _meetingEndTime = null;
+        _postMeetingSummaryAvailable = false;
+        _summaryServiceAvailable = false;
 
         TxtDuration.Text = "00:00:00";
         TxtSpeakerCount.Text = "0";
         TxtSegmentCount.Text = "0";
         TxtMeetingSummary.Text =
-            "会议开始后，Granite 会在后台加载并持续更新摘要。";
+            "会议开始后，Granite 会在后台加载并持续更新实时速览。";
+        TxtDetailedMeetingSummary.Text =
+            "会议进行中可随时点击“生成详细摘要”。";
         TxtSummaryStatus.Text = "尚未启动";
         TxtSummaryUpdated.Text = "";
         _summaryReady = false;

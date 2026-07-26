@@ -1,7 +1,23 @@
 #pragma once
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace meetingai::proto {
+
+	struct MeetingHotwordConfig {
+		std::string text;
+		float score = 2.0f;
+	};
+
+	struct MeetingContextCommand {
+		std::int64_t preparationId = 0;
+		std::string title;
+		std::vector<std::int64_t> documentIds;
+		std::vector<MeetingHotwordConfig> hotwords;
+
+		bool HasPreparation() const { return preparationId > 0; }
+	};
 
 	std::string trim(std::string s);
 
@@ -89,6 +105,17 @@ namespace meetingai::proto {
 
 	// 从 start_streaming 提取本地滚动摘要开关；缺省为开启。
 	bool extractSummaryEnabled(const std::string& json);
+
+	// 提取一次 Start 所绑定的会议资料快照。文档最多 5 份，热词最多 100 个。
+	MeetingContextCommand extractMeetingContext(const std::string& json);
+
+	// 转换为 sherpa-onnx hotwords_buf 格式（每行：词条 :分数）。
+	std::string buildSherpaHotwordsBuffer(
+		const MeetingContextCommand& context);
+
+	// 生成随 meeting 固化的 JSON，历史会议不依赖之后被修改的资料配置。
+	std::string buildMeetingContextSnapshotJson(
+		const MeetingContextCommand& context);
 
 	// {"type":"request_meeting_summary"}，用于 UI 手动立即生成一版。
 	bool isRequestMeetingSummary(const std::string& json);

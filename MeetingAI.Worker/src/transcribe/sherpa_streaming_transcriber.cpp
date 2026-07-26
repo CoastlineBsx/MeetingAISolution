@@ -39,7 +39,9 @@ SherpaStreamingTranscriber::~SherpaStreamingTranscriber()
 
 bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
                                              const std::string& tokensPath,
-                                             int sampleRate)
+                                             int sampleRate,
+                                             const std::string& hotwordsBuffer,
+                                             const std::string& bpeVocabPath)
 {
     if (m_initialized) {
         m_lastError = "Already initialized";
@@ -90,6 +92,11 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
             m_lastError = "tokens 文件不存在: " + tokensPath;
             return false;
         }
+        if (!hotwordsBuffer.empty() &&
+            !std::filesystem::exists(bpeVocabPath, ec)) {
+            m_lastError = "热词 BPE 词表不存在: " + bpeVocabPath;
+            return false;
+        }
     }
 
     // 配置识别器
@@ -111,10 +118,19 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
     config.feat_config.sample_rate = sampleRate;
     config.feat_config.feature_dim = 80;
 
-    // 设置解码参数
-    config.decoding_method = "greedy_search";
+    // Sherpa 的上下文热词只在 Transducer 的 modified_beam_search 下生效。
+    // 没有绑定会议资料时继续走原来的 greedy_search，避免平白增加延迟。
+    const bool hotwordsEnabled = !hotwordsBuffer.empty();
+    config.decoding_method = hotwordsEnabled
+        ? "modified_beam_search"
+        : "greedy_search";
     config.max_active_paths = 4;
     config.enable_endpoint = 1;
+    if (hotwordsEnabled) {
+        config.model_config.modeling_unit = "cjkchar+bpe";
+        config.model_config.bpe_vocab = bpeVocabPath.c_str();
+        config.hotwords_score = 1.5f;
+    }
 
     // 端点检测配置
     config.rule1_min_trailing_silence = 2.4f;
@@ -139,7 +155,9 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
 
 // ==================== 会话管理 ====================
 
-bool SherpaStreamingTranscriber::StartSession(const std::string& source)
+bool SherpaStreamingTranscriber::StartSession(
+    const std::string& source,
+    const std::string& hotwordsBuffer)
 {
     if (!m_initialized) {
         m_lastError = "Not initialized";
@@ -156,8 +174,23 @@ bool SherpaStreamingTranscriber::StartSession(const std::string& source)
         return false;
     }
 
-    const SherpaOnnxOnlineStream* stream =
-        SherpaOnnxCreateOnlineStream(m_impl->recognizer);
+    const SherpaOnnxOnlineStream* stream = nullptr;
+    try {
+        stream = hotwordsBuffer.empty()
+            ? SherpaOnnxCreateOnlineStream(m_impl->recognizer)
+            : SherpaOnnxCreateOnlineStreamWithHotwords(
+                m_impl->recognizer,
+                hotwordsBuffer.c_str());
+    }
+    catch (const std::exception& error) {
+        m_lastError =
+            "Sherpa 热词解析失败: " + std::string(error.what());
+        return false;
+    }
+    catch (...) {
+        m_lastError = "Sherpa 热词解析失败: 未知错误";
+        return false;
+    }
 
     if (stream == nullptr) {
         m_lastError = "Failed to create stream for source: " + source;

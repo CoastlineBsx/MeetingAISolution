@@ -1,0 +1,117 @@
+<Page
+    x:Class="MeetingAI.Host.Pages.MeetingPreparationPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <ScrollViewer>
+        <Grid Padding="32" MaxWidth="1180" HorizontalAlignment="Center">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="会议准备" FontSize="30" FontWeight="SemiBold"/>
+                <TextBlock Text="每场会议最多导入 5 份资料；也可只建立主题和手工热词，然后用于下一场实时会议。"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <Border Grid.Row="1" Margin="0,24,0,16" Padding="20" CornerRadius="10"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="1  建立准备档案" FontSize="18" FontWeight="SemiBold"/>
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TitleBox" Header="会议主题" PlaceholderText="例如：Q3 产品路线评审"/>
+                        <Button Grid.Column="1" x:Name="CreateButton" Content="新建准备档案"
+                                VerticalAlignment="Bottom" Click="CreateButton_Click"/>
+                        <Button Grid.Column="2" x:Name="UploadButton" Content="添加会前资料"
+                                VerticalAlignment="Bottom" IsEnabled="False" Click="UploadButton_Click"/>
+                        <Button Grid.Column="3" x:Name="UseForMeetingButton" Content="用于下一场会议"
+                                VerticalAlignment="Bottom" IsEnabled="False" Click="UseForMeetingButton_Click"/>
+                    </Grid>
+                    <ProgressBar x:Name="WorkProgress" IsIndeterminate="True" Visibility="Collapsed"/>
+                    <TextBlock x:Name="StatusText" Text="先填写主题并建立准备档案。" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <Grid Grid.Row="2" ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="3*"/>
+                </Grid.ColumnDefinitions>
+                <Border Padding="20" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="2  已导入资料" FontSize="18" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" x:Name="MaterialLimitText" Text="0 / 5"
+                                       VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </Grid>
+                        <TextBlock Text="每张幻灯片或 PDF 页面会单独入库，后续检索能定位到原页。"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                        <ListView x:Name="MaterialList" MinHeight="280">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Display}" TextWrapping="Wrap" Margin="0,6"/>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Padding="20" CornerRadius="10"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="3  术语热词草案" FontSize="18" FontWeight="SemiBold"/>
+                                <TextBlock Text="可修改词语、权重或取消启用；保存后供后续实时转录阶段使用。"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" x:Name="SaveHotwordsButton" Content="保存热词"
+                                    IsEnabled="False" Click="SaveHotwordsButton_Click"/>
+                            <Button Grid.Column="2" x:Name="AddHotwordButton" Content="添加手工热词"
+                                    Margin="8,0,0,0" IsEnabled="False" Click="AddHotwordButton_Click"/>
+                        </Grid>
+                        <ListView x:Name="HotwordList" MinHeight="280">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnSpacing="10" Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="110"/>
+                                            <ColumnDefinition Width="90"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <NumberBox Grid.Column="2" Value="{Binding Score, Mode=TwoWay}"
+                                                   Minimum="1" Maximum="5" SmallChange="0.25" SpinButtonPlacementMode="Compact"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding PagesDisplay}" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</Page>

@@ -109,6 +109,26 @@ public class DocumentChunker
         return chunks;
     }
 
+    public List<DocumentChunk> ChunkDocument(IReadOnlyList<ExtractedDocumentPage> pages, string source)
+    {
+        var result = new List<DocumentChunk>();
+        foreach (var page in pages)
+        {
+            var pageChunks = ChunkDocument(page.Content, source);
+            foreach (var chunk in pageChunks)
+            {
+                chunk.PageNumber = page.PageNumber;
+                chunk.ChunkIndex = result.Count;
+                result.Add(chunk);
+            }
+        }
+
+        foreach (var chunk in result)
+            chunk.TotalChunks = result.Count;
+
+        return result;
+    }
+
     /// <summary>
     /// 按段落分割文本
     /// </summary>

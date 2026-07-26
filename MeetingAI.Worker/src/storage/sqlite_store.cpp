@@ -2,6 +2,7 @@
 #include "database.hpp"
 #include "paths.h"
 #include "sqlite3.h"
+#include <algorithm>
 #include <iostream>
 #include <string>
 #include <cmath>
@@ -174,6 +175,40 @@ static bool ExecSQL(sqlite3* db, const char* sql) {
     return true;
 }
 
+static bool EnsureMeetingColumn(
+    sqlite3* db,
+    const char* columnName,
+    const char* declaration) {
+    sqlite3_stmt* statement = nullptr;
+    if (sqlite3_prepare_v2(
+        db,
+        "PRAGMA table_info(meeting);",
+        -1,
+        &statement,
+        nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    bool found = false;
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        const char* existing = reinterpret_cast<const char*>(
+            sqlite3_column_text(statement, 1));
+        if (existing && std::string(existing) == columnName) {
+            found = true;
+            break;
+        }
+    }
+    sqlite3_finalize(statement);
+    if (found) {
+        return true;
+    }
+
+    const std::string sql =
+        "ALTER TABLE meeting ADD COLUMN " +
+        std::string(columnName) + " " + declaration + ";";
+    return ExecSQL(db, sql.c_str());
+}
+
 bool InitDatabaseOnce() {
     // 用 UTF-8 打开（跨平台更稳）
     sqlite3* db = nullptr;
@@ -219,7 +254,12 @@ CREATE TABLE IF NOT EXISTS meeting (
   title            TEXT,
   tz               TEXT DEFAULT 'Europe/London',
   started_at_utc   DATETIME,
-  ended_at_utc     DATETIME
+  ended_at_utc     DATETIME,
+  preparation_id   INTEGER,
+  context_title    TEXT,
+  context_snapshot_json TEXT,
+  hotword_count    INTEGER NOT NULL DEFAULT 0,
+  rag_enabled      INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS participant (
@@ -341,12 +381,27 @@ WHERE speaker_hint='system'
   AND start_ms=0
   AND end_ms=0;
 
-PRAGMA user_version=2;
+PRAGMA user_version=3;
 
 COMMIT;
 )SQL";
 
     if (!ExecSQL(db, ddl)) { sqlite3_close(db); return false; }
+    if (!EnsureMeetingColumn(db, "preparation_id", "INTEGER") ||
+        !EnsureMeetingColumn(db, "context_title", "TEXT") ||
+        !EnsureMeetingColumn(db, "context_snapshot_json", "TEXT") ||
+        !EnsureMeetingColumn(
+            db,
+            "hotword_count",
+            "INTEGER NOT NULL DEFAULT 0") ||
+        !EnsureMeetingColumn(
+            db,
+            "rag_enabled",
+            "INTEGER NOT NULL DEFAULT 0") ||
+        !ExecSQL(db, "PRAGMA user_version=3;")) {
+        sqlite3_close(db);
+        return false;
+    }
     DumpSchema(db);
     sqlite3_close(db);
     return true;
@@ -488,7 +543,12 @@ bool InsertTranscript(const std::string& speaker,
 
 std::int64_t BeginStreamingMeeting(
     const std::vector<std::string>& sources,
-    int sampleRateHz) {
+    int sampleRateHz,
+    const std::string& contextTitle,
+    std::int64_t preparationId,
+    const std::string& contextSnapshotJson,
+    int hotwordCount,
+    bool ragEnabled) {
     std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
 
     sqlite3* db = nullptr;
@@ -513,10 +573,69 @@ std::int64_t BeginStreamingMeeting(
         return 0;
     }
 
+    const std::string meetingTitle = contextTitle.empty()
+        ? "Streaming Meeting"
+        : contextTitle;
     const char* insertMeeting =
-        "INSERT INTO meeting(ext_source,title,tz,started_at_utc) "
-        "VALUES('streaming','Streaming Meeting','Europe/London',datetime('now'));";
-    if (sqlite3_exec(db, insertMeeting, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        "INSERT INTO meeting("
+        "ext_source,title,tz,started_at_utc,preparation_id,context_title,"
+        "context_snapshot_json,hotword_count,rag_enabled) "
+        "VALUES('streaming',?,'Europe/London',datetime('now'),?,?,?,?,?);";
+    sqlite3_stmt* meetingStatement = nullptr;
+    if (sqlite3_prepare_v2(
+        db,
+        insertMeeting,
+        -1,
+        &meetingStatement,
+        nullptr) != SQLITE_OK) {
+        std::cerr << "[DB] insert streaming meeting failed: "
+                  << sqlite3_errmsg(db) << "\n";
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    sqlite3_bind_text(
+        meetingStatement,
+        1,
+        meetingTitle.c_str(),
+        -1,
+        SQLITE_TRANSIENT);
+    if (preparationId > 0) {
+        sqlite3_bind_int64(meetingStatement, 2, preparationId);
+    }
+    else {
+        sqlite3_bind_null(meetingStatement, 2);
+    }
+    if (!contextTitle.empty()) {
+        sqlite3_bind_text(
+            meetingStatement,
+            3,
+            contextTitle.c_str(),
+            -1,
+            SQLITE_TRANSIENT);
+    }
+    else {
+        sqlite3_bind_null(meetingStatement, 3);
+    }
+    if (!contextSnapshotJson.empty()) {
+        sqlite3_bind_text(
+            meetingStatement,
+            4,
+            contextSnapshotJson.c_str(),
+            -1,
+            SQLITE_TRANSIENT);
+    }
+    else {
+        sqlite3_bind_null(meetingStatement, 4);
+    }
+    sqlite3_bind_int(
+        meetingStatement,
+        5,
+        std::max(0, hotwordCount));
+    sqlite3_bind_int(meetingStatement, 6, ragEnabled ? 1 : 0);
+    const int meetingInsertResult = sqlite3_step(meetingStatement);
+    sqlite3_finalize(meetingStatement);
+    if (meetingInsertResult != SQLITE_DONE) {
         std::cerr << "[DB] insert streaming meeting failed: "
                   << sqlite3_errmsg(db) << "\n";
         RollbackTransaction(db);

@@ -35,16 +35,23 @@ public:
     /// <param name="modelDir">模型目录路径（包含 encoder/decoder/joiner ONNX 文件）</param>
     /// <param name="tokensPath">Tokens 文件路径（bpe.vocab 或 tokens.txt）</param>
     /// <param name="sampleRate">音频采样率（默认 16000）</param>
+    /// <param name="hotwordsBuffer">当前会议的 Sherpa 热词缓冲区；空字符串表示通用模式</param>
+    /// <param name="bpeVocabPath">启用热词时使用的 BPE 词表</param>
     /// <returns>成功返回 true</returns>
     bool Initialize(const std::string& modelDir,
                     const std::string& tokensPath,
-                    int sampleRate = 16000);
+                    int sampleRate = 16000,
+                    const std::string& hotwordsBuffer = {},
+                    const std::string& bpeVocabPath = {});
 
     /// <summary>
     /// 开始流式转录会话
     /// </summary>
+    /// <param name="hotwordsBuffer">该会话的热词；同一个 recognizer 可为不同会议传不同热词</param>
     /// <returns>成功返回 true</returns>
-    bool StartSession(const std::string& source);
+    bool StartSession(
+        const std::string& source,
+        const std::string& hotwordsBuffer = {});
 
     /// <summary>
     /// 接受音频流数据（PCM 16-bit, mono, 16kHz）

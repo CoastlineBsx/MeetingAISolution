@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using MeetingAI.Host.MeetingPreparation;
 
 namespace MeetingAI.Host.RAG.VectorStore;
 
@@ -60,12 +61,214 @@ public class SqliteVectorDatabase : IDisposable
         var createIndexes = @"
             CREATE INDEX IF NOT EXISTS idx_doc_id ON document_chunks(doc_id);";
 
+        var createPreparationTables = @"
+            CREATE TABLE IF NOT EXISTS meeting_preparations (
+                preparation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS preparation_materials (
+                preparation_id INTEGER NOT NULL,
+                doc_id INTEGER NOT NULL,
+                page_count INTEGER NOT NULL DEFAULT 0,
+                material_role TEXT NOT NULL DEFAULT 'reference',
+                PRIMARY KEY (preparation_id, doc_id),
+                FOREIGN KEY (preparation_id) REFERENCES meeting_preparations(preparation_id) ON DELETE CASCADE,
+                FOREIGN KEY (doc_id) REFERENCES documents(doc_id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS meeting_hotwords (
+                hotword_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                preparation_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                normalized_text TEXT NOT NULL,
+                score REAL NOT NULL DEFAULT 2.0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                source_pages TEXT,
+                source_kind TEXT,
+                UNIQUE (preparation_id, normalized_text),
+                FOREIGN KEY (preparation_id) REFERENCES meeting_preparations(preparation_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_preparation_materials_doc ON preparation_materials(doc_id);
+            CREATE INDEX IF NOT EXISTS idx_hotwords_preparation ON meeting_hotwords(preparation_id);";
+
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = createDocumentsTable + createChunksTable + createIndexes;
+        cmd.CommandText = "PRAGMA foreign_keys=ON;" + createDocumentsTable + createChunksTable +
+                          createPreparationTables + createIndexes;
         await cmd.ExecuteNonQueryAsync();
 
         // 数据库迁移：添加缺失的列（兼容旧版本数据库）
         await MigrateSchemaAsync();
+    }
+
+    public async Task<long> CreatePreparationAsync(string title)
+    {
+        EnsureInitialized();
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = @"INSERT INTO meeting_preparations(title) VALUES (@title);
+                            SELECT last_insert_rowid();";
+        cmd.Parameters.AddWithValue("@title", string.IsNullOrWhiteSpace(title) ? "未命名会议" : title.Trim());
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+    }
+
+    public async Task<List<MeetingPreparationInfo>> GetPreparationsAsync()
+    {
+        EnsureInitialized();
+        var result = new List<MeetingPreparationInfo>();
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = @"
+            SELECT p.preparation_id, p.title, p.status, p.created_at, p.updated_at,
+                   COUNT(DISTINCT pm.doc_id),
+                   COUNT(DISTINCT CASE WHEN h.enabled=1 THEN h.hotword_id END)
+            FROM meeting_preparations p
+            LEFT JOIN preparation_materials pm ON pm.preparation_id=p.preparation_id
+            LEFT JOIN meeting_hotwords h ON h.preparation_id=p.preparation_id
+            GROUP BY p.preparation_id
+            ORDER BY p.updated_at DESC, p.preparation_id DESC;";
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new MeetingPreparationInfo
+            {
+                PreparationId = reader.GetInt64(0),
+                Title = reader.GetString(1),
+                Status = reader.GetString(2),
+                CreatedAt = reader.GetDateTime(3),
+                UpdatedAt = reader.GetDateTime(4),
+                MaterialCount = reader.GetInt32(5),
+                EnabledHotwordCount = reader.GetInt32(6)
+            });
+        }
+        return result;
+    }
+
+    public async Task<int> GetPreparationMaterialCountAsync(long preparationId)
+    {
+        EnsureInitialized();
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM preparation_materials WHERE preparation_id=@preparationId;";
+        cmd.Parameters.AddWithValue("@preparationId", preparationId);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync());
+    }
+
+    public async Task<List<long>> GetPreparationDocumentIdsAsync(long preparationId)
+    {
+        EnsureInitialized();
+        var result = new List<long>();
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = "SELECT doc_id FROM preparation_materials WHERE preparation_id=@preparationId ORDER BY doc_id;";
+        cmd.Parameters.AddWithValue("@preparationId", preparationId);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) result.Add(reader.GetInt64(0));
+        return result;
+    }
+
+    public async Task AttachDocumentToPreparationAsync(long preparationId, long docId, int pageCount)
+    {
+        EnsureInitialized();
+        if (await GetPreparationMaterialCountAsync(preparationId) >= 5)
+            throw new InvalidOperationException("一场会议最多只能绑定 5 份资料");
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = @"INSERT INTO preparation_materials(preparation_id, doc_id, page_count)
+                            VALUES(@preparationId, @docId, @pageCount)
+                            ON CONFLICT(preparation_id, doc_id) DO UPDATE SET page_count=excluded.page_count;
+                            UPDATE meeting_preparations SET updated_at=CURRENT_TIMESTAMP
+                            WHERE preparation_id=@preparationId;";
+        cmd.Parameters.AddWithValue("@preparationId", preparationId);
+        cmd.Parameters.AddWithValue("@docId", docId);
+        cmd.Parameters.AddWithValue("@pageCount", pageCount);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<List<MeetingMaterialInfo>> GetPreparationMaterialsAsync(long preparationId)
+    {
+        EnsureInitialized();
+        var result = new List<MeetingMaterialInfo>();
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = @"SELECT d.doc_id, d.filename, d.file_type, pm.page_count,
+                                   d.total_chunks, d.has_ocr
+                            FROM preparation_materials pm
+                            JOIN documents d ON d.doc_id=pm.doc_id
+                            WHERE pm.preparation_id=@preparationId
+                            ORDER BY d.upload_time;";
+        cmd.Parameters.AddWithValue("@preparationId", preparationId);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new MeetingMaterialInfo
+            {
+                DocumentId = reader.GetInt64(0),
+                FileName = reader.GetString(1),
+                FileType = reader.GetString(2),
+                PageCount = reader.GetInt32(3),
+                ChunkCount = reader.GetInt32(4),
+                UsedOcr = reader.GetInt32(5) != 0
+            });
+        }
+        return result;
+    }
+
+    public async Task SaveHotwordsAsync(long preparationId, IEnumerable<HotwordCandidate> hotwords)
+    {
+        EnsureInitialized();
+        using var transaction = _connection!.BeginTransaction();
+        using (var delete = _connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            delete.CommandText = "DELETE FROM meeting_hotwords WHERE preparation_id=@preparationId;";
+            delete.Parameters.AddWithValue("@preparationId", preparationId);
+            await delete.ExecuteNonQueryAsync();
+        }
+        foreach (var hotword in hotwords.Where(item => !string.IsNullOrWhiteSpace(item.Text)))
+        {
+            using var insert = _connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = @"INSERT INTO meeting_hotwords
+                (preparation_id, text, normalized_text, score, enabled, source_pages, source_kind)
+                VALUES(@preparationId, @text, @normalized, @score, @enabled, @pages, @kind);";
+            insert.Parameters.AddWithValue("@preparationId", preparationId);
+            insert.Parameters.AddWithValue("@text", hotword.Text.Trim());
+            insert.Parameters.AddWithValue("@normalized", hotword.Text.Trim().ToLowerInvariant());
+            insert.Parameters.AddWithValue("@score", hotword.Score);
+            insert.Parameters.AddWithValue("@enabled", hotword.Enabled ? 1 : 0);
+            insert.Parameters.AddWithValue("@pages", string.Join(",", hotword.SourcePages));
+            insert.Parameters.AddWithValue("@kind", hotword.SourceKind);
+            await insert.ExecuteNonQueryAsync();
+        }
+        await transaction.CommitAsync();
+    }
+
+    public async Task<List<HotwordCandidate>> GetHotwordsAsync(long preparationId)
+    {
+        EnsureInitialized();
+        var result = new List<HotwordCandidate>();
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = @"SELECT hotword_id, text, score, enabled, source_pages, source_kind
+                            FROM meeting_hotwords WHERE preparation_id=@preparationId
+                            ORDER BY score DESC, text;";
+        cmd.Parameters.AddWithValue("@preparationId", preparationId);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var pages = reader.IsDBNull(4) ? Array.Empty<int>() : reader.GetString(4).Split(',')
+                .Select(value => int.TryParse(value, out var number) ? number : 0).Where(number => number > 0).ToArray();
+            result.Add(new HotwordCandidate
+            {
+                HotwordId = reader.GetInt64(0),
+                Text = reader.GetString(1),
+                Score = reader.GetDouble(2),
+                Enabled = reader.GetInt32(3) != 0,
+                SourcePages = pages.ToList(),
+                SourceKind = reader.IsDBNull(5) ? "rule" : reader.GetString(5)
+            });
+        }
+        return result;
+    }
+
+    private void EnsureInitialized()
+    {
+        if (_connection == null) throw new InvalidOperationException("Database not initialized");
     }
 
     /// <summary>
@@ -205,6 +408,39 @@ public class SqliteVectorDatabase : IDisposable
         }
 
         return searchResults;
+    }
+
+    public async Task<List<SearchResult>> SearchPreparationAsync(
+        long preparationId,
+        float[] queryVector,
+        int topK = 5)
+    {
+        EnsureInitialized();
+        using var cmd = _connection!.CreateCommand();
+        cmd.CommandText = @"
+            SELECT c.chunk_id, c.doc_id, c.content, c.embedding, c.page_number, d.filename
+            FROM document_chunks c
+            JOIN preparation_materials pm ON pm.doc_id=c.doc_id
+            JOIN documents d ON d.doc_id=c.doc_id
+            WHERE pm.preparation_id=@preparationId;";
+        cmd.Parameters.AddWithValue("@preparationId", preparationId);
+
+        var results = new List<SearchResult>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var embedding = BlobToVector((byte[])reader[3]);
+            results.Add(new SearchResult
+            {
+                ChunkId = reader.GetInt64(0),
+                DocId = reader.GetInt64(1),
+                Content = reader.GetString(2),
+                Similarity = CosineSimilarity(queryVector, embedding),
+                PageNumber = reader.GetInt32(4),
+                Filename = reader.GetString(5)
+            });
+        }
+        return results.OrderByDescending(item => item.Similarity).Take(topK).ToList();
     }
 
     private async Task<string> GetDocumentFilenameAsync(long docId)

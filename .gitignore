@@ -5,6 +5,8 @@
 
 # model files
 models/
+!MeetingAI.Host/RAG/Models/
+!MeetingAI.Host/RAG/Models/DocumentModels.cs
 
 # User-specific files
 *.rsuser

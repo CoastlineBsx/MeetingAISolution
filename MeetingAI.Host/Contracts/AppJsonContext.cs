@@ -23,6 +23,7 @@ namespace MeetingAI.Host.Contracts;
 [JsonSerializable(typeof(SimilarityPair))]
 [JsonSerializable(typeof(StreamingAudioCommand))]
 [JsonSerializable(typeof(StartStreamingCommand))]
+[JsonSerializable(typeof(StreamingHotword))]
 [JsonSerializable(typeof(StopStreamingCommand))]
 internal partial class AppJsonContext : JsonSerializerContext
 {

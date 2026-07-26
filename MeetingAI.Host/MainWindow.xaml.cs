@@ -95,6 +95,7 @@ public sealed partial class MainWindow : Window
         SettingsFrame.Navigate(typeof(Pages.SettingsPage));
         HelpFrame.Navigate(typeof(Pages.HelpPage));
         OpenVINOWhisperFrame.Navigate(typeof(Pages.OpenVINOWhisperPage));
+        MeetingPreparationFrame.Navigate(typeof(Pages.MeetingPreparationPage));
     }
 
     private Task AppendLineAsync(string text)
@@ -134,6 +135,7 @@ public sealed partial class MainWindow : Window
         ("信息提取", "ie_chat", new[] { "信息提取", "ie_chat", "extraction", "提取", "解析", "模板", "json", "结构化" }),
         ("智能解析", "ie", new[] { "智能解析", "ie", "提取", "解析", "模板", "信息提取" }),
         ("知识库", "rag", new[] { "知识库", "rag", "检索", "文档管理", "向量" }),
+        ("会议准备", "meeting_preparation", new[] { "会议准备", "ppt", "pptx", "会前资料", "热词", "术语", "rag" }),
         ("视觉理解", "llava", new[] { "视觉理解", "llava", "图片", "视觉", "图像", "看图" }),
         ("帮助", "help", new[] { "帮助", "help", "文档" }),
         ("设置", "settings", new[] { "设置", "settings", "主题", "外观" })
@@ -193,6 +195,8 @@ public sealed partial class MainWindow : Window
         SDPageContainer.Visibility = Visibility.Collapsed;
         HelpPageContainer.Visibility = Visibility.Collapsed;
         OpenVINOWhisperPageContainer.Visibility = Visibility.Collapsed;
+        StreamingMeetingPageContainer.Visibility = Visibility.Collapsed;
+        MeetingPreparationPageContainer.Visibility = Visibility.Collapsed;
         SettingsPageContainer.Visibility = Visibility.Collapsed;
 
         // 显示目标页面
@@ -231,6 +235,19 @@ public sealed partial class MainWindow : Window
             case "openvino_whisper":
                 OpenVINOWhisperPageContainer.Visibility = Visibility.Visible;
                 SelectNavigationItem("openvino_whisper");
+                break;
+            case "streaming_meeting":
+                StreamingMeetingPageContainer.Visibility = Visibility.Visible;
+                if (StreamingMeetingFrame.Content == null)
+                {
+                    StreamingMeetingFrame.Navigate(
+                        typeof(Pages.StreamingMeetingPage));
+                }
+                SelectNavigationItem("streaming_meeting");
+                break;
+            case "meeting_preparation":
+                MeetingPreparationPageContainer.Visibility = Visibility.Visible;
+                SelectNavigationItem("meeting_preparation");
                 break;
             case "help":
                 HelpPageContainer.Visibility = Visibility.Visible;
@@ -275,6 +292,7 @@ public sealed partial class MainWindow : Window
         StartupPageContainer.Visibility = Visibility.Collapsed;
         OpenVINOWhisperPageContainer.Visibility = Visibility.Collapsed;
         StreamingMeetingPageContainer.Visibility = Visibility.Collapsed;
+        MeetingPreparationPageContainer.Visibility = Visibility.Collapsed;
         ChatPageContainer.Visibility = Visibility.Collapsed;
         QuickQAPageContainer.Visibility = Visibility.Collapsed;
         IEChatPageContainer.Visibility = Visibility.Collapsed;
@@ -320,6 +338,13 @@ public sealed partial class MainWindow : Window
                     if (StreamingMeetingFrame.Content == null)
                     {
                         StreamingMeetingFrame.Navigate(typeof(Pages.StreamingMeetingPage));
+                    }
+                    break;
+                case "meeting_preparation":
+                    MeetingPreparationPageContainer.Visibility = Visibility.Visible;
+                    if (MeetingPreparationFrame.Content == null)
+                    {
+                        MeetingPreparationFrame.Navigate(typeof(Pages.MeetingPreparationPage));
                     }
                     break;
                 case "chat":
