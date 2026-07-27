@@ -175,14 +175,17 @@ static bool ExecSQL(sqlite3* db, const char* sql) {
     return true;
 }
 
-static bool EnsureMeetingColumn(
+static bool EnsureTableColumn(
     sqlite3* db,
+    const char* tableName,
     const char* columnName,
     const char* declaration) {
+    const std::string pragma = "PRAGMA table_info(" +
+        std::string(tableName) + ");";
     sqlite3_stmt* statement = nullptr;
     if (sqlite3_prepare_v2(
         db,
-        "PRAGMA table_info(meeting);",
+        pragma.c_str(),
         -1,
         &statement,
         nullptr) != SQLITE_OK) {
@@ -204,7 +207,7 @@ static bool EnsureMeetingColumn(
     }
 
     const std::string sql =
-        "ALTER TABLE meeting ADD COLUMN " +
+        "ALTER TABLE " + std::string(tableName) + " ADD COLUMN " +
         std::string(columnName) + " " + declaration + ";";
     return ExecSQL(db, sql.c_str());
 }
@@ -283,10 +286,30 @@ CREATE TABLE IF NOT EXISTS stream (
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_stream_per_meeting ON stream(meeting_id, type);
 CREATE INDEX IF NOT EXISTS idx_stream_meeting ON stream(meeting_id);
 
+CREATE TABLE IF NOT EXISTS transcription_run (
+  id               INTEGER PRIMARY KEY,
+  meeting_id       INTEGER NOT NULL REFERENCES meeting(id) ON DELETE CASCADE,
+  engine           TEXT NOT NULL,
+  model_name       TEXT NOT NULL,
+  runtime          TEXT NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'queued',
+  progress         INTEGER NOT NULL DEFAULT 0,
+  translation_mode TEXT,
+  hotwords_text    TEXT,
+  created_at_utc   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  started_at_utc   DATETIME,
+  completed_at_utc DATETIME,
+  error_text       TEXT,
+  is_canonical     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_transcription_run_meeting
+ON transcription_run(meeting_id, id);
+
 CREATE TABLE IF NOT EXISTS segment (
   id               INTEGER PRIMARY KEY,
   meeting_id       INTEGER NOT NULL REFERENCES meeting(id) ON DELETE CASCADE,
   stream_id        INTEGER REFERENCES stream(id) ON DELETE SET NULL,
+  transcription_run_id INTEGER REFERENCES transcription_run(id) ON DELETE CASCADE,
   seq              INTEGER NOT NULL,
   start_ms         INTEGER NOT NULL,
   end_ms           INTEGER NOT NULL,
@@ -368,6 +391,8 @@ CREATE TABLE IF NOT EXISTS meeting_summary (
   prompt_version             TEXT NOT NULL,
   summary_text               TEXT NOT NULL,
   is_final                   INTEGER NOT NULL DEFAULT 0,
+  transcription_run_id       INTEGER REFERENCES transcription_run(id) ON DELETE SET NULL,
+  summary_kind               TEXT NOT NULL DEFAULT 'rolling_quick',
   UNIQUE(meeting_id, revision_no)
 );
 CREATE INDEX IF NOT EXISTS idx_summary_meeting
@@ -381,24 +406,42 @@ WHERE speaker_hint='system'
   AND start_ms=0
   AND end_ms=0;
 
-PRAGMA user_version=3;
+PRAGMA user_version=4;
 
 COMMIT;
 )SQL";
 
     if (!ExecSQL(db, ddl)) { sqlite3_close(db); return false; }
-    if (!EnsureMeetingColumn(db, "preparation_id", "INTEGER") ||
-        !EnsureMeetingColumn(db, "context_title", "TEXT") ||
-        !EnsureMeetingColumn(db, "context_snapshot_json", "TEXT") ||
-        !EnsureMeetingColumn(
+    if (!EnsureTableColumn(db, "meeting", "preparation_id", "INTEGER") ||
+        !EnsureTableColumn(db, "meeting", "context_title", "TEXT") ||
+        !EnsureTableColumn(
+            db, "meeting", "context_snapshot_json", "TEXT") ||
+        !EnsureTableColumn(
             db,
+            "meeting",
             "hotword_count",
             "INTEGER NOT NULL DEFAULT 0") ||
-        !EnsureMeetingColumn(
+        !EnsureTableColumn(
             db,
+            "meeting",
             "rag_enabled",
             "INTEGER NOT NULL DEFAULT 0") ||
-        !ExecSQL(db, "PRAGMA user_version=3;")) {
+        !EnsureTableColumn(
+            db,
+            "segment",
+            "transcription_run_id",
+            "INTEGER REFERENCES transcription_run(id) ON DELETE CASCADE") ||
+        !EnsureTableColumn(
+            db,
+            "meeting_summary",
+            "transcription_run_id",
+            "INTEGER REFERENCES transcription_run(id) ON DELETE SET NULL") ||
+        !EnsureTableColumn(
+            db,
+            "meeting_summary",
+            "summary_kind",
+            "TEXT NOT NULL DEFAULT 'rolling_quick'") ||
+        !ExecSQL(db, "PRAGMA user_version=4;")) {
         sqlite3_close(db);
         return false;
     }
@@ -714,6 +757,39 @@ bool EndStreamingMeeting(std::int64_t meetingId) {
     return ok;
 }
 
+bool UpdateStreamingMediaPath(
+    std::int64_t meetingId,
+    const std::string& source,
+    const std::string& mediaPath) {
+    if (meetingId <= 0 || source.empty() || mediaPath.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db)) {
+        return false;
+    }
+    sqlite3_stmt* statement = nullptr;
+    const char* sql =
+        "UPDATE stream SET media_path=? WHERE meeting_id=? AND type=?;";
+    if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_bind_text(
+        statement, 1, mediaPath.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(statement, 2, meetingId);
+    sqlite3_bind_text(
+        statement, 3, source.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok =
+        sqlite3_step(statement) == SQLITE_DONE &&
+        sqlite3_changes(db) > 0;
+    sqlite3_finalize(statement);
+    sqlite3_close(db);
+    return ok;
+}
+
 std::int64_t InsertStreamingFinal(
     std::int64_t meetingId,
     const std::string& source,
@@ -925,7 +1001,10 @@ bool InsertStreamingTranslation(
         "segment_id,parent_rev_id,stage,model_id,text_final"
         ") VALUES("
         "?,(SELECT id FROM revision "
-        "   WHERE segment_id=? AND stage='asr_normalized' LIMIT 1),?,?,?"
+        "   WHERE segment_id=? "
+        "     AND stage IN ('asr_whisper_final','asr_normalized') "
+        "   ORDER BY CASE stage "
+        "     WHEN 'asr_whisper_final' THEN 0 ELSE 1 END LIMIT 1),?,?,?"
         ") ON CONFLICT(segment_id,stage) DO UPDATE SET "
         "model_id=excluded.model_id,"
         "text_final=excluded.text_final,"
@@ -962,6 +1041,351 @@ bool InsertStreamingTranslation(
     return true;
 }
 
+std::int64_t BeginTranscriptionRun(
+    std::int64_t meetingId,
+    const std::string& engine,
+    const std::string& modelName,
+    const std::string& runtime,
+    const std::string& translationMode,
+    const std::string& hotwordsText) {
+    if (meetingId <= 0 || engine.empty() || modelName.empty()) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db)) {
+        return 0;
+    }
+    sqlite3_stmt* statement = nullptr;
+    const char* sql =
+        "INSERT INTO transcription_run("
+        "meeting_id,engine,model_name,runtime,status,progress,"
+        "translation_mode,hotwords_text,started_at_utc"
+        ") VALUES(?,?,?,?,'transcribing',0,?,?,datetime('now'));";
+    if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        sqlite3_close(db);
+        return 0;
+    }
+    sqlite3_bind_int64(statement, 1, meetingId);
+    sqlite3_bind_text(
+        statement, 2, engine.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(
+        statement, 3, modelName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(
+        statement, 4, runtime.c_str(), -1, SQLITE_TRANSIENT);
+    if (translationMode.empty()) {
+        sqlite3_bind_null(statement, 5);
+    }
+    else {
+        sqlite3_bind_text(
+            statement, 5, translationMode.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    if (hotwordsText.empty()) {
+        sqlite3_bind_null(statement, 6);
+    }
+    else {
+        sqlite3_bind_text(
+            statement, 6, hotwordsText.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    const bool ok = sqlite3_step(statement) == SQLITE_DONE;
+    sqlite3_finalize(statement);
+    const std::int64_t runId =
+        ok ? sqlite3_last_insert_rowid(db) : 0;
+    sqlite3_close(db);
+    return runId;
+}
+
+bool UpdateTranscriptionRun(
+    std::int64_t runId,
+    const std::string& status,
+    int progress,
+    const std::string& errorText,
+    bool makeCanonical) {
+    if (runId <= 0 || status.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db) || !BeginTransaction(db)) {
+        if (db) sqlite3_close(db);
+        return false;
+    }
+
+    if (makeCanonical) {
+        sqlite3_stmt* clear = nullptr;
+        const char* clearSql =
+            "UPDATE transcription_run SET is_canonical=0 "
+            "WHERE meeting_id=("
+            "SELECT meeting_id FROM transcription_run WHERE id=?);";
+        if (sqlite3_prepare_v2(
+            db, clearSql, -1, &clear, nullptr) != SQLITE_OK) {
+            RollbackTransaction(db);
+            sqlite3_close(db);
+            return false;
+        }
+        sqlite3_bind_int64(clear, 1, runId);
+        const bool cleared = sqlite3_step(clear) == SQLITE_DONE;
+        sqlite3_finalize(clear);
+        if (!cleared) {
+            RollbackTransaction(db);
+            sqlite3_close(db);
+            return false;
+        }
+    }
+
+    sqlite3_stmt* statement = nullptr;
+    const char* sql =
+        "UPDATE transcription_run SET "
+        "status=?,progress=?,error_text=?,"
+        "is_canonical=CASE WHEN ?=1 THEN 1 ELSE is_canonical END,"
+        "completed_at_utc=CASE "
+        "  WHEN ? IN ('complete','failed') THEN datetime('now') "
+        "  ELSE completed_at_utc END "
+        "WHERE id=?;";
+    if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_bind_text(
+        statement, 1, status.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(statement, 2, std::clamp(progress, 0, 100));
+    if (errorText.empty()) {
+        sqlite3_bind_null(statement, 3);
+    }
+    else {
+        sqlite3_bind_text(
+            statement, 3, errorText.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    sqlite3_bind_int(statement, 4, makeCanonical ? 1 : 0);
+    sqlite3_bind_text(
+        statement, 5, status.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(statement, 6, runId);
+    const bool ok =
+        sqlite3_step(statement) == SQLITE_DONE &&
+        sqlite3_changes(db) > 0;
+    sqlite3_finalize(statement);
+
+    if (!ok || !CommitTransaction(db)) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_close(db);
+    return true;
+}
+
+bool LoadMeetingPostProcessInput(
+    std::int64_t meetingId,
+    MeetingPostProcessInput& input) {
+    input = {};
+    if (meetingId <= 0) {
+        return false;
+    }
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db)) {
+        return false;
+    }
+
+    sqlite3_stmt* streamStatement = nullptr;
+    const char* streamSql =
+        "SELECT type,media_path FROM stream "
+        "WHERE meeting_id=? AND media_path IS NOT NULL "
+        "  AND length(trim(media_path))>0;";
+    if (sqlite3_prepare_v2(
+        db, streamSql, -1, &streamStatement, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(streamStatement, 1, meetingId);
+        while (sqlite3_step(streamStatement) == SQLITE_ROW) {
+            const char* source = reinterpret_cast<const char*>(
+                sqlite3_column_text(streamStatement, 0));
+            const char* path = reinterpret_cast<const char*>(
+                sqlite3_column_text(streamStatement, 1));
+            if (source && path) {
+                input.audioPaths[source] = path;
+            }
+        }
+    }
+    sqlite3_finalize(streamStatement);
+
+    sqlite3_stmt* runStatement = nullptr;
+    const char* runSql =
+        "SELECT translation_mode,hotwords_text "
+        "FROM transcription_run WHERE meeting_id=? "
+        "ORDER BY id DESC LIMIT 1;";
+    if (sqlite3_prepare_v2(
+        db, runSql, -1, &runStatement, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(runStatement, 1, meetingId);
+        if (sqlite3_step(runStatement) == SQLITE_ROW) {
+            const char* mode = reinterpret_cast<const char*>(
+                sqlite3_column_text(runStatement, 0));
+            const char* hotwords = reinterpret_cast<const char*>(
+                sqlite3_column_text(runStatement, 1));
+            input.translationMode = mode ? mode : "off";
+            input.hotwordsText = hotwords ? hotwords : "";
+        }
+    }
+    sqlite3_finalize(runStatement);
+    sqlite3_close(db);
+    return !input.audioPaths.empty();
+}
+
+std::int64_t InsertWhisperFinalSegment(
+    std::int64_t runId,
+    std::int64_t meetingId,
+    const std::string& source,
+    std::int64_t sequence,
+    std::int64_t startMs,
+    std::int64_t endMs,
+    const std::string& rawText,
+    const std::string& finalText) {
+    if (runId <= 0 || meetingId <= 0 || finalText.empty()) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(g_meetingWriteMutex);
+
+    sqlite3* db = nullptr;
+    if (!OpenMeetingDatabase(&db) || !BeginTransaction(db)) {
+        if (db) sqlite3_close(db);
+        return 0;
+    }
+
+    std::int64_t streamId = 0;
+    sqlite3_stmt* streamStatement = nullptr;
+    const char* streamSql =
+        "SELECT id FROM stream WHERE meeting_id=? AND type=? LIMIT 1;";
+    if (sqlite3_prepare_v2(
+        db, streamSql, -1, &streamStatement, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(streamStatement, 1, meetingId);
+        sqlite3_bind_text(
+            streamStatement, 2, source.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(streamStatement) == SQLITE_ROW) {
+            streamId = sqlite3_column_int64(streamStatement, 0);
+        }
+    }
+    sqlite3_finalize(streamStatement);
+    if (streamId == 0) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    sqlite3_stmt* segmentStatement = nullptr;
+    const char* segmentSql =
+        "INSERT INTO segment("
+        "meeting_id,stream_id,transcription_run_id,seq,start_ms,end_ms,"
+        "speaker_hint,origin,source_meta,text_raw,is_final"
+        ") VALUES(?,?,?,?,?,?,?,?,?,?,1);";
+    if (sqlite3_prepare_v2(
+        db, segmentSql, -1, &segmentStatement, nullptr) != SQLITE_OK) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    const std::string speaker = source == "system" ? "对方" : "我方";
+    const std::string sourceMeta =
+        "{\"source\":\"" + source + "\",\"transcription_run_id\":"
+        + std::to_string(runId) + "}";
+    sqlite3_bind_int64(segmentStatement, 1, meetingId);
+    sqlite3_bind_int64(segmentStatement, 2, streamId);
+    sqlite3_bind_int64(segmentStatement, 3, runId);
+    sqlite3_bind_int64(segmentStatement, 4, sequence);
+    sqlite3_bind_int64(segmentStatement, 5, startMs);
+    sqlite3_bind_int64(segmentStatement, 6, endMs);
+    sqlite3_bind_text(
+        segmentStatement, 7, speaker.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(
+        segmentStatement,
+        8,
+        "asr_whisper_post",
+        -1,
+        SQLITE_STATIC);
+    sqlite3_bind_text(
+        segmentStatement,
+        9,
+        sourceMeta.c_str(),
+        -1,
+        SQLITE_TRANSIENT);
+    sqlite3_bind_text(
+        segmentStatement, 10, rawText.c_str(), -1, SQLITE_TRANSIENT);
+    const bool insertedSegment =
+        sqlite3_step(segmentStatement) == SQLITE_DONE;
+    sqlite3_finalize(segmentStatement);
+    if (!insertedSegment) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    const std::int64_t segmentId = sqlite3_last_insert_rowid(db);
+
+    const int modelId = EnsureModel(
+        db,
+        "Whisper large-v3",
+        "OpenVINO IR",
+        "asr",
+        "OpenVINO GenAI");
+    if (modelId == 0) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    sqlite3_stmt* rawStatement = nullptr;
+    const char* rawSql =
+        "INSERT INTO revision("
+        "segment_id,stage,model_id,text_final"
+        ") VALUES(?,'asr_whisper_raw',?,?);";
+    if (sqlite3_prepare_v2(
+        db, rawSql, -1, &rawStatement, nullptr) != SQLITE_OK) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    sqlite3_bind_int64(rawStatement, 1, segmentId);
+    sqlite3_bind_int(rawStatement, 2, modelId);
+    sqlite3_bind_text(
+        rawStatement, 3, rawText.c_str(), -1, SQLITE_TRANSIENT);
+    const bool insertedRaw = sqlite3_step(rawStatement) == SQLITE_DONE;
+    const std::int64_t rawRevisionId =
+        insertedRaw ? sqlite3_last_insert_rowid(db) : 0;
+    sqlite3_finalize(rawStatement);
+    if (!insertedRaw) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+
+    sqlite3_stmt* finalStatement = nullptr;
+    const char* finalSql =
+        "INSERT INTO revision("
+        "segment_id,parent_rev_id,stage,model_id,text_final"
+        ") VALUES(?,?,'asr_whisper_final',?,?);";
+    if (sqlite3_prepare_v2(
+        db, finalSql, -1, &finalStatement, nullptr) != SQLITE_OK) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    sqlite3_bind_int64(finalStatement, 1, segmentId);
+    sqlite3_bind_int64(finalStatement, 2, rawRevisionId);
+    sqlite3_bind_int(finalStatement, 3, modelId);
+    sqlite3_bind_text(
+        finalStatement, 4, finalText.c_str(), -1, SQLITE_TRANSIENT);
+    const bool insertedFinal =
+        sqlite3_step(finalStatement) == SQLITE_DONE;
+    sqlite3_finalize(finalStatement);
+
+    if (!insertedFinal || !CommitTransaction(db)) {
+        RollbackTransaction(db);
+        sqlite3_close(db);
+        return 0;
+    }
+    sqlite3_close(db);
+    return segmentId;
+}
+
 std::vector<MeetingTranscriptEntry> LoadMeetingTranscriptSince(
     std::int64_t meetingId,
     std::int64_t afterSegmentId) {
@@ -971,18 +1395,51 @@ std::vector<MeetingTranscriptEntry> LoadMeetingTranscriptSince(
         return entries;
     }
 
+    std::int64_t canonicalRunId = 0;
+    sqlite3_stmt* canonicalStatement = nullptr;
+    const char* canonicalSql =
+        "SELECT id FROM transcription_run "
+        "WHERE meeting_id=? AND is_canonical=1 "
+        "ORDER BY id DESC LIMIT 1;";
+    if (sqlite3_prepare_v2(
+        db,
+        canonicalSql,
+        -1,
+        &canonicalStatement,
+        nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(canonicalStatement, 1, meetingId);
+        if (sqlite3_step(canonicalStatement) == SQLITE_ROW) {
+            canonicalRunId = sqlite3_column_int64(canonicalStatement, 0);
+        }
+    }
+    sqlite3_finalize(canonicalStatement);
+
     sqlite3_stmt* statement = nullptr;
-    const char* sql =
-        "SELECT s.id,st.type,r.text_final "
+    const char* finalSql =
+        "SELECT s.id,st.type,r.text_final,s.start_ms,s.end_ms "
         "FROM segment s "
         "JOIN stream st ON st.id=s.stream_id "
         "JOIN revision r ON r.segment_id=s.id "
         "WHERE s.meeting_id=? AND s.id>? "
+        "  AND s.transcription_run_id=? "
+        "  AND s.is_final=1 AND r.stage='asr_whisper_final' "
+        "ORDER BY s.start_ms,s.id;";
+    const char* liveSql =
+        "SELECT s.id,st.type,r.text_final,s.start_ms,s.end_ms "
+        "FROM segment s "
+        "JOIN stream st ON st.id=s.stream_id "
+        "JOIN revision r ON r.segment_id=s.id "
+        "WHERE s.meeting_id=? AND s.id>? "
+        "  AND s.transcription_run_id IS NULL "
         "  AND s.is_final=1 AND r.stage='asr_normalized' "
         "ORDER BY s.start_ms,s.id;";
+    const char* sql = canonicalRunId > 0 ? finalSql : liveSql;
     if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) == SQLITE_OK) {
         sqlite3_bind_int64(statement, 1, meetingId);
         sqlite3_bind_int64(statement, 2, afterSegmentId);
+        if (canonicalRunId > 0) {
+            sqlite3_bind_int64(statement, 3, canonicalRunId);
+        }
         while (sqlite3_step(statement) == SQLITE_ROW) {
             MeetingTranscriptEntry entry;
             entry.segmentId = sqlite3_column_int64(statement, 0);
@@ -992,6 +1449,8 @@ std::vector<MeetingTranscriptEntry> LoadMeetingTranscriptSince(
                 sqlite3_column_text(statement, 2));
             entry.source = source ? source : "";
             entry.text = text ? text : "";
+            entry.startMs = sqlite3_column_int64(statement, 3);
+            entry.endMs = sqlite3_column_int64(statement, 4);
             entries.push_back(std::move(entry));
         }
     }
@@ -1024,10 +1483,13 @@ bool InsertMeetingSummary(
     const char* sql =
         "INSERT INTO meeting_summary("
         "meeting_id,revision_no,covered_through_segment_id,model_name,"
-        "prompt_version,summary_text,is_final"
+        "prompt_version,summary_text,is_final,transcription_run_id,summary_kind"
         ") VALUES("
         "?,(SELECT COALESCE(MAX(revision_no),0)+1 "
-        "   FROM meeting_summary WHERE meeting_id=?),?,?,?,?,?"
+        "   FROM meeting_summary WHERE meeting_id=?),?,?,?,?,?,"
+        "(SELECT id FROM transcription_run "
+        " WHERE meeting_id=? AND is_canonical=1 "
+        " ORDER BY id DESC LIMIT 1),?"
         ");";
     if (sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) != SQLITE_OK) {
         sqlite3_close(db);
@@ -1049,6 +1511,16 @@ bool InsertMeetingSummary(
     sqlite3_bind_text(
         statement, 6, summaryText.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(statement, 7, isFinal ? 1 : 0);
+    sqlite3_bind_int64(statement, 8, meetingId);
+    std::string summaryKind = "rolling_quick";
+    if (isFinal) {
+        summaryKind = "final_minutes";
+    }
+    else if (promptVersion.find("detailed") != std::string::npos) {
+        summaryKind = "detailed_draft";
+    }
+    sqlite3_bind_text(
+        statement, 9, summaryKind.c_str(), -1, SQLITE_TRANSIENT);
     const bool ok = sqlite3_step(statement) == SQLITE_DONE;
     if (!ok) {
         std::cerr << "[DB] insert meeting summary failed: "

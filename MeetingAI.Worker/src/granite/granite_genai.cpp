@@ -2,6 +2,7 @@
 
 #include "granite_genai.hpp"
 
+#include <chrono>
 #include <iostream>
 // 只在 .cpp 引入 OpenVINO 的头
 #include <openvino/genai/llm_pipeline.hpp>
@@ -117,7 +118,28 @@ namespace meetingai::granite {
             ov::genai::StructuredOutputConfig({
                 {ov::genai::json_schema.name(), json_schema},
             });
-        return p_->pipeline->generate(templatedPrompt, cfg);
+        const auto generationDeadline =
+            std::chrono::steady_clock::now() +
+            std::chrono::minutes(3);
+        bool timedOut = false;
+        auto timeoutStreamer =
+            [&timedOut, generationDeadline](std::string) -> bool {
+                if (std::chrono::steady_clock::now() >=
+                    generationDeadline) {
+                    timedOut = true;
+                    return true;
+                }
+                return false;
+            };
+        const auto result = p_->pipeline->generate(
+            templatedPrompt,
+            cfg,
+            timeoutStreamer);
+        if (timedOut) {
+            throw std::runtime_error(
+                "Granite 结构化生成超过 180 秒，已主动终止");
+        }
+        return result;
     }
 
     // ===================== 多轮上下文 =====================

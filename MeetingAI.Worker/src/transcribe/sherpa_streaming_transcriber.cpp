@@ -41,7 +41,8 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
                                              const std::string& tokensPath,
                                              int sampleRate,
                                              const std::string& hotwordsBuffer,
-                                             const std::string& bpeVocabPath)
+                                             const std::string& bpeVocabPath,
+                                             bool hotwordsCapable)
 {
     if (m_initialized) {
         m_lastError = "Already initialized";
@@ -92,7 +93,7 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
             m_lastError = "tokens 文件不存在: " + tokensPath;
             return false;
         }
-        if (!hotwordsBuffer.empty() &&
+        if ((hotwordsCapable || !hotwordsBuffer.empty()) &&
             !std::filesystem::exists(bpeVocabPath, ec)) {
             m_lastError = "热词 BPE 词表不存在: " + bpeVocabPath;
             return false;
@@ -120,7 +121,8 @@ bool SherpaStreamingTranscriber::Initialize(const std::string& modelDir,
 
     // Sherpa 的上下文热词只在 Transducer 的 modified_beam_search 下生效。
     // 没有绑定会议资料时继续走原来的 greedy_search，避免平白增加延迟。
-    const bool hotwordsEnabled = !hotwordsBuffer.empty();
+    const bool hotwordsEnabled =
+        hotwordsCapable || !hotwordsBuffer.empty();
     config.decoding_method = hotwordsEnabled
         ? "modified_beam_search"
         : "greedy_search";

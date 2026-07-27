@@ -51,6 +51,13 @@ public partial class MainWindow
             // 确保管道连接
             await EnsurePipeAsync();
 
+            if (_isSDLoaded)
+            {
+                await SendJsonAsync(
+                    "{\"type\":\"unload_sd\"}\n");
+                return;
+            }
+
             // 获取选择的设备
             string device = page.CmbSDDevice.SelectedIndex switch
             {
@@ -297,10 +304,17 @@ public partial class MainWindow
                 {
                     case "sd_ready":
                         // SD 模型加载完成
+                        _isSDLoaded = true;
                         page.BtnSDGenerate.IsEnabled = true;
                         page.BtnSDSingle.IsEnabled = true;
                         page.BtnSDMulti.IsEnabled = true;
                         page.BtnSDClear.IsEnabled = true;
+                        var startupPage = GetStartupPage();
+                        if (startupPage != null)
+                        {
+                            startupPage.BtnLoadSD.Content = "Unload Model";
+                            startupPage.CmbSDDevice.IsEnabled = false;
+                        }
                         Debug.WriteLine("[SD] 模型加载完成");
                         break;
 

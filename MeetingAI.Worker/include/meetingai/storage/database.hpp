@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // 初始化数据库（创建 meeting.db 和 transcripts 表）
@@ -16,6 +17,8 @@ struct MeetingTranscriptEntry {
     std::int64_t segmentId = 0;
     std::string source;
     std::string text;
+    std::int64_t startMs = 0;
+    std::int64_t endMs = 0;
 };
 
 // 每次点击 Start 都创建一场全新的会议，并为所选音频来源创建独立 stream。
@@ -31,6 +34,12 @@ std::int64_t BeginStreamingMeeting(
 
 // 封口当前会议，记录 ended_at_utc。
 bool EndStreamingMeeting(std::int64_t meetingId);
+
+// 记录每一路会议原始音频文件，供会后精修和失败重试使用。
+bool UpdateStreamingMediaPath(
+    std::int64_t meetingId,
+    const std::string& source,
+    const std::string& mediaPath);
 
 // 保存一条 Sherpa final。partial 结果不应调用本函数。
 // 同一事务中写入 segment、asr_raw 和 asr_normalized revision。
@@ -49,6 +58,42 @@ bool InsertStreamingTranslation(
     std::int64_t segmentId,
     const std::string& targetLanguage,
     const std::string& translatedText);
+
+// ===== 会后 OpenVINO Whisper 精修 =====
+std::int64_t BeginTranscriptionRun(
+    std::int64_t meetingId,
+    const std::string& engine,
+    const std::string& modelName,
+    const std::string& runtime,
+    const std::string& translationMode,
+    const std::string& hotwordsText);
+
+bool UpdateTranscriptionRun(
+    std::int64_t runId,
+    const std::string& status,
+    int progress,
+    const std::string& errorText = {},
+    bool makeCanonical = false);
+
+struct MeetingPostProcessInput {
+    std::unordered_map<std::string, std::string> audioPaths;
+    std::string translationMode = "off";
+    std::string hotwordsText;
+};
+
+bool LoadMeetingPostProcessInput(
+    std::int64_t meetingId,
+    MeetingPostProcessInput& input);
+
+std::int64_t InsertWhisperFinalSegment(
+    std::int64_t runId,
+    std::int64_t meetingId,
+    const std::string& source,
+    std::int64_t sequence,
+    std::int64_t startMs,
+    std::int64_t endMs,
+    const std::string& rawText,
+    const std::string& finalText);
 
 // 给滚动摘要读取“上次覆盖位置之后”的最终规范化字幕。
 std::vector<MeetingTranscriptEntry> LoadMeetingTranscriptSince(

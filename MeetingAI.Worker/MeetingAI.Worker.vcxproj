@@ -174,6 +174,7 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\audio\meeting_audio_recorder.cpp" />
     <ClCompile Include="src\embedding\embedding_genai.cpp" />
     <ClCompile Include="src\granite\granite_genai.cpp" />
     <ClCompile Include="src\ipc\pipe_security.cpp" />
@@ -278,6 +279,7 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\meetingai\audio\meeting_audio_recorder.hpp" />
     <ClInclude Include="include\meetingai\embedding\embedding_genai.hpp" />
     <ClInclude Include="include\meetingai\embedding\embedding_python_service.hpp" />
     <ClInclude Include="include\meetingai\granite\granite_genai.hpp" />

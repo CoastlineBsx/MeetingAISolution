@@ -66,8 +66,8 @@ public sealed class MeetingContextSnapshot
     public List<HotwordCandidate> Hotwords { get; set; } = new();
     public bool HasPreparation => PreparationId.HasValue;
     public string StatusDisplay => HasPreparation
-        ? $"{DocumentIds.Count}/5 份资料 · {Hotwords.Count(item => item.Enabled)} 个热词 · 限定 RAG 已就绪"
-        : "通用模式 · 不使用会前资料和热词";
+        ? $"{DocumentIds.Count}/5 份资料 · {Hotwords.Count(item => item.Enabled)} 个可选术语 · 请分别选择 RAG 和识别增强"
+        : "通用模式 · 未绑定会议资料";
 }
 
 public sealed class MeetingContextOption

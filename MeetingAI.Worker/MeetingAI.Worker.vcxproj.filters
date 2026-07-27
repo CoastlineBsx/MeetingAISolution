@@ -19,6 +19,9 @@
     <Filter Include="src\storage">
       <UniqueIdentifier>{d0a74cbb-c7ba-4aed-beec-819498779a0b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\audio">
+      <UniqueIdentifier>{719bf1aa-a84f-4f3f-beb2-94a7c4d94e95}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\summary">
       <UniqueIdentifier>{77cd99ba-5558-49bb-917f-f53b4cab3ef8}</UniqueIdentifier>
     </Filter>
@@ -54,6 +57,9 @@
     </Filter>
     <Filter Include="include\meetingai\storage">
       <UniqueIdentifier>{21773904-8f7f-474f-80e3-5481f178f019}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\meetingai\audio">
+      <UniqueIdentifier>{764a411d-eb37-407b-b725-4ea976e45d13}</UniqueIdentifier>
     </Filter>
     <Filter Include="include\meetingai\summary">
       <UniqueIdentifier>{55bb1cae-f850-4753-9568-c2493af59583}</UniqueIdentifier>
@@ -153,6 +159,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\audio\meeting_audio_recorder.cpp">
+      <Filter>src\audio</Filter>
+    </ClCompile>
     <ClCompile Include="src\util\paths.cpp">
       <Filter>src\util</Filter>
     </ClCompile>
@@ -215,6 +224,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\meetingai\audio\meeting_audio_recorder.hpp">
+      <Filter>include\meetingai\audio</Filter>
+    </ClInclude>
     <ClInclude Include="include\meetingai\util\paths.h">
       <Filter>include\meetingai\util</Filter>
     </ClInclude>

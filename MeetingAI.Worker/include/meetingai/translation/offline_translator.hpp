@@ -24,8 +24,16 @@ public:
     OfflineTranslator(const OfflineTranslator&) = delete;
     OfflineTranslator& operator=(const OfflineTranslator&) = delete;
 
+    // 模型生命周期只允许由 Startup 页面触发。会议开始只启动翻译队列，
+    // 不再隐式读取模型文件。
+    bool LoadDirection(
+        const std::string& direction,
+        const std::string& modelDir);
+    bool UnloadDirection(const std::string& direction);
+    bool IsDirectionLoaded(const std::string& direction) const;
+
     // mode: off、auto、to_zh 或 to_en。
-    // 模型只在第一次使用对应方向时加载，之后的会议会直接复用。
+    // 所需方向必须已经通过 LoadDirection 加载。
     bool Start(
         const std::string& mode,
         const std::string& englishToChineseModelDir,

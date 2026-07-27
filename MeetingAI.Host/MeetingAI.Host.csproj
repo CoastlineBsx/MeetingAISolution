@@ -30,6 +30,21 @@
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
+  <!--
+    Visual Studio 的“仅生成启动项目及其依赖项”会跳过未启动的 Worker。
+    Host 运行时又会从固定 Release/Debug 目录启动 Worker，结果很容易形成
+    “新 Host + 旧 Worker”。只在 VS 内把 Worker 声明为构建依赖；
+    ReferenceOutputAssembly=false 表示它是原生辅助进程，不是 .NET 引用。
+  -->
+  <ItemGroup Condition="'$(BuildingInsideVisualStudio)' == 'true' and '$(Platform)' == 'x64'">
+    <ProjectReference Include="..\MeetingAI.Worker\MeetingAI.Worker.vcxproj"
+                      ReferenceOutputAssembly="false"
+                      SkipGetTargetPath="true"
+                      SetConfiguration="Configuration=$(Configuration)"
+                      SetPlatform="Platform=x64"
+                      Private="false" />
+  </ItemGroup>
+
   <!-- WinUI / Windows App SDK 依赖 -->
   <ItemGroup>
     <PackageReference Include="Docnet.Core" />

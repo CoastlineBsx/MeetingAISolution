@@ -5,6 +5,8 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <atomic>
+#include <thread>
 #include "openvino/genai/whisper_pipeline.hpp"
 
 namespace fs = std::filesystem;
@@ -19,11 +21,15 @@ namespace meetingai::transcribe {
 static std::unique_ptr<ov::genai::WhisperPipeline> g_pipeline;
 static std::mutex g_pipeline_mutex;
 static bool g_pipeline_loaded = false;
+static std::string g_pipeline_model_path;
+static std::string g_pipeline_device;
 
 bool LoadWhisperOpenVINOModel(const std::string& modelPath, const std::string& device) {
     std::lock_guard<std::mutex> lock(g_pipeline_mutex);
 
-    if (g_pipeline_loaded && g_pipeline) {
+    if (g_pipeline_loaded && g_pipeline &&
+        g_pipeline_model_path == modelPath &&
+        g_pipeline_device == device) {
         std::cout << "[OpenVINO Whisper] 模型已加载" << std::endl;
         return true;
     }
@@ -33,6 +39,8 @@ bool LoadWhisperOpenVINOModel(const std::string& modelPath, const std::string& d
         std::cout << "[OpenVINO Whisper] 设备: " << device << std::endl;
         g_pipeline = std::make_unique<ov::genai::WhisperPipeline>(modelPath, device);
         g_pipeline_loaded = true;
+        g_pipeline_model_path = modelPath;
+        g_pipeline_device = device;
         std::cout << "[OpenVINO Whisper] 模型加载成功" << std::endl;
         return true;
     }
@@ -40,6 +48,8 @@ bool LoadWhisperOpenVINOModel(const std::string& modelPath, const std::string& d
         std::cerr << "[OpenVINO Whisper] 模型加载失败: " << ex.what() << std::endl;
         g_pipeline.reset();
         g_pipeline_loaded = false;
+        g_pipeline_model_path.clear();
+        g_pipeline_device.clear();
         return false;
     }
 }
@@ -48,6 +58,8 @@ void UnloadWhisperOpenVINOModel() {
     std::lock_guard<std::mutex> lock(g_pipeline_mutex);
     g_pipeline.reset();
     g_pipeline_loaded = false;
+    g_pipeline_model_path.clear();
+    g_pipeline_device.clear();
     std::cout << "[OpenVINO Whisper] 模型已卸载" << std::endl;
 }
 
@@ -61,9 +73,13 @@ bool TranscribeAudioFileOpenVINO(
     const std::string& audioPath,
     std::vector<WhisperOpenVINOSegment>& segments,
     const std::string& language,
-    ProgressCallback progressCallback
+    ProgressCallback progressCallback,
+    const std::string& hotwords
 ) {
     try {
+        std::lock_guard<std::mutex> lock(g_pipeline_mutex);
+        segments.clear();
+
         std::cout << "\n========================================" << std::endl;
         std::cout << "   OpenVINO Whisper 转录开始" << std::endl;
         std::cout << "========================================\n" << std::endl;
@@ -92,16 +108,22 @@ bool TranscribeAudioFileOpenVINO(
             return false;
         }
 
-        std::cout << "\n[OpenVINO] 加载模型..." << std::endl;
+        std::cout << "\n[OpenVINO] 检查模型..." << std::endl;
         std::cout << "  - 模型路径: " << modelPath << std::endl;
-        std::cout << "  - 设备: CPU" << std::endl;
 
         auto load_start = std::chrono::high_resolution_clock::now();
-        ov::genai::WhisperPipeline pipeline(modelPath, "CPU");
+        if (!g_pipeline_loaded || !g_pipeline ||
+            g_pipeline_model_path != modelPath) {
+            std::cerr
+                << "[OpenVINO] 模型未加载；请先在 Startup 页面手动加载"
+                << std::endl;
+            return false;
+        }
         auto load_end = std::chrono::high_resolution_clock::now();
         auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count();
 
-        std::cout << "  ✓ 模型加载完成 (" << load_time << " ms)" << std::endl;
+        std::cout << "  - 设备: " << g_pipeline_device << std::endl;
+        std::cout << "  ✓ 模型已就绪 (" << load_time << " ms)" << std::endl;
 
         // ========== 3. 报告进度：配置参数 ==========
         if (progressCallback) progressCallback(20);
@@ -111,8 +133,11 @@ bool TranscribeAudioFileOpenVINO(
 
         // ⭐ 核心配置：启用 DTW timestamps
         config.return_timestamps = true;
-        config.max_new_tokens = 100;
+        config.max_new_tokens = 448;
         config.task = "transcribe";
+        if (!hotwords.empty()) {
+            config.hotwords = hotwords;
+        }
 
         // 语言配置
         if (language != "auto" && !language.empty()) {
@@ -134,9 +159,39 @@ bool TranscribeAudioFileOpenVINO(
 
         auto infer_start = std::chrono::high_resolution_clock::now();
 
+        // generate() 是整段录音一次性阻塞调用，没有逐 token 的进度回调。
+        // 会议录音较长时，这一步可能持续几分钟，期间进度会一直停在 30%，
+        // UI/数据库看起来像卡死。用一个心跳线程在 30%~88% 之间缓慢爬升，
+        // 让调用方始终能看到进度在动；真正完成后主线程会立即报告 90%。
+        std::atomic<bool> inferenceRunning{ true };
+        std::thread heartbeat;
+        if (progressCallback) {
+            heartbeat = std::thread([&inferenceRunning, &progressCallback] {
+                int step = 30;
+                while (inferenceRunning.load()) {
+                    for (int i = 0; i < 10 && inferenceRunning.load(); ++i) {
+                        std::this_thread::sleep_for(
+                            std::chrono::milliseconds(200));
+                    }
+                    if (!inferenceRunning.load()) {
+                        break;
+                    }
+                    if (step < 88) {
+                        ++step;
+                    }
+                    progressCallback(step);
+                }
+            });
+        }
+
         // 执行推理
         ov::genai::RawSpeechInput raw_speech(audio_data.begin(), audio_data.end());
-        auto result = pipeline.generate(raw_speech, config);
+        auto result = g_pipeline->generate(raw_speech, config);
+
+        inferenceRunning.store(false);
+        if (heartbeat.joinable()) {
+            heartbeat.join();
+        }
 
         auto infer_end = std::chrono::high_resolution_clock::now();
         auto infer_time = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
@@ -185,7 +240,9 @@ bool TranscribeAudioFileOpenVINO(
         if (progressCallback) progressCallback(100);
 
         // 性能统计
-        float rtf = (infer_time / 1000.0f) / duration;
+        float rtf = duration > 0.0f
+            ? (infer_time / 1000.0f) / duration
+            : 0.0f;
         std::cout << "\n========================================" << std::endl;
         std::cout << "   性能统计" << std::endl;
         std::cout << "========================================" << std::endl;

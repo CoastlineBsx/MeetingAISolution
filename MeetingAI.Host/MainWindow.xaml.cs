@@ -98,18 +98,42 @@ public sealed partial class MainWindow : Window
         MeetingPreparationFrame.Navigate(typeof(Pages.MeetingPreparationPage));
     }
 
+    private const int MaxOutputLogCharacters = 200_000;
+    private const int RetainedOutputLogCharacters = 150_000;
+
     private Task AppendLineAsync(string text)
     {
-        var tcs = new TaskCompletionSource<bool>();
-        DispatcherQueue.TryEnqueue(() =>
+        var tcs = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        bool queued = DispatcherQueue.TryEnqueue(() =>
         {
             try
             {
                 if (OutputBox != null)
                 {
-                    OutputBox.Text += text + "\n";
+                    string appended = text + "\n";
+                    string current = OutputBox.Text ?? string.Empty;
+                    if (current.Length + appended.Length >
+                        MaxOutputLogCharacters)
+                    {
+                        int keep = Math.Min(
+                            RetainedOutputLogCharacters,
+                            current.Length);
+                        int start = current.Length - keep;
+                        int newline = current.IndexOf('\n', start);
+                        if (newline >= 0)
+                        {
+                            start = newline + 1;
+                        }
+                        OutputBox.Text =
+                            current.Substring(start) + appended;
+                    }
+                    else
+                    {
+                        OutputBox.Text = current + appended;
+                    }
                 }
-                tcs.SetResult(true);
+                tcs.TrySetResult(true);
             }
             catch (Exception ex)
             {
@@ -120,9 +144,15 @@ public sealed partial class MainWindow : Window
                     System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [AppendLineAsync] EXCEPTION: {ex}\n");
                 }
                 catch { }
-                tcs.SetException(ex);
+                tcs.TrySetException(ex);
             }
         });
+        if (!queued)
+        {
+            // Dispatcher 已关闭时不能留下一个永远不会完成的 Task，
+            // 否则管道读取循环会永久停止，最终反向堵住 Worker。
+            tcs.TrySetResult(false);
+        }
         return tcs.Task;
     }
 

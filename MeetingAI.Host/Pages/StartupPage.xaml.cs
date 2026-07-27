@@ -12,15 +12,24 @@ public sealed partial class StartupPage : Page
         InitializeComponent();
 
         // Get MainWindow reference when page loads
-        this.Loaded += (s, e) =>
+        this.Loaded += async (s, e) =>
         {
             _mainWindow = App.MainWindow as MainWindow;
+            if (_mainWindow != null)
+            {
+                await _mainWindow.RefreshModelStatusAsync();
+            }
         };
     }
 
-    private void BtnPreloadModels_Click(object sender, RoutedEventArgs e)
+    private void BtnLoadGranite_Click(object sender, RoutedEventArgs e)
     {
-        _mainWindow?.BtnPreloadModels_Click(sender, e);
+        _mainWindow?.BtnLoadGranite_Click(sender, e);
+    }
+
+    private void BtnLoadEmbedding_Click(object sender, RoutedEventArgs e)
+    {
+        _mainWindow?.BtnLoadEmbedding_Click(sender, e);
     }
 
     private void BtnLoadWhisper_Click(object sender, RoutedEventArgs e)
@@ -31,6 +40,26 @@ public sealed partial class StartupPage : Page
     private void BtnLoadOpenVINOWhisper_Click(object sender, RoutedEventArgs e)
     {
         _mainWindow?.BtnLoadOpenVINOWhisper_Click(sender, e);
+    }
+
+    private void BtnLoadSherpa_Click(object sender, RoutedEventArgs e)
+    {
+        _mainWindow?.BtnLoadSherpa_Click(sender, e);
+    }
+
+    private void BtnLoadPunctuator_Click(object sender, RoutedEventArgs e)
+    {
+        _mainWindow?.BtnLoadPunctuator_Click(sender, e);
+    }
+
+    private void BtnLoadTranslationEnZh_Click(object sender, RoutedEventArgs e)
+    {
+        _mainWindow?.BtnLoadTranslationEnZh_Click(sender, e);
+    }
+
+    private void BtnLoadTranslationZhEn_Click(object sender, RoutedEventArgs e)
+    {
+        _mainWindow?.BtnLoadTranslationZhEn_Click(sender, e);
     }
 
     private void BtnLoadLLaVA_Click(object sender, RoutedEventArgs e)

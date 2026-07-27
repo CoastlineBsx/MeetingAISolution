@@ -1,6 +1,5 @@
 #pragma once
-#include <openvino/openvino.hpp>
-#include <openvino/genai/tokenizer.hpp>
+#include <openvino/genai/rag/text_embedding_pipeline.hpp>
 #include <vector>
 #include <string>
 #include <memory>
@@ -19,10 +18,9 @@ public:
     size_t countTokens(const std::string& text);
 
 private:
-    ov::Core core_;
-    ov::CompiledModel compiled_model_;
+    std::unique_ptr<ov::genai::TextEmbeddingPipeline> pipeline_;
     std::unique_ptr<ov::genai::Tokenizer> tokenizer_;
-    size_t embedding_dim_;
+    size_t embedding_dim_ = 0;
 };
 
 } // namespace meetingai::embedding

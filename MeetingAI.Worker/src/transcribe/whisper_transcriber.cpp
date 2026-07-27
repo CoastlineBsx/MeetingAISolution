@@ -957,10 +957,9 @@ bool InitWhisper(const std::string& modelPath) {
 
 // ★ 仅加载一次（多次调用也只会首次真正加载）
 bool InitWhisperOnce(const std::string& modelPath) {
-    std::call_once(g_model_once, [&]() {
-        (void)InitWhisper(modelPath);
-        });
-    return g_whisper_ctx != nullptr;
+    // Worker 外层持有模型互斥锁。不能再用 once_flag：模型卸载以后
+    // once_flag 不会复位，用户将无法从 Startup 再次加载。
+    return g_whisper_ctx != nullptr || InitWhisper(modelPath);
 }
 
 void CleanupWhisper() {
@@ -977,9 +976,10 @@ bool TranscribeAudioFile(
     const std::string& sceneMode,
     const std::string& language
 ) {
-    // —— A：只在第一次调用时加载模型（随后复用全局 ctx） ——
-    if (!InitWhisperOnce(modelPath)) {
-        std::cerr << "[Whisper] 模型初始化失败（InitWhisperOnce）: " << modelPath << std::endl;
+    // 模型生命周期由 Startup 统一管理，功能命令不得隐式加载。
+    if (g_whisper_ctx == nullptr) {
+        std::cerr << "[Whisper] 模型未加载，请先在 Startup 加载 Legacy Whisper: "
+                  << modelPath << std::endl;
         return false;
     }
 

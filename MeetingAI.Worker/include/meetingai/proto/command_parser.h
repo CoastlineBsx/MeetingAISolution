@@ -105,6 +105,8 @@ namespace meetingai::proto {
 
 	// 从 start_streaming 提取本地滚动摘要开关；缺省为开启。
 	bool extractSummaryEnabled(const std::string& json);
+	bool extractRagContextEnabled(const std::string& json);
+	bool extractAsrHotwordsEnabled(const std::string& json);
 
 	// 提取一次 Start 所绑定的会议资料快照。文档最多 5 份，热词最多 100 个。
 	MeetingContextCommand extractMeetingContext(const std::string& json);
@@ -119,5 +121,9 @@ namespace meetingai::proto {
 
 	// {"type":"request_meeting_summary"}，用于 UI 手动立即生成一版。
 	bool isRequestMeetingSummary(const std::string& json);
+
+	// 会后精修失败后，从数据库中的录音路径重新执行。
+	bool isRetryMeetingPostProcess(const std::string& json);
+	std::int64_t extractMeetingId(const std::string& json);
 
 } // namespace meetingai::proto

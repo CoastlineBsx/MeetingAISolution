@@ -8,6 +8,15 @@ namespace meetingai::translation {
 
 class OfflineTranslator::Impl {
 public:
+    bool LoadDirection(
+        const std::string&,
+        const std::string&) {
+        lastError_ = "Debug 构建未启用离线翻译模块";
+        return false;
+    }
+    bool UnloadDirection(const std::string&) { return true; }
+    bool IsDirectionLoaded(const std::string&) const { return false; }
+
     bool Start(
         const std::string& mode,
         const std::string&,
@@ -49,6 +58,22 @@ OfflineTranslator::OfflineTranslator()
 }
 
 OfflineTranslator::~OfflineTranslator() = default;
+
+bool OfflineTranslator::LoadDirection(
+    const std::string& direction,
+    const std::string& modelDir) {
+    return impl_->LoadDirection(direction, modelDir);
+}
+
+bool OfflineTranslator::UnloadDirection(
+    const std::string& direction) {
+    return impl_->UnloadDirection(direction);
+}
+
+bool OfflineTranslator::IsDirectionLoaded(
+    const std::string& direction) const {
+    return impl_->IsDirectionLoaded(direction);
+}
 
 bool OfflineTranslator::Start(
     const std::string& mode,
@@ -187,8 +212,8 @@ std::string Trim(std::string value) {
 
 struct DirectionModel {
     std::unique_ptr<ctranslate2::Translator> translator;
-    sentencepiece::SentencePieceProcessor sourceTokenizer;
-    sentencepiece::SentencePieceProcessor targetTokenizer;
+    std::unique_ptr<sentencepiece::SentencePieceProcessor> sourceTokenizer;
+    std::unique_ptr<sentencepiece::SentencePieceProcessor> targetTokenizer;
     bool addSimplifiedChineseTargetToken = false;
 
     bool Load(
@@ -210,13 +235,20 @@ struct DirectionModel {
             return false;
         }
 
-        const auto sourceStatus = sourceTokenizer.Load(sourceSpm.string());
+        auto newSourceTokenizer =
+            std::make_unique<sentencepiece::SentencePieceProcessor>();
+        auto newTargetTokenizer =
+            std::make_unique<sentencepiece::SentencePieceProcessor>();
+
+        const auto sourceStatus =
+            newSourceTokenizer->Load(sourceSpm.string());
         if (!sourceStatus.ok()) {
             error = "加载 source.spm 失败: " + sourceStatus.ToString();
             return false;
         }
 
-        const auto targetStatus = targetTokenizer.Load(targetSpm.string());
+        const auto targetStatus =
+            newTargetTokenizer->Load(targetSpm.string());
         if (!targetStatus.ok()) {
             error = "加载 target.spm 失败: " + targetStatus.ToString();
             return false;
@@ -235,6 +267,8 @@ struct DirectionModel {
                 std::vector<int>{0},
                 false,
                 poolConfig);
+            sourceTokenizer = std::move(newSourceTokenizer);
+            targetTokenizer = std::move(newTargetTokenizer);
             addSimplifiedChineseTargetToken = addTargetToken;
             return true;
         }
@@ -245,9 +279,20 @@ struct DirectionModel {
         }
     }
 
+    void Unload() {
+        translator.reset();
+        sourceTokenizer.reset();
+        targetTokenizer.reset();
+        addSimplifiedChineseTargetToken = false;
+    }
+
+    bool IsLoaded() const {
+        return translator != nullptr;
+    }
+
     std::string Translate(const std::string& text) {
         std::vector<std::string> pieces;
-        const auto encodeStatus = sourceTokenizer.Encode(text, &pieces);
+        const auto encodeStatus = sourceTokenizer->Encode(text, &pieces);
         if (!encodeStatus.ok()) {
             throw std::runtime_error(
                 "SentencePiece 编码失败: " + encodeStatus.ToString());
@@ -275,7 +320,7 @@ struct DirectionModel {
         }
 
         std::string output;
-        const auto decodeStatus = targetTokenizer.Decode(
+        const auto decodeStatus = targetTokenizer->Decode(
             results.front().hypotheses.front(),
             &output);
         if (!decodeStatus.ok()) {
@@ -303,6 +348,61 @@ public:
         Stop(false);
     }
 
+    bool LoadDirection(
+        const std::string& direction,
+        const std::string& modelDir) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (active_ || worker_.joinable()) {
+            lastError_ = "翻译正在使用中，不能加载模型";
+            return false;
+        }
+
+        std::string error;
+        bool loaded = false;
+        if (direction == "en_zh") {
+            loaded = englishToChinese_.Load(modelDir, true, error);
+        }
+        else if (direction == "zh_en") {
+            loaded = chineseToEnglish_.Load(modelDir, false, error);
+        }
+        else {
+            error = "未知翻译方向: " + direction;
+        }
+        lastError_ = loaded ? std::string{} : std::move(error);
+        return loaded;
+    }
+
+    bool UnloadDirection(const std::string& direction) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (active_ || worker_.joinable()) {
+            lastError_ = "翻译正在使用中，不能卸载模型";
+            return false;
+        }
+        if (direction == "en_zh") {
+            englishToChinese_.Unload();
+        }
+        else if (direction == "zh_en") {
+            chineseToEnglish_.Unload();
+        }
+        else {
+            lastError_ = "未知翻译方向: " + direction;
+            return false;
+        }
+        lastError_.clear();
+        return true;
+    }
+
+    bool IsDirectionLoaded(const std::string& direction) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (direction == "en_zh") {
+            return englishToChinese_.IsLoaded();
+        }
+        if (direction == "zh_en") {
+            return chineseToEnglish_.IsLoaded();
+        }
+        return false;
+    }
+
     bool Start(
         const std::string& modeValue,
         const std::string& englishToChineseModelDir,
@@ -319,24 +419,19 @@ public:
             return true;
         }
 
-        std::string loadError;
         if ((requestedMode == Mode::Auto || requestedMode == Mode::ToChinese)
-            && !englishToChinese_.Load(
-                englishToChineseModelDir,
-                true,
-                loadError)) {
+            && !englishToChinese_.IsLoaded()) {
             std::lock_guard<std::mutex> lock(mutex_);
-            lastError_ = std::move(loadError);
+            lastError_ =
+                "英译中模型未加载，请先到 Startup 加载 OPUS-MT 英→中";
             return false;
         }
 
         if ((requestedMode == Mode::Auto || requestedMode == Mode::ToEnglish)
-            && !chineseToEnglish_.Load(
-                chineseToEnglishModelDir,
-                false,
-                loadError)) {
+            && !chineseToEnglish_.IsLoaded()) {
             std::lock_guard<std::mutex> lock(mutex_);
-            lastError_ = std::move(loadError);
+            lastError_ =
+                "中译英模型未加载，请先到 Startup 加载 OPUS-MT 中→英";
             return false;
         }
 
@@ -613,6 +708,21 @@ OfflineTranslator::OfflineTranslator()
 }
 
 OfflineTranslator::~OfflineTranslator() = default;
+
+bool OfflineTranslator::LoadDirection(
+    const std::string& direction,
+    const std::string& modelDir) {
+    return impl_->LoadDirection(direction, modelDir);
+}
+
+bool OfflineTranslator::UnloadDirection(const std::string& direction) {
+    return impl_->UnloadDirection(direction);
+}
+
+bool OfflineTranslator::IsDirectionLoaded(
+    const std::string& direction) const {
+    return impl_->IsDirectionLoaded(direction);
+}
 
 bool OfflineTranslator::Start(
     const std::string& mode,

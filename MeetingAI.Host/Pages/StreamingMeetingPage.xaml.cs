@@ -13,6 +13,7 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.Data.Sqlite;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -36,6 +37,8 @@ public sealed partial class StreamingMeetingPage : Page
         public string SpeakerName { get; set; } = "Unknown";
         public SolidColorBrush SpeakerColor { get; set; } = new SolidColorBrush(Colors.Gray);
         public string Timestamp { get; set; } = "";
+        public long SegmentId { get; set; }
+        public long StartMs { get; set; }
 
         public string Text
         {
@@ -151,6 +154,7 @@ public sealed partial class StreamingMeetingPage : Page
 
     // ========== UI 数据绑定 ==========
     private readonly ObservableCollection<StreamingCaption> _captions = new();
+    private readonly ObservableCollection<StreamingCaption> _refinedCaptions = new();
     private readonly ObservableCollection<Speaker> _speakers = new();
     private readonly ObservableCollection<MeetingContextOption> _meetingContexts = new();
 
@@ -164,6 +168,7 @@ public sealed partial class StreamingMeetingPage : Page
     // Worker 的握手信号：模型首次加载要几秒，音频不能抢跑
     private TaskCompletionSource<bool>? _startedTcs;
     private TaskCompletionSource<bool>? _stoppedTcs;
+    private TaskCompletionSource<bool>? _recordingStoppedTcs;
 
     // 麦克风和系统声音可以同时讲话，每个来源必须有独立的 partial/final 状态。
     private readonly Dictionary<string, CaptionStreamState> _captionStates =
@@ -172,6 +177,8 @@ public sealed partial class StreamingMeetingPage : Page
         _captionByUtterance = new();
     private readonly Dictionary<StreamingCaption, CaptionTranslationState>
         _translationStates = new();
+    private readonly Dictionary<long, StreamingCaption>
+        _refinedCaptionBySegment = new();
     private DateTime _lastScrollTime = DateTime.MinValue;
 
     // ========== 音频捕获 ==========
@@ -187,6 +194,11 @@ public sealed partial class StreamingMeetingPage : Page
     private bool _summaryReady;
     private bool _summaryServiceAvailable;
     private bool _postMeetingSummaryAvailable;
+    private bool _isPostProcessing;
+    private bool _refinedTranscriptReady;
+    private long _activeMeetingId;
+    private bool _showingRefinedTranscript;
+    private CancellationTokenSource? _postProcessMonitorCts;
     private MeetingContextSnapshot _activeMeetingContext = new();
 
     private MainWindow? _mainWindow;
@@ -251,6 +263,7 @@ public sealed partial class StreamingMeetingPage : Page
         if (_isRecording || _mainWindow == null) return;
         var option = CmbMeetingContext.SelectedItem as MeetingContextOption;
         MeetingContextCoordinator.SelectForNextMeeting(option?.PreparationId);
+        UpdateContextSwitchAvailability();
         try
         {
             var snapshot = await _mainWindow.GetMeetingContextSnapshotAsync(option?.PreparationId);
@@ -260,6 +273,18 @@ public sealed partial class StreamingMeetingPage : Page
         {
             TxtMeetingContextStatus.Text = $"上下文读取失败：{ex.Message}";
         }
+    }
+
+    private void UpdateContextSwitchAvailability(bool controlsEnabled = true)
+    {
+        bool hasPreparation =
+            (CmbMeetingContext.SelectedItem as MeetingContextOption)?
+                .PreparationId.HasValue == true;
+        CmbMeetingContext.IsEnabled = controlsEnabled;
+        ChkUseRagContext.IsEnabled =
+            controlsEnabled && hasPreparation;
+        ChkUseAsrHotwords.IsEnabled =
+            controlsEnabled && hasPreparation;
     }
 
     private void BtnManageMeetingContext_Click(object sender, RoutedEventArgs e)
@@ -287,6 +312,566 @@ public sealed partial class StreamingMeetingPage : Page
         SetStatus("字幕已复制到剪贴板");
     }
 
+    public void BtnShowLiveTranscript_Click(object sender, RoutedEventArgs e)
+        => ShowTranscriptVersion(false);
+
+    public void BtnShowFinalTranscript_Click(object sender, RoutedEventArgs e)
+        => ShowTranscriptVersion(true);
+    public void BtnRetryPostProcess_Click(object sender, RoutedEventArgs e)
+        => _ = RetryPostProcessingAsync();
+    public void BtnLoadLatestMeeting_Click(object sender, RoutedEventArgs e)
+        => _ = LoadLatestMeetingAsync();
+
+    private IEnumerable<StreamingCaption> VisibleCaptions =>
+        _showingRefinedTranscript ? _refinedCaptions : _captions;
+
+    private void ShowTranscriptVersion(bool refined)
+    {
+        if (refined && _refinedCaptions.Count == 0) return;
+        _showingRefinedTranscript = refined;
+        CaptionsList.ItemsSource =
+            refined ? _refinedCaptions : _captions;
+        TxtCaptionTitle.Text = refined
+            ? "✨ Whisper 最终稿"
+            : "📝 Sherpa 实时稿";
+        BtnShowLiveTranscript.IsEnabled = refined;
+        BtnShowFinalTranscript.IsEnabled =
+            !refined && _refinedCaptions.Count > 0;
+        ScrollToLatest(force: true);
+    }
+
+    private async Task RetryPostProcessingAsync()
+    {
+        if (_mainWindow == null ||
+            _activeMeetingId <= 0 ||
+            _isRecording ||
+            _isPostProcessing)
+        {
+            return;
+        }
+
+        try
+        {
+            _isPostProcessing = true;
+            _postMeetingSummaryAvailable = false;
+            _summaryReady = false;
+            _refinedTranscriptReady = false;
+            _refinedCaptions.Clear();
+            _refinedCaptionBySegment.Clear();
+            ShowTranscriptVersion(false);
+
+            BtnRetryPostProcess.Visibility = Visibility.Collapsed;
+            BtnStartMeeting.IsEnabled = false;
+            BtnClear.IsEnabled = false;
+            BtnSummarizeNow.IsEnabled = false;
+            PostProcessProgress.Value = 0;
+            TxtPostProcessPercent.Text = "0%";
+            TxtPostProcessTitle.Text = "正在重新生成会议最终稿";
+            TxtPostProcessMessage.Text = "正在读取已保存的会议录音…";
+            SetStatus("Processing · 正在重试最终稿");
+
+            await _mainWindow.EnsurePipeAsync();
+            _mainWindow.StreamingMessageHandler =
+                OnStreamingMessageReceived;
+            await _mainWindow.SendJsonAsync(
+                "{\"type\":\"retry_meeting_postprocess\"," +
+                $"\"meeting_id\":{_activeMeetingId}," +
+                $"\"summary_enabled\":{(_summaryEnabled ? "true" : "false")}" +
+                "}\n");
+            StartPostProcessDatabaseMonitor();
+        }
+        catch (Exception ex)
+        {
+            CompletePostProcessing(false, ex.Message);
+        }
+    }
+
+    // 会后处理的结果本来就以 SQLite 为准，命名管道只用于即时刷新界面。
+    // 若 Host 的管道读取循环中断，Worker 仍会继续写数据库；这里直接轮询
+    // transcription_run，避免页面永远停在“正在封存会议录音”或 0%。
+    private void StartPostProcessDatabaseMonitor()
+    {
+        StopPostProcessDatabaseMonitor();
+        if (_activeMeetingId <= 0 || !_isPostProcessing)
+        {
+            return;
+        }
+
+        _postProcessMonitorCts = new CancellationTokenSource();
+        _ = MonitorPostProcessDatabaseAsync(
+            _activeMeetingId,
+            _postProcessMonitorCts.Token);
+    }
+
+    private void StopPostProcessDatabaseMonitor()
+    {
+        var cts = _postProcessMonitorCts;
+        _postProcessMonitorCts = null;
+        if (cts == null)
+        {
+            return;
+        }
+
+        try { cts.Cancel(); } catch { }
+        cts.Dispose();
+    }
+
+    private async Task MonitorPostProcessDatabaseAsync(
+        long meetingId,
+        CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested &&
+               _isPostProcessing &&
+               _activeMeetingId == meetingId)
+        {
+            try
+            {
+                var snapshot = await ReadPostProcessSnapshotAsync(
+                    meetingId,
+                    cancellationToken);
+                if (snapshot.HasValue)
+                {
+                    var (status, progress, error) = snapshot.Value;
+                    if (status == "complete")
+                    {
+                        // 正常管道会在数据库提交后紧接着发 complete。给它一个
+                        // 很短的优先窗口，避免数据库恢复和管道 segment 回包重复。
+                        await Task.Delay(
+                            TimeSpan.FromSeconds(2),
+                            cancellationToken);
+                        if (!_isPostProcessing ||
+                            _activeMeetingId != meetingId)
+                        {
+                            return;
+                        }
+
+                        // 管道失联时不会收到 segment/complete 消息，直接从
+                        // SQLite 恢复刚生成的 Whisper 最终稿和最终会议纪要。
+                        _isPostProcessing = false;
+                        StopPostProcessDatabaseMonitor();
+                        await LoadLatestMeetingAsync();
+                        return;
+                    }
+
+                    if (status == "failed")
+                    {
+                        CompletePostProcessing(
+                            false,
+                            string.IsNullOrWhiteSpace(error)
+                                ? "Worker 生成会议最终稿失败"
+                                : error);
+                        return;
+                    }
+
+                    ApplyDatabasePostProcessProgress(status, progress);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                // 数据库短暂忙碌不应终止恢复机制，下次轮询继续尝试。
+                Debug.WriteLine(
+                    $"[StreamingMeeting] Post-process DB monitor: {ex.Message}");
+            }
+
+            try
+            {
+                await Task.Delay(
+                    TimeSpan.FromSeconds(1),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private static async Task<(string Status, int Progress, string Error)?>
+        ReadPostProcessSnapshotAsync(
+            long meetingId,
+            CancellationToken cancellationToken)
+    {
+        var databasePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "MeetingAI",
+            "meeting.db");
+        if (!System.IO.File.Exists(databasePath))
+        {
+            return null;
+        }
+
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Cache = SqliteCacheMode.Shared
+        }.ToString();
+        await using var connection =
+            new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT status,progress,COALESCE(error_text,'') " +
+            "FROM transcription_run WHERE meeting_id=$meetingId " +
+            "ORDER BY id DESC LIMIT 1;";
+        command.Parameters.AddWithValue("$meetingId", meetingId);
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return (
+            reader.GetString(0),
+            Math.Clamp(reader.GetInt32(1), 0, 100),
+            reader.GetString(2));
+    }
+
+    private void ApplyDatabasePostProcessProgress(
+        string status,
+        int progress)
+    {
+        PostProcessPanel.Visibility = Visibility.Visible;
+        PostProcessProgress.Value = progress;
+        TxtPostProcessPercent.Text = $"{progress}%";
+        TxtPostProcessTitle.Text = status switch
+        {
+            "transcribing" => "Whisper 正在生成最终稿",
+            "translating" => "正在生成最终译文",
+            "summarizing" => "Granite 正在生成最终会议纪要",
+            "saving" => "正在保存最终会议成果",
+            _ => "正在准备会议最终稿"
+        };
+        TxtPostProcessMessage.Text = status switch
+        {
+            "transcribing" =>
+                "录音已封存，OpenVINO Whisper 正在离线精修…",
+            "translating" =>
+                "Whisper 最终稿已完成，正在生成最终译文…",
+            "summarizing" =>
+                "正在根据 Whisper 最终稿生成最终会议纪要…",
+            "saving" =>
+                "正在把最终稿和会议纪要保存到本地数据库…",
+            _ => "录音已封存，正在启动会后处理…"
+        };
+        SetStatus($"Processing · {TxtPostProcessMessage.Text}");
+    }
+
+    private async Task LoadLatestMeetingAsync()
+    {
+        if (_isRecording || _isPostProcessing) return;
+
+        BtnLoadLatestMeeting.IsEnabled = false;
+        try
+        {
+            var databasePath = System.IO.Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "MeetingAI",
+                "meeting.db");
+            if (!System.IO.File.Exists(databasePath))
+            {
+                SetStatus("还没有本地会议记录");
+                return;
+            }
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Cache = SqliteCacheMode.Shared
+            }.ToString();
+            await using var connection =
+                new SqliteConnection(connectionString);
+            await connection.OpenAsync();
+
+            long meetingId;
+            string title;
+            DateTime startedAt;
+            DateTime endedAt;
+            await using (var meetingCommand = connection.CreateCommand())
+            {
+                meetingCommand.CommandText =
+                    "SELECT id,COALESCE(title,'Streaming Meeting')," +
+                    "started_at_utc,ended_at_utc " +
+                    "FROM meeting " +
+                    "WHERE ext_source='streaming' " +
+                    "  AND ended_at_utc IS NOT NULL " +
+                    "ORDER BY id DESC LIMIT 1;";
+                await using var reader =
+                    await meetingCommand.ExecuteReaderAsync();
+                if (!await reader.ReadAsync())
+                {
+                    SetStatus("还没有已结束的流式会议");
+                    return;
+                }
+                meetingId = reader.GetInt64(0);
+                title = reader.GetString(1);
+                startedAt = ParseDatabaseTime(
+                    reader.IsDBNull(2) ? null : reader.GetString(2));
+                endedAt = ParseDatabaseTime(
+                    reader.IsDBNull(3) ? null : reader.GetString(3));
+            }
+
+            long canonicalRunId = 0;
+            string latestRunStatus = "";
+            int latestRunProgress = 0;
+            string latestRunError = "";
+            await using (var runCommand = connection.CreateCommand())
+            {
+                runCommand.CommandText =
+                    "SELECT id,status,progress,COALESCE(error_text,'')," +
+                    "is_canonical FROM transcription_run " +
+                    "WHERE meeting_id=$meetingId " +
+                    "ORDER BY id DESC;";
+                runCommand.Parameters.AddWithValue(
+                    "$meetingId",
+                    meetingId);
+                await using var reader =
+                    await runCommand.ExecuteReaderAsync();
+                bool first = true;
+                while (await reader.ReadAsync())
+                {
+                    if (first)
+                    {
+                        latestRunStatus = reader.GetString(1);
+                        latestRunProgress = reader.GetInt32(2);
+                        latestRunError = reader.GetString(3);
+                        first = false;
+                    }
+                    if (canonicalRunId == 0 &&
+                        reader.GetInt32(4) == 1)
+                    {
+                        canonicalRunId = reader.GetInt64(0);
+                    }
+                }
+            }
+
+            var liveCaptions = await LoadStoredCaptionsAsync(
+                connection,
+                meetingId,
+                0,
+                "asr_normalized");
+            var finalCaptions = canonicalRunId > 0
+                ? await LoadStoredCaptionsAsync(
+                    connection,
+                    meetingId,
+                    canonicalRunId,
+                    "asr_whisper_final")
+                : new List<StreamingCaption>();
+
+            string quickSummary = "";
+            string detailedSummary = "";
+            await using (var summaryCommand = connection.CreateCommand())
+            {
+                summaryCommand.CommandText =
+                    "SELECT summary_text,is_final,summary_kind " +
+                    "FROM meeting_summary WHERE meeting_id=$meetingId " +
+                    "ORDER BY revision_no;";
+                summaryCommand.Parameters.AddWithValue(
+                    "$meetingId",
+                    meetingId);
+                await using var reader =
+                    await summaryCommand.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    string summary = reader.GetString(0);
+                    bool isFinal = reader.GetInt32(1) == 1;
+                    string kind = reader.IsDBNull(2)
+                        ? ""
+                        : reader.GetString(2);
+                    if (isFinal ||
+                        kind is "final_minutes" or "detailed_draft")
+                    {
+                        detailedSummary = summary;
+                    }
+                    else
+                    {
+                        quickSummary = summary;
+                    }
+                }
+            }
+
+            ClearAll();
+            _activeMeetingId = meetingId;
+            _meetingStartTime = startedAt;
+            _meetingEndTime = endedAt;
+            foreach (var caption in liveCaptions)
+            {
+                _captions.Add(caption);
+            }
+            foreach (var caption in finalCaptions)
+            {
+                _refinedCaptions.Add(caption);
+                _refinedCaptionBySegment[caption.SegmentId] =
+                    caption;
+            }
+            _refinedTranscriptReady =
+                _refinedCaptions.Count > 0;
+            _segmentCount = _refinedTranscriptReady
+                ? _refinedCaptions.Count
+                : _captions.Count;
+            TxtSegmentCount.Text = _segmentCount.ToString();
+            UpdateDuration(null, EventArgs.Empty);
+            TxtMeetingSummary.Text = string.IsNullOrWhiteSpace(quickSummary)
+                ? "这场会议没有已保存的实时速览。"
+                : quickSummary;
+            TxtDetailedMeetingSummary.Text =
+                string.IsNullOrWhiteSpace(detailedSummary)
+                    ? "这场会议还没有最终会议纪要。"
+                    : detailedSummary;
+            TxtSummaryUpdated.Text =
+                string.IsNullOrWhiteSpace(quickSummary) &&
+                string.IsNullOrWhiteSpace(detailedSummary)
+                    ? ""
+                    : "已从本地数据库恢复";
+            TxtMeetingContextStatus.Text =
+                $"已打开：{title} · Meeting #{meetingId}";
+
+            BtnExport.IsEnabled =
+                _captions.Count > 0 || _refinedCaptions.Count > 0;
+            BtnClear.IsEnabled = BtnExport.IsEnabled;
+            BtnShowFinalTranscript.IsEnabled =
+                _refinedTranscriptReady;
+
+            if (_refinedTranscriptReady)
+            {
+                ShowTranscriptVersion(true);
+            }
+            else
+            {
+                ShowTranscriptVersion(false);
+            }
+
+            bool interrupted =
+                string.IsNullOrEmpty(latestRunStatus) ||
+                latestRunStatus is not "complete";
+            if (interrupted)
+            {
+                PostProcessPanel.Visibility = Visibility.Visible;
+                PostProcessProgress.Value =
+                    Math.Clamp(latestRunProgress, 0, 100);
+                TxtPostProcessPercent.Text =
+                    $"{Math.Clamp(latestRunProgress, 0, 100)}%";
+                TxtPostProcessTitle.Text =
+                    latestRunStatus == "failed"
+                        ? "最近一次最终稿生成失败"
+                        : "最终稿尚未完成";
+                TxtPostProcessMessage.Text =
+                    string.IsNullOrWhiteSpace(latestRunError)
+                        ? "录音仍保存在本地，可以继续生成最终稿。"
+                        : latestRunError;
+                BtnRetryPostProcess.Visibility =
+                    Visibility.Visible;
+            }
+            else
+            {
+                PostProcessPanel.Visibility = Visibility.Visible;
+                PostProcessProgress.Value = 100;
+                TxtPostProcessPercent.Text = "100%";
+                TxtPostProcessTitle.Text = "会议最终稿已完成";
+                TxtPostProcessMessage.Text =
+                    "已从本地数据库恢复 Whisper 最终稿及会议纪要。";
+                BtnRetryPostProcess.Visibility =
+                    Visibility.Collapsed;
+            }
+
+            _summaryEnabled = ChkLiveSummary.IsChecked == true;
+            _postMeetingSummaryAvailable = false;
+            BtnSummarizeNow.IsEnabled = false;
+            SetStatus(
+                _refinedTranscriptReady
+                    ? "History · Whisper 最终稿"
+                    : "History · Sherpa 实时稿");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"读取最近会议失败: {ex.Message}");
+        }
+        finally
+        {
+            BtnLoadLatestMeeting.IsEnabled = true;
+        }
+    }
+
+    private async Task<List<StreamingCaption>>
+        LoadStoredCaptionsAsync(
+            SqliteConnection connection,
+            long meetingId,
+            long transcriptionRunId,
+            string stage)
+    {
+        var captions = new List<StreamingCaption>();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT s.id,st.type,s.start_ms,r.text_final," +
+            "(SELECT tr.text_final FROM revision tr " +
+            " WHERE tr.segment_id=s.id " +
+            "   AND tr.stage LIKE 'translation_%' " +
+            " ORDER BY tr.id DESC LIMIT 1) " +
+            "FROM segment s " +
+            "JOIN stream st ON st.id=s.stream_id " +
+            "JOIN revision r ON r.segment_id=s.id " +
+            "WHERE s.meeting_id=$meetingId AND r.stage=$stage " +
+            (transcriptionRunId > 0
+                ? "AND s.transcription_run_id=$runId "
+                : "AND s.transcription_run_id IS NULL ") +
+            "ORDER BY s.start_ms,s.id;";
+        command.Parameters.AddWithValue("$meetingId", meetingId);
+        command.Parameters.AddWithValue("$stage", stage);
+        if (transcriptionRunId > 0)
+        {
+            command.Parameters.AddWithValue(
+                "$runId",
+                transcriptionRunId);
+        }
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            long segmentId = reader.GetInt64(0);
+            string source = reader.GetString(1);
+            long startMs = reader.GetInt64(2);
+            var timestamp = TimeSpan.FromMilliseconds(
+                Math.Max(0, startMs));
+            captions.Add(new StreamingCaption
+            {
+                SegmentId = segmentId,
+                StartMs = startMs,
+                SpeakerName = GetSourceDisplayName(source),
+                SpeakerColor = GetSourceColor(source),
+                Timestamp = timestamp.ToString(@"hh\:mm\:ss"),
+                Text = reader.GetString(3),
+                TranslatedText = reader.IsDBNull(4)
+                    ? ""
+                    : reader.GetString(4),
+                TextOpacity = 1.0,
+                TranslationOpacity = 1.0
+            });
+        }
+        return captions;
+    }
+
+    private static DateTime ParseDatabaseTime(string? value)
+    {
+        if (DateTime.TryParse(
+                value,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal |
+                System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var utc))
+        {
+            return utc.ToLocalTime();
+        }
+        return DateTime.Now;
+    }
+
     private async Task RequestSummaryNowAsync()
     {
         if ((!_isRecording && !_postMeetingSummaryAvailable) ||
@@ -305,13 +890,14 @@ public sealed partial class StreamingMeetingPage : Page
                 ? "正在生成自适应详细摘要…"
                 : "正在根据本场会议的完整数据库记录重新生成详细摘要…");
         await _mainWindow.SendJsonAsync(
-            "{\"type\":\"request_meeting_summary\"}\n");
+            "{\"type\":\"request_meeting_summary\",\"meeting_id\":" +
+            _activeMeetingId + "}\n");
     }
 
     // ========== 会议控制 ==========
     private async Task StartMeetingAsync()
     {
-        if (_isRecording) return;
+        if (_isRecording || _isPostProcessing) return;
 
         try
         {
@@ -321,14 +907,37 @@ public sealed partial class StreamingMeetingPage : Page
                 return;
             }
 
+            _requestedTranslationMode = GetSelectedTranslationMode();
+            _summaryEnabled = ChkLiveSummary.IsChecked == true;
+            string readinessError =
+                _mainWindow.GetStreamingModelReadinessError(
+                    _requestedTranslationMode,
+                    _summaryEnabled);
+            if (!string.IsNullOrWhiteSpace(readinessError))
+            {
+                await ShowErrorAsync(readinessError);
+                return;
+            }
+
             BtnStartMeeting.IsEnabled = false;
             CmbAudioSource.IsEnabled = false;
             CmbTranslationMode.IsEnabled = false;
-            CmbMeetingContext.IsEnabled = false;
+            UpdateContextSwitchAvailability(false);
             BtnManageMeetingContext.IsEnabled = false;
             ChkLiveSummary.IsEnabled = false;
             BtnSummarizeNow.IsEnabled = false;
             _postMeetingSummaryAvailable = false;
+            _activeMeetingId = 0;
+            _refinedTranscriptReady = false;
+            _refinedCaptions.Clear();
+            _refinedCaptionBySegment.Clear();
+            _captions.Clear();
+            _segmentCount = 0;
+            ShowTranscriptVersion(false);
+            PostProcessPanel.Visibility = Visibility.Collapsed;
+            BtnRetryPostProcess.Visibility = Visibility.Collapsed;
+            PostProcessProgress.Value = 0;
+            TxtPostProcessPercent.Text = "0%";
             SetStatus("Connecting…");
 
             await _mainWindow.EnsurePipeAsync();
@@ -337,16 +946,14 @@ public sealed partial class StreamingMeetingPage : Page
             _startedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _mainWindow.StreamingMessageHandler = OnStreamingMessageReceived;
 
-            _requestedTranslationMode = GetSelectedTranslationMode();
-            _summaryEnabled = ChkLiveSummary.IsChecked == true;
             _summaryReady = false;
             _summaryServiceAvailable = false;
             SetTranslationStatus(
                 _requestedTranslationMode == "off" ? "关闭" : "模型准备中…");
             SetSummaryStatus(
-                _summaryEnabled ? "准备本地 Granite 摘要服务…" : "已关闭");
+                _summaryEnabled ? "检查本地 Granite 摘要服务…" : "已关闭");
             TxtMeetingSummary.Text = _summaryEnabled
-                ? "正在启动会议，实时速览模型将在后台加载。"
+                ? "正在启动会议，使用 Startup 已加载的 Granite。"
                 : "本场会议未启用自动摘要。";
             TxtDetailedMeetingSummary.Text = _summaryEnabled
                 ? "会议进行中可随时点击“生成详细摘要”。"
@@ -363,10 +970,18 @@ public sealed partial class StreamingMeetingPage : Page
                 source = GetSelectedSourceMode(),
                 translation_mode = _requestedTranslationMode,
                 summary_enabled = _summaryEnabled,
+                rag_context_enabled =
+                    _activeMeetingContext.HasPreparation &&
+                    ChkUseRagContext.IsChecked == true,
+                asr_hotwords_enabled =
+                    _activeMeetingContext.HasPreparation &&
+                    ChkUseAsrHotwords.IsChecked == true,
                 preparation_id = _activeMeetingContext.PreparationId,
                 context_title = _activeMeetingContext.Title,
                 context_document_ids = _activeMeetingContext.DocumentIds,
-                hotwords = _activeMeetingContext.Hotwords
+                hotwords = (ChkUseAsrHotwords.IsChecked == true
+                    ? _activeMeetingContext.Hotwords
+                    : new List<HotwordCandidate>())
                     .Where(item => item.Enabled && !string.IsNullOrWhiteSpace(item.Text))
                     .OrderByDescending(item => item.Score)
                     .Take(100)
@@ -376,22 +991,23 @@ public sealed partial class StreamingMeetingPage : Page
             await _mainWindow.SendJsonAsync(
                 JsonSerializer.Serialize(startCmd, Contracts.AppJsonContext.Utf8.StartStreamingCommand) + "\n");
 
-            SetStatus("Loading model…");
+            SetStatus("Starting transcription…");
 
-            // 等 Worker 确认会话就绪。抢在模型加载完之前送音频，Worker 只会回一串"会话未启动"。
-            // 首次加载要读 200MB+ 的 onnx 并做图优化，冷启动可能到分钟级，超时给宽一点。
-            var ready = await Task.WhenAny(_startedTcs.Task, Task.Delay(TimeSpan.FromMinutes(3)));
+            // 模型已在 Startup 加载；这里只等待会话、录音和数据库准备。
+            var ready = await Task.WhenAny(
+                _startedTcs.Task,
+                Task.Delay(TimeSpan.FromSeconds(30)));
             if (ready != _startedTcs.Task)
             {
                 _mainWindow.StreamingMessageHandler = null;
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
                 CmbTranslationMode.IsEnabled = true;
-                CmbMeetingContext.IsEnabled = true;
+                UpdateContextSwitchAvailability();
                 BtnManageMeetingContext.IsEnabled = true;
                 ChkLiveSummary.IsEnabled = true;
                 SetStatus("Failed");
-                await ShowErrorAsync("等待 Worker 启动流式会话超时（3 分钟）。请检查日志窗口里 [Worker] 开头的输出。");
+                await ShowErrorAsync("等待 Worker 启动流式会话超时（30 秒）。请检查 Startup 模型状态和日志。");
                 return;
             }
             if (!_startedTcs.Task.Result)
@@ -401,7 +1017,7 @@ public sealed partial class StreamingMeetingPage : Page
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
                 CmbTranslationMode.IsEnabled = true;
-                CmbMeetingContext.IsEnabled = true;
+                UpdateContextSwitchAvailability();
                 BtnManageMeetingContext.IsEnabled = true;
                 ChkLiveSummary.IsEnabled = true;
                 return;
@@ -415,7 +1031,7 @@ public sealed partial class StreamingMeetingPage : Page
                 BtnStartMeeting.IsEnabled = true;
                 CmbAudioSource.IsEnabled = true;
                 CmbTranslationMode.IsEnabled = true;
-                CmbMeetingContext.IsEnabled = true;
+                UpdateContextSwitchAvailability();
                 BtnManageMeetingContext.IsEnabled = true;
                 ChkLiveSummary.IsEnabled = true;
                 SetStatus("Failed");
@@ -466,7 +1082,7 @@ public sealed partial class StreamingMeetingPage : Page
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
             CmbTranslationMode.IsEnabled = true;
-            CmbMeetingContext.IsEnabled = true;
+            UpdateContextSwitchAvailability();
             BtnManageMeetingContext.IsEnabled = true;
             ChkLiveSummary.IsEnabled = true;
             SetStatus("Failed");
@@ -480,13 +1096,19 @@ public sealed partial class StreamingMeetingPage : Page
 
         try
         {
-            bool workerStopped = false;
             _isRecording = false;
+            _isPostProcessing = true;
             _meetingEndTime = DateTime.Now;
             _durationTimer?.Stop();
             UpdateDuration(null, EventArgs.Empty);
             BtnStopMeeting.IsEnabled = false;
-            SetStatus("Finalizing · 正在整理最后字幕、译文和详细摘要…");
+            PostProcessPanel.Visibility = Visibility.Visible;
+            PostProcessProgress.Value = 0;
+            TxtPostProcessPercent.Text = "0%";
+            TxtPostProcessTitle.Text = "正在封存会议录音";
+            TxtPostProcessMessage.Text =
+                "正在安全保存两路录音，随后启动 OpenVINO Whisper…";
+            SetStatus("正在停止录音并封存实时稿…");
 
             // 先停采集和发送泵，再发 stop，避免 stop 之后还有音频包排在后面
             foreach (var pipeline in _audioPipelines)
@@ -508,51 +1130,57 @@ public sealed partial class StreamingMeetingPage : Page
 
             if (_mainWindow != null)
             {
-                _stoppedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _recordingStoppedTcs = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                _stoppedTcs = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
 
                 var stopCmd = new StopStreamingCommand();
                 await _mainWindow.SendJsonAsync(
                     JsonSerializer.Serialize(stopCmd, Contracts.AppJsonContext.Default.StopStreamingCommand) + "\n");
-
-                // Worker 在 streaming_stopped 之前还会补发最后一段 final 结果，
-                // 立刻注销处理器会把它丢掉
-                var completed = await Task.WhenAny(
-                    _stoppedTcs.Task,
-                    Task.Delay(TimeSpan.FromMinutes(3)));
-                workerStopped =
-                    completed == _stoppedTcs.Task &&
-                    await _stoppedTcs.Task;
-                _mainWindow.StreamingMessageHandler = null;
+                // 停止命令已经成功交给 Worker。即使后续回执超时，也不能
+                // 再补发第二条 stop，否则第一条完成后第二条会得到
+                // “流式会话未启动”，掩盖真正的处理状态。
                 _workerStreamingStarted = false;
+
+                // 只等待录音封存完成。Whisper/翻译/最终纪要会继续在后台
+                // 处理并通过当前消息处理器逐步更新页面。
+                var completed = await Task.WhenAny(
+                    _recordingStoppedTcs.Task,
+                    Task.Delay(TimeSpan.FromSeconds(30)));
+                if (completed != _recordingStoppedTcs.Task ||
+                    !await _recordingStoppedTcs.Task)
+                {
+                    throw new TimeoutException("等待 Worker 封存会议录音超时");
+                }
             }
 
             CloseAllParagraphs(); // 两个来源的 final 都已收完
 
             CleanupResources();
 
-            BtnStartMeeting.IsEnabled = true;
-            CmbAudioSource.IsEnabled = true;
-            CmbTranslationMode.IsEnabled = true;
-            CmbMeetingContext.IsEnabled = true;
-            BtnManageMeetingContext.IsEnabled = true;
-            ChkLiveSummary.IsEnabled = true;
-            _postMeetingSummaryAvailable =
-                _summaryEnabled && workerStopped;
-            _summaryServiceAvailable =
-                _postMeetingSummaryAvailable;
-            _summaryReady = _postMeetingSummaryAvailable;
-            BtnSummarizeNow.IsEnabled =
-                _postMeetingSummaryAvailable;
-            BtnExport.IsEnabled = _captions.Count > 0;
-            BtnClear.IsEnabled = _captions.Count > 0;
-            SetStatus("Idle");
-            if (_postMeetingSummaryAvailable)
+            // 极短或空白录音可能在 UI 恢复调度前就已经完成/失败。
+            // 此时完成事件已经设置好了最终状态，不要再把页面改回“处理中”。
+            if (!_isPostProcessing)
             {
-                SetSummaryStatus(
-                    "会议已结束；可继续点击“生成详细摘要”重新生成");
+                return;
             }
 
-            Debug.WriteLine("[StreamingMeeting] Meeting stopped");
+            BtnStartMeeting.IsEnabled = false;
+            _postMeetingSummaryAvailable = false;
+            _summaryReady = false;
+            BtnSummarizeNow.IsEnabled = false;
+            BtnExport.IsEnabled = _captions.Count > 0;
+            BtnClear.IsEnabled = false;
+            SetStatus("Processing · 正在生成 Whisper 最终稿");
+            SetSummaryStatus(
+                _summaryEnabled
+                    ? "等待 Whisper 最终稿完成后生成最终会议纪要"
+                    : "本场会议未启用摘要");
+            StartPostProcessDatabaseMonitor();
+
+            Debug.WriteLine(
+                "[StreamingMeeting] Recording stopped; post-processing started");
         }
         catch (Exception ex)
         {
@@ -562,13 +1190,15 @@ public sealed partial class StreamingMeetingPage : Page
             BtnStartMeeting.IsEnabled = true;
             CmbAudioSource.IsEnabled = true;
             CmbTranslationMode.IsEnabled = true;
-            CmbMeetingContext.IsEnabled = true;
+            UpdateContextSwitchAvailability();
             BtnManageMeetingContext.IsEnabled = true;
             ChkLiveSummary.IsEnabled = true;
             BtnSummarizeNow.IsEnabled = false;
             _summaryReady = false;
             _summaryServiceAvailable = false;
             _postMeetingSummaryAvailable = false;
+            _isPostProcessing = false;
+            PostProcessPanel.Visibility = Visibility.Collapsed;
             SetStatus("Idle");
             await ShowErrorAsync($"停止失败：{ex.Message}");
         }
@@ -815,6 +1445,14 @@ public sealed partial class StreamingMeetingPage : Page
                 && id.TryGetInt64(out long value)
                 ? value
                 : 0;
+            long SegmentId() => root.TryGetProperty("segment_id", out var id)
+                && id.TryGetInt64(out long value)
+                ? value
+                : 0;
+            long StartMs() => root.TryGetProperty("start_ms", out var start)
+                && start.TryGetInt64(out long value)
+                ? value
+                : 0;
 
             switch (type)
             {
@@ -842,8 +1480,21 @@ public sealed partial class StreamingMeetingPage : Page
                             "rag_enabled",
                             out var ragElement) &&
                         ragElement.ValueKind == JsonValueKind.True;
+                    bool actualAsrHotwordsEnabled =
+                        root.TryGetProperty(
+                            "asr_hotwords_enabled",
+                            out var asrElement) &&
+                        asrElement.ValueKind == JsonValueKind.True;
+                    long meetingId =
+                        root.TryGetProperty(
+                            "meeting_id",
+                            out var meetingElement) &&
+                        meetingElement.TryGetInt64(out long parsedMeetingId)
+                            ? parsedMeetingId
+                            : 0;
                     DispatcherQueue.TryEnqueue(() =>
                     {
+                        _activeMeetingId = meetingId;
                         if (_requestedTranslationMode == "off")
                         {
                             SetTranslationStatus("关闭");
@@ -870,11 +1521,14 @@ public sealed partial class StreamingMeetingPage : Page
                             _activeMeetingContext.HasPreparation
                                 ? $"{_activeMeetingContext.Title} · " +
                                   $"{_activeMeetingContext.DocumentIds.Count}/5 份资料 · " +
-                                  $"{actualHotwordCount} 个热词已加载 · " +
                                   (actualRagEnabled
-                                      ? "限定 RAG 已绑定"
-                                      : "本场无可检索资料")
-                                : "通用模式 · 未使用会前资料和热词";
+                                      ? "RAG 已启用"
+                                      : "RAG 已关闭") +
+                                  " · " +
+                                  (actualAsrHotwordsEnabled
+                                      ? $"{actualHotwordCount} 个术语用于识别"
+                                      : "术语增强已关闭")
+                                : "通用模式 · 未绑定会议资料";
                     });
                     _startedTcs?.TrySetResult(true);
                     break;
@@ -900,10 +1554,118 @@ public sealed partial class StreamingMeetingPage : Page
                     _stoppedTcs?.TrySetResult(true);
                     break;
 
+                case "streaming_recording_stopped":
+                    _recordingStoppedTcs?.TrySetResult(true);
+                    break;
+
                 case "streaming_stop_progress":
                 {
                     string message = Message();
                     DispatcherQueue.TryEnqueue(() => SetStatus(message));
+                    break;
+                }
+
+                case "streaming_postprocess_status":
+                {
+                    string state = root.TryGetProperty(
+                            "state",
+                            out var stateElement)
+                        ? stateElement.GetString() ?? ""
+                        : "";
+                    int progress = root.TryGetProperty(
+                            "progress",
+                            out var progressElement) &&
+                        progressElement.TryGetInt32(out int parsedProgress)
+                            ? Math.Clamp(parsedProgress, 0, 100)
+                            : 0;
+                    string message = Message();
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        PostProcessPanel.Visibility = Visibility.Visible;
+                        PostProcessProgress.Value = progress;
+                        TxtPostProcessPercent.Text = $"{progress}%";
+                        TxtPostProcessMessage.Text = message;
+                        TxtPostProcessTitle.Text = state switch
+                        {
+                            "transcribing" => "Whisper 正在生成最终稿",
+                            "translating" => "正在生成最终译文",
+                            "summarizing" => "Granite 正在生成最终会议纪要",
+                            "saving" => "正在保存最终会议成果",
+                            "complete" => "会议最终稿已完成",
+                            "failed" => "会议最终稿生成失败",
+                            _ => "正在生成会议最终稿"
+                        };
+                        if (state is not "complete" and not "failed")
+                        {
+                            SetStatus($"Processing · {message}");
+                        }
+                    });
+                    break;
+                }
+
+                case "streaming_postprocess_transcript_reset":
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        _refinedCaptions.Clear();
+                        _refinedCaptionBySegment.Clear();
+                        _refinedTranscriptReady = false;
+                        BtnShowFinalTranscript.IsEnabled = false;
+                    });
+                    break;
+
+                case "streaming_postprocess_segment":
+                {
+                    string text = Text();
+                    string source = Source();
+                    long segmentId = SegmentId();
+                    long startMs = StartMs();
+                    if (!string.IsNullOrWhiteSpace(text) && segmentId > 0)
+                    {
+                        DispatcherQueue.TryEnqueue(
+                            () => AddRefinedTranscript(
+                                segmentId,
+                                source,
+                                startMs,
+                                text));
+                    }
+                    break;
+                }
+
+                case "streaming_postprocess_translation":
+                {
+                    string text = Text();
+                    long segmentId = SegmentId();
+                    if (!string.IsNullOrWhiteSpace(text) && segmentId > 0)
+                    {
+                        DispatcherQueue.TryEnqueue(
+                            () => UpdateRefinedTranslation(
+                                segmentId,
+                                text));
+                    }
+                    break;
+                }
+
+                case "streaming_postprocess_warning":
+                {
+                    string message = Message();
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        TxtPostProcessMessage.Text = message;
+                        SetStatus($"Processing warning · {message}");
+                    });
+                    break;
+                }
+
+                case "streaming_postprocess_complete":
+                    DispatcherQueue.TryEnqueue(
+                        () => CompletePostProcessing(true, ""));
+                    break;
+
+                case "streaming_postprocess_error":
+                {
+                    string message = Message();
+                    DispatcherQueue.TryEnqueue(
+                        () => CompletePostProcessing(false, message));
                     break;
                 }
 
@@ -977,7 +1739,7 @@ public sealed partial class StreamingMeetingPage : Page
                             _summaryServiceAvailable = true;
                             _summaryReady = true;
                         }
-                        else if (state is "loading" or "disabled")
+                        else if (state is "checking" or "loading" or "disabled")
                         {
                             _summaryServiceAvailable = false;
                             _summaryReady = false;
@@ -990,7 +1752,8 @@ public sealed partial class StreamingMeetingPage : Page
                         {
                             // 生成或事实校验失败后允许用户重试；只有模型加载
                             // 失败时服务才不可用。
-                            if (message.Contains("加载失败"))
+                            if (message.Contains("加载失败") ||
+                                message.Contains("未加载"))
                             {
                                 _summaryServiceAvailable = false;
                             }
@@ -1104,6 +1867,7 @@ public sealed partial class StreamingMeetingPage : Page
 
                     // 启动握手期间的错误要让 StartMeetingAsync 立刻返回
                     _startedTcs?.TrySetResult(false);
+                    _recordingStoppedTcs?.TrySetResult(false);
                     _stoppedTcs?.TrySetResult(false);
 
                     // 转录中可能连续报错，这里只更新状态栏。
@@ -1116,6 +1880,117 @@ public sealed partial class StreamingMeetingPage : Page
         catch (Exception ex)
         {
             Debug.WriteLine($"[StreamingMeeting] Message parse failed: {ex.Message} / {json}");
+        }
+    }
+
+    private void AddRefinedTranscript(
+        long segmentId,
+        string source,
+        long startMs,
+        string text)
+    {
+        if (_refinedCaptionBySegment.TryGetValue(
+                segmentId,
+                out var existing))
+        {
+            existing.Text = text;
+            return;
+        }
+
+        var timestamp = TimeSpan.FromMilliseconds(
+            Math.Max(0, startMs));
+        var caption = new StreamingCaption
+        {
+            SegmentId = segmentId,
+            StartMs = startMs,
+            SpeakerName = GetSourceDisplayName(source),
+            SpeakerColor = GetSourceColor(source),
+            Timestamp = timestamp.ToString(@"hh\:mm\:ss"),
+            Text = text,
+            TextOpacity = 1.0
+        };
+
+        int insertAt = 0;
+        while (insertAt < _refinedCaptions.Count)
+        {
+            var current = _refinedCaptions[insertAt];
+            if (current.StartMs > startMs ||
+                (current.StartMs == startMs &&
+                 current.SegmentId > segmentId))
+            {
+                break;
+            }
+            insertAt++;
+        }
+        _refinedCaptions.Insert(insertAt, caption);
+        _refinedCaptionBySegment[segmentId] = caption;
+    }
+
+    private void UpdateRefinedTranslation(long segmentId, string text)
+    {
+        if (_refinedCaptionBySegment.TryGetValue(
+                segmentId,
+                out var caption))
+        {
+            caption.TranslatedText = text;
+            caption.TranslationOpacity = 1.0;
+        }
+    }
+
+    private void CompletePostProcessing(bool success, string message)
+    {
+        StopPostProcessDatabaseMonitor();
+        _isPostProcessing = false;
+        _refinedTranscriptReady =
+            success && _refinedCaptions.Count > 0;
+        PostProcessPanel.Visibility = Visibility.Visible;
+        PostProcessProgress.Value = 100;
+        TxtPostProcessPercent.Text = "100%";
+        TxtPostProcessTitle.Text = success
+            ? "会议最终稿已完成"
+            : "会议最终稿生成失败";
+        TxtPostProcessMessage.Text = success
+            ? "Whisper 最终稿以及已生成的译文、会议纪要均已保存到本地数据库。"
+            : message;
+        BtnRetryPostProcess.Visibility = success
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        BtnStartMeeting.IsEnabled = true;
+        CmbAudioSource.IsEnabled = true;
+        CmbTranslationMode.IsEnabled = true;
+        UpdateContextSwitchAvailability();
+        BtnManageMeetingContext.IsEnabled = true;
+        ChkLiveSummary.IsEnabled = true;
+        BtnClear.IsEnabled =
+            _captions.Count > 0 || _refinedCaptions.Count > 0;
+        BtnExport.IsEnabled = BtnClear.IsEnabled;
+        BtnShowFinalTranscript.IsEnabled =
+            _refinedTranscriptReady && !_showingRefinedTranscript;
+
+        _postMeetingSummaryAvailable =
+            success && _summaryEnabled;
+        _summaryServiceAvailable =
+            _postMeetingSummaryAvailable;
+        _summaryReady =
+            _postMeetingSummaryAvailable;
+        BtnSummarizeNow.IsEnabled =
+            _postMeetingSummaryAvailable;
+
+        if (_refinedTranscriptReady)
+        {
+            _segmentCount = _refinedCaptions.Count;
+            TxtSegmentCount.Text = _segmentCount.ToString();
+            ShowTranscriptVersion(true);
+            SetStatus("Complete · Whisper 最终稿已保存");
+        }
+        else
+        {
+            ShowTranscriptVersion(false);
+            SetStatus(
+                success
+                    ? "Complete · 本场录音没有识别出有效文字"
+                    : $"最终稿失败 · {message}");
         }
     }
 
@@ -1454,7 +2329,9 @@ public sealed partial class StreamingMeetingPage : Page
         sb.AppendLine();
 
         // 只导出有定稿内容的段落（纯 partial 的临时段落 TextOpacity 仍是 0.6）
-        foreach (var caption in _captions.Where(c => c.TextOpacity >= 1.0 && !string.IsNullOrWhiteSpace(c.Text)))
+        foreach (var caption in VisibleCaptions.Where(
+            c => c.TextOpacity >= 1.0 &&
+                 !string.IsNullOrWhiteSpace(c.Text)))
         {
             sb.AppendLine(
                 $"[{caption.Timestamp}] {caption.SpeakerName}: {caption.Text}");
@@ -1478,7 +2355,10 @@ public sealed partial class StreamingMeetingPage : Page
             }
             if (!string.IsNullOrWhiteSpace(TxtDetailedMeetingSummary.Text))
             {
-                sb.AppendLine("# Adaptive Detailed Summary");
+                sb.AppendLine(
+                    _refinedTranscriptReady
+                        ? "# Final Meeting Minutes"
+                        : "# Adaptive Detailed Summary");
                 sb.AppendLine();
                 sb.AppendLine(TxtDetailedMeetingSummary.Text);
                 sb.AppendLine();
@@ -1491,7 +2371,7 @@ public sealed partial class StreamingMeetingPage : Page
     private string GenerateVisibleCaptionContent()
     {
         var sb = new StringBuilder();
-        foreach (var caption in _captions.Where(
+        foreach (var caption in VisibleCaptions.Where(
             c => !string.IsNullOrWhiteSpace(c.Text)
                  || !string.IsNullOrWhiteSpace(c.TranslatedText)))
         {
@@ -1512,7 +2392,10 @@ public sealed partial class StreamingMeetingPage : Page
     // ========== 清理 ==========
     private void ClearAll()
     {
+        StopPostProcessDatabaseMonitor();
         _captions.Clear();
+        _refinedCaptions.Clear();
+        _refinedCaptionBySegment.Clear();
         _speakers.Clear();
         _segmentCount = 0;
 
@@ -1522,6 +2405,10 @@ public sealed partial class StreamingMeetingPage : Page
         _meetingEndTime = null;
         _postMeetingSummaryAvailable = false;
         _summaryServiceAvailable = false;
+        _isPostProcessing = false;
+        _refinedTranscriptReady = false;
+        _activeMeetingId = 0;
+        ShowTranscriptVersion(false);
 
         TxtDuration.Text = "00:00:00";
         TxtSpeakerCount.Text = "0";
@@ -1537,6 +2424,12 @@ public sealed partial class StreamingMeetingPage : Page
         BtnExport.IsEnabled = false;
         BtnClear.IsEnabled = false;
         BtnSummarizeNow.IsEnabled = false;
+        BtnShowLiveTranscript.IsEnabled = false;
+        BtnShowFinalTranscript.IsEnabled = false;
+        PostProcessPanel.Visibility = Visibility.Collapsed;
+        BtnRetryPostProcess.Visibility = Visibility.Collapsed;
+        PostProcessProgress.Value = 0;
+        TxtPostProcessPercent.Text = "0%";
 
         Debug.WriteLine("[StreamingMeeting] Cleared");
     }
@@ -1611,7 +2504,7 @@ public sealed partial class StreamingMeetingPage : Page
 
         try
         {
-            _stoppedTcs = new TaskCompletionSource<bool>(
+            _recordingStoppedTcs = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             var stopCmd = new StopStreamingCommand();
             await _mainWindow.SendJsonAsync(
@@ -1619,7 +2512,7 @@ public sealed partial class StreamingMeetingPage : Page
                     stopCmd,
                     Contracts.AppJsonContext.Default.StopStreamingCommand) + "\n");
             await Task.WhenAny(
-                _stoppedTcs.Task,
+                _recordingStoppedTcs.Task,
                 Task.Delay(TimeSpan.FromSeconds(3)));
         }
         catch (Exception ex)

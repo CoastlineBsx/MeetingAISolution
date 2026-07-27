@@ -339,6 +339,26 @@ namespace meetingai::proto {
         }
     }
 
+    bool extractRagContextEnabled(const std::string& jsonStr) {
+        try {
+            const auto value = json::parse(jsonStr);
+            return value.value("rag_context_enabled", true);
+        }
+        catch (...) {
+            return true;
+        }
+    }
+
+    bool extractAsrHotwordsEnabled(const std::string& jsonStr) {
+        try {
+            const auto value = json::parse(jsonStr);
+            return value.value("asr_hotwords_enabled", false);
+        }
+        catch (...) {
+            return false;
+        }
+    }
+
     static void replaceAll(
         std::string& text,
         const std::string& from,
@@ -505,6 +525,28 @@ namespace meetingai::proto {
         const auto text = trim(json);
         return text.find("\"type\"") != std::string::npos &&
             text.find("\"request_meeting_summary\"") != std::string::npos;
+    }
+
+    bool isRetryMeetingPostProcess(const std::string& jsonStr) {
+        const auto text = trim(jsonStr);
+        return text.find("\"type\"") != std::string::npos &&
+            text.find("\"retry_meeting_postprocess\"") !=
+                std::string::npos;
+    }
+
+    std::int64_t extractMeetingId(const std::string& jsonStr) {
+        try {
+            const auto value = json::parse(jsonStr);
+            if (value.contains("meeting_id") &&
+                value["meeting_id"].is_number_integer()) {
+                return std::max<std::int64_t>(
+                    0,
+                    value["meeting_id"].get<std::int64_t>());
+            }
+        }
+        catch (...) {
+        }
+        return 0;
     }
 
 } // namespace meetingai::proto

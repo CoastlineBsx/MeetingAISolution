@@ -51,7 +51,8 @@ bool TranscribeAudioFileOpenVINO(
     const std::string& audioPath,
     std::vector<WhisperOpenVINOSegment>& segments,
     const std::string& language = "auto",
-    ProgressCallback progressCallback = nullptr
+    ProgressCallback progressCallback = nullptr,
+    const std::string& hotwords = {}
 );
 
 } // namespace meetingai::transcribe

@@ -42,7 +42,8 @@ public:
                     const std::string& tokensPath,
                     int sampleRate = 16000,
                     const std::string& hotwordsBuffer = {},
-                    const std::string& bpeVocabPath = {});
+                    const std::string& bpeVocabPath = {},
+                    bool hotwordsCapable = false);
 
     /// <summary>
     /// 开始流式转录会话

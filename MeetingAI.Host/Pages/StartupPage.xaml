@@ -19,16 +19,20 @@
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="24" MaxWidth="900">
 
-                <!-- Granite & Embedding Models Group -->
+                <!-- Granite & Embedding are independent resident models. -->
                 <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         CornerRadius="8"
                         Padding="20"
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                     <StackPanel Spacing="16">
-                        <TextBlock Text="Language Models (Granite &amp; Embedding)"
+                        <TextBlock Text="Language &amp; Retrieval Models"
                                    FontSize="18"
                                    FontWeight="SemiBold"/>
+                        <TextBlock Text="All models are loaded only from this page. Feature pages never load models automatically."
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -66,22 +70,53 @@
                                 </ComboBox>
                             </StackPanel>
 
-                            <!-- Load/Unload Button with ProgressRing -->
-                            <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="12" Margin="0,12,0,0">
-                                <Button x:Name="BtnPreloadModels"
+                            <StackPanel Grid.Row="1" Grid.Column="0" Spacing="8" Margin="0,12,12,0">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Button x:Name="BtnLoadGranite"
                                         x:FieldModifier="public"
-                                        Content="Load Models"
-                                        Click="BtnPreloadModels_Click"
+                                        Content="Load Granite"
+                                        Click="BtnLoadGranite_Click"
                                         HorizontalAlignment="Stretch"
                                         MinWidth="200"
                                         IsEnabled="False"
                                         Style="{ThemeResource AccentButtonStyle}"/>
-                                <ProgressRing x:Name="ProgressGraniteEmbedding"
+                                <ProgressRing x:Name="ProgressGranite"
                                               x:FieldModifier="public"
                                               Width="24"
                                               Height="24"
                                               IsActive="False"
                                               Visibility="Collapsed"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtGraniteState"
+                                           x:FieldModifier="public"
+                                           Text="Not loaded"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="8" Margin="12,12,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Button x:Name="BtnLoadEmbedding"
+                                        x:FieldModifier="public"
+                                        Content="Load Embedding"
+                                        Click="BtnLoadEmbedding_Click"
+                                        HorizontalAlignment="Stretch"
+                                        MinWidth="200"
+                                        IsEnabled="False"
+                                        Style="{ThemeResource AccentButtonStyle}"/>
+                                <ProgressRing x:Name="ProgressEmbedding"
+                                              x:FieldModifier="public"
+                                              Width="24"
+                                              Height="24"
+                                              IsActive="False"
+                                              Visibility="Collapsed"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtEmbeddingState"
+                                           x:FieldModifier="public"
+                                           Text="Not loaded · OpenVINO GenAI TextEmbeddingPipeline"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
@@ -94,19 +129,21 @@
                         Padding="20"
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                     <StackPanel Spacing="16">
-                        <TextBlock Text="Speech Recognition (Whisper)"
+                        <TextBlock Text="Legacy Whisper (Compatibility)"
                                    FontSize="18"
                                    FontWeight="SemiBold"/>
+                        <TextBlock Text="whisper.cpp compatibility pipeline for older pages. Streaming Meeting uses Sherpa live and OpenVINO Whisper for the final transcript."
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
                         <StackPanel Spacing="8">
                             <TextBlock Text="Whisper Model Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <ComboBox x:Name="CmbWhisperDevice"
                                       x:FieldModifier="public"
-                                      SelectedIndex="1"
+                                      SelectedIndex="0"
                                       HorizontalAlignment="Stretch">
                                 <ComboBoxItem Content="CPU"/>
-                                <ComboBoxItem Content="GPU"/>
-                                <ComboBoxItem Content="NPU"/>
                             </ComboBox>
                         </StackPanel>
 
@@ -189,6 +226,128 @@
                                           IsActive="False"
                                           Visibility="Collapsed"/>
                         </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Streaming speech models -->
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Streaming Meeting Models"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Text="Sherpa and punctuation run on CPU. Load both before starting a meeting for the full caption experience."
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+
+                        <Grid ColumnSpacing="24" RowSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Grid.Column="0" Spacing="8">
+                                <TextBlock Text="Sherpa-ONNX Streaming ASR" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Name="BtnLoadSherpa"
+                                            x:FieldModifier="public"
+                                            Content="Load Sherpa"
+                                            Click="BtnLoadSherpa_Click"
+                                            MinWidth="200"
+                                            IsEnabled="False"
+                                            Style="{ThemeResource AccentButtonStyle}"/>
+                                    <ProgressRing x:Name="ProgressSherpa"
+                                                  x:FieldModifier="public"
+                                                  Width="24" Height="24"
+                                                  IsActive="False"
+                                                  Visibility="Collapsed"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtSherpaState"
+                                           x:FieldModifier="public"
+                                           Text="Not loaded · CPU"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="0" Grid.Column="1" Spacing="8">
+                                <TextBlock Text="Sherpa Bilingual Punctuation" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Name="BtnLoadPunctuator"
+                                            x:FieldModifier="public"
+                                            Content="Load Punctuation"
+                                            Click="BtnLoadPunctuator_Click"
+                                            MinWidth="200"
+                                            IsEnabled="False"
+                                            Style="{ThemeResource AccentButtonStyle}"/>
+                                    <ProgressRing x:Name="ProgressPunctuator"
+                                                  x:FieldModifier="public"
+                                                  Width="24" Height="24"
+                                                  IsActive="False"
+                                                  Visibility="Collapsed"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtPunctuatorState"
+                                           x:FieldModifier="public"
+                                           Text="Not loaded · CPU"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="0" Spacing="8">
+                                <TextBlock Text="OPUS-MT English → Chinese" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Name="BtnLoadTranslationEnZh"
+                                            x:FieldModifier="public"
+                                            Content="Load EN → ZH"
+                                            Click="BtnLoadTranslationEnZh_Click"
+                                            MinWidth="200"
+                                            IsEnabled="False"
+                                            Style="{ThemeResource AccentButtonStyle}"/>
+                                    <ProgressRing x:Name="ProgressTranslationEnZh"
+                                                  x:FieldModifier="public"
+                                                  Width="24" Height="24"
+                                                  IsActive="False"
+                                                  Visibility="Collapsed"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtTranslationEnZhState"
+                                           x:FieldModifier="public"
+                                           Text="Not loaded · CTranslate2 CPU"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="8">
+                                <TextBlock Text="OPUS-MT Chinese → English" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Name="BtnLoadTranslationZhEn"
+                                            x:FieldModifier="public"
+                                            Content="Load ZH → EN"
+                                            Click="BtnLoadTranslationZhEn_Click"
+                                            MinWidth="200"
+                                            IsEnabled="False"
+                                            Style="{ThemeResource AccentButtonStyle}"/>
+                                    <ProgressRing x:Name="ProgressTranslationZhEn"
+                                                  x:FieldModifier="public"
+                                                  Width="24" Height="24"
+                                                  IsActive="False"
+                                                  Visibility="Collapsed"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TxtTranslationZhEnState"
+                                           x:FieldModifier="public"
+                                           Text="Not loaded · CTranslate2 CPU"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                        </Grid>
                     </StackPanel>
                 </Border>
 

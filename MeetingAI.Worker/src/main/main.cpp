@@ -1,6 +1,7 @@
 
 #include <windows.h>
 #include <sddl.h>
+#include <atomic>
 #include <iostream>
 #include <string>
 #include <memory>      // ← 新增：unique_ptr
@@ -32,6 +33,7 @@
 #include "transcript_text_normalizer.hpp"
 #include "translation/offline_translator.hpp"
 #include "summary/meeting_summary_service.hpp"
+#include "audio/meeting_audio_recorder.hpp"
 #include "base64.h"  // ← 新增：Base64 解码
 #include "command_parser.h"
 #include "logging.h"
@@ -92,6 +94,10 @@ static std::unordered_map<std::string, long long> g_streaming_utterance_ids;
 static std::unordered_map<std::string, long long> g_streaming_last_end_ms;
 static std::chrono::steady_clock::time_point g_streaming_started_at;
 static std::int64_t g_streaming_meeting_id = 0;
+static std::string g_streaming_translation_mode = "off";
+static std::string g_streaming_whisper_hotwords;
+static bool g_streaming_summary_enabled = false;
+static bool g_streaming_recording_failed = false;
 
 // final 原文先写 segment，译文回调再按 source + utterance_id 找回同一条
 // segment，作为后续 revision 保存。
@@ -103,6 +109,14 @@ static std::unordered_map<
 
 // Granite 摘要运行在独立线程，绝不能占用命名管道的音频读取循环。
 static meetingai::summary::MeetingSummaryService g_meeting_summary;
+static meetingai::audio::MeetingAudioRecorder g_meeting_audio_recorder;
+
+// 会后精修在后台完成。录音停止后 UI 立即进入“生成最终稿”状态，
+// Worker 仍可持续回传 Whisper、翻译和最终纪要的进度。
+static std::mutex g_postprocess_mutex;
+static std::thread g_postprocess_thread;
+static std::atomic<bool> g_postprocess_running{ false };
+static std::atomic<bool> g_postprocess_pipe_available{ true };
 
 // CTranslate2 翻译和 Sherpa 转录会从不同线程回写同一根命名管道。
 // WriteFile 本身不能保证两个 JSON 消息不会交叉，因此统一串行化流式页面的回包。
@@ -120,6 +134,69 @@ static void WriteStreamingMessage(
         static_cast<DWORD>(message.size()),
         &written,
         nullptr);
+}
+
+// 会后 Whisper/翻译/摘要的真实结果保存在 SQLite，管道这里只负责推送 UI
+// 进度。若 Host 的读取循环意外停止，阻塞模式命名管道的同步 WriteFile 会
+// 无限等待，过去因此把整个会后推理线程卡在 0%。给会后消息设置硬超时：
+// 一次超时后本次任务不再推送消息，但数据库计算必须继续完成。
+static bool WritePostProcessMessage(
+    HANDLE hPipe,
+    const std::string& message) {
+    if (!g_postprocess_pipe_available.load()) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(g_streaming_pipe_write_mutex);
+    if (!g_postprocess_pipe_available.load()) {
+        return false;
+    }
+
+    HANDLE writerThread = nullptr;
+    HANDLE completed = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!completed ||
+        !DuplicateHandle(
+            GetCurrentProcess(),
+            GetCurrentThread(),
+            GetCurrentProcess(),
+            &writerThread,
+            0,
+            FALSE,
+            DUPLICATE_SAME_ACCESS)) {
+        if (completed) {
+            CloseHandle(completed);
+        }
+        g_postprocess_pipe_available.store(false);
+        return false;
+    }
+
+    std::thread cancelWrite([completed, writerThread] {
+        if (WaitForSingleObject(completed, 1500) == WAIT_TIMEOUT) {
+            CancelSynchronousIo(writerThread);
+        }
+        CloseHandle(writerThread);
+    });
+
+    DWORD written = 0;
+    const BOOL succeeded = WriteFile(
+        hPipe,
+        message.data(),
+        static_cast<DWORD>(message.size()),
+        &written,
+        nullptr);
+    SetEvent(completed);
+    cancelWrite.join();
+    CloseHandle(completed);
+
+    const bool completeWrite =
+        succeeded && written == static_cast<DWORD>(message.size());
+    if (!completeWrite) {
+        g_postprocess_pipe_available.store(false);
+        std::cerr
+            << "[IPC] Host stopped reading post-process updates; "
+               "continuing with database-only progress.\n";
+    }
+    return completeWrite;
 }
 
 // ========== 设备配置 ==========
@@ -140,18 +217,23 @@ static void StartMeetingSummaryService(
         return;
     }
 
-    // 这条状态从管道主线程同步发送。服务线程随后可以直接加载模型，
-    // 不会因为同步 Named Pipe 正在等待下一包音频而卡在第一条状态回写上。
-    WriteStreamingMessage(
-        hPipe,
+    // 模型生命周期由 Startup 页面统一管理。摘要服务只检查状态，
+    // 绝不在会议页面隐式加载 Granite。
+    const std::string checkingMessage =
         "{\"type\":\"streaming_summary_status\","
-        "\"state\":\"loading\","
+        "\"state\":\"checking\","
         "\"message\":\""
         + std::string(
             postMeeting
-                ? "正在准备会后详细摘要服务…"
-                : "正在后台加载 Granite 会议摘要模型…")
-        + "\"}\n");
+                ? "正在检查会后 Granite 摘要服务…"
+                : "正在检查 Granite 会议摘要模型…")
+        + "\"}\n";
+    if (postMeeting) {
+        WritePostProcessMessage(hPipe, checkingMessage);
+    }
+    else {
+        WriteStreamingMessage(hPipe, checkingMessage);
+    }
 
     g_meeting_summary.Start(
         meetingId,
@@ -161,28 +243,10 @@ static void StartMeetingSummaryService(
                 g_granite_loaded = true;
                 return true;
             }
-
-            try {
-                const std::string modelDir = GetEnvOrDefault(
-                    "MEETINGAI_GRANITE_MODEL",
-                    meetingai::util::resolveModelFileUtf8(
-                        L"granite-3.3-2b-npu"));
-                g_granite =
-                    std::make_unique<meetingai::granite::GraniteGenAI>(
-                        modelDir,
-                        g_granite_device);
-                g_granite_loaded = true;
-                std::cout
-                    << "[Summary] Granite loaded on "
-                    << g_granite_device << "\n";
-                return true;
-            }
-            catch (const std::exception& e) {
-                error = std::string("Granite 加载失败: ") + e.what();
-                g_granite.reset();
-                g_granite_loaded = false;
-                return false;
-            }
+            g_granite_loaded = false;
+            error =
+                "Granite 未加载，请先到 Startup 页面手动加载";
+            return false;
         },
         [](const std::string& prompt,
            const std::string& jsonSchema,
@@ -206,7 +270,7 @@ static void StartMeetingSummaryService(
             onPartial(output);
             return output;
         },
-        [hPipe](
+        [hPipe, postMeeting](
             const std::string& state,
             const std::string& text,
             bool isFinal,
@@ -238,7 +302,12 @@ static void StartMeetingSummaryService(
                     + meetingai::proto::jsonEscape(text)
                     + "\"}\n";
             }
-            WriteStreamingMessage(hPipe, message);
+            if (postMeeting) {
+                WritePostProcessMessage(hPipe, message);
+            }
+            else {
+                WriteStreamingMessage(hPipe, message);
+            }
         });
 }
 
@@ -256,6 +325,439 @@ static void ResetStreamingPersistenceState() {
     std::lock_guard<std::mutex> lock(g_streaming_segment_mutex);
     g_streaming_segment_ids.clear();
     g_streaming_last_end_ms.clear();
+}
+
+struct RefinedMeetingSegment {
+    std::int64_t segmentId = 0;
+    std::string source;
+    std::int64_t sequence = 0;
+    std::int64_t startMs = 0;
+    std::int64_t endMs = 0;
+    std::string text;
+};
+
+static void SendPostProcessStatus(
+    HANDLE hPipe,
+    std::int64_t meetingId,
+    const std::string& state,
+    int progress,
+    const std::string& message) {
+    WritePostProcessMessage(
+        hPipe,
+        "{\"type\":\"streaming_postprocess_status\","
+        "\"meeting_id\":" + std::to_string(meetingId) +
+        ",\"state\":\"" + meetingai::proto::jsonEscape(state) +
+        "\",\"progress\":" +
+        std::to_string(std::clamp(progress, 0, 100)) +
+        ",\"message\":\"" +
+        meetingai::proto::jsonEscape(message) + "\"}\n");
+}
+
+static void RunMeetingPostProcess(
+    HANDLE hPipe,
+    std::int64_t meetingId,
+    std::unordered_map<std::string, std::string> audioPaths,
+    std::string translationMode,
+    std::string whisperHotwords,
+    bool summaryEnabled) {
+    g_postprocess_pipe_available.store(true);
+    std::int64_t runId = 0;
+    try {
+        if (meetingId <= 0 || audioPaths.empty()) {
+            throw std::runtime_error("没有可用于最终精修的会议录音");
+        }
+
+        runId = BeginTranscriptionRun(
+            meetingId,
+            "OpenVINO Whisper",
+            "Whisper large-v3",
+            "OpenVINO GenAI",
+            translationMode,
+            whisperHotwords);
+        if (runId <= 0) {
+            throw std::runtime_error("无法创建会后精修任务");
+        }
+
+        // 管道随时可能已经断开（Host 页面切换/重连），DB 轮询是唯一保底
+        // 通道。若这里不写库，progress 会在 transcribing 状态下停在建表
+        // 时的初始值 0，看起来像卡死，实际只是还没等到第一次真实进度回调。
+        UpdateTranscriptionRun(runId, "transcribing", 2);
+        SendPostProcessStatus(
+            hPipe,
+            meetingId,
+            "transcribing",
+            2,
+            "正在使用 OpenVINO Whisper 生成高精度最终稿…");
+        WritePostProcessMessage(
+            hPipe,
+            "{\"type\":\"streaming_postprocess_transcript_reset\","
+            "\"meeting_id\":" + std::to_string(meetingId) + "}\n");
+
+        const std::string modelPath =
+            meetingai::util::resolveModelFileUtf8(
+                L"whisper_large_v3");
+        std::vector<RefinedMeetingSegment> refinedSegments;
+        std::size_t sourceIndex = 0;
+        const std::size_t sourceCount = audioPaths.size();
+        for (const std::string& source :
+             std::vector<std::string>{ "microphone", "system" }) {
+            const auto path = audioPaths.find(source);
+            if (path == audioPaths.end()) {
+                continue;
+            }
+
+            const int sourceBase =
+                5 + static_cast<int>(
+                    sourceIndex * 65 / std::max<std::size_t>(1, sourceCount));
+            const int sourceSpan =
+                static_cast<int>(
+                    65 / std::max<std::size_t>(1, sourceCount));
+            std::vector<
+                meetingai::transcribe::WhisperOpenVINOSegment> segments;
+            const bool transcribed =
+                meetingai::transcribe::TranscribeAudioFileOpenVINO(
+                    modelPath,
+                    path->second,
+                    segments,
+                    "auto",
+                    [hPipe,
+                     meetingId,
+                     runId,
+                     sourceBase,
+                     sourceSpan](int localProgress) {
+                        const int overall =
+                            sourceBase +
+                            localProgress * sourceSpan / 100;
+                        UpdateTranscriptionRun(
+                            runId,
+                            "transcribing",
+                            overall);
+                        SendPostProcessStatus(
+                            hPipe,
+                            meetingId,
+                            "transcribing",
+                            overall,
+                            "Whisper 正在精修会议录音…");
+                    },
+                    whisperHotwords);
+            if (!transcribed) {
+                throw std::runtime_error(
+                    (source == "system" ? "对方" : "我方") +
+                    std::string("音频的 Whisper 转录失败"));
+            }
+
+            std::int64_t sequence = 1;
+            for (const auto& whisperSegment : segments) {
+                const std::string rawText =
+                    meetingai::proto::trim(whisperSegment.text);
+                if (rawText.empty()) {
+                    continue;
+                }
+                std::string finalText =
+                    meetingai::transcribe::NormalizeBilingualTranscript(
+                        rawText);
+                if (finalText.empty()) {
+                    finalText = rawText;
+                }
+                const std::int64_t startMs =
+                    std::max<std::int64_t>(
+                        0,
+                        static_cast<std::int64_t>(
+                            whisperSegment.start_ts * 1000.0f));
+                const std::int64_t endMs =
+                    std::max<std::int64_t>(
+                        startMs,
+                        static_cast<std::int64_t>(
+                            whisperSegment.end_ts * 1000.0f));
+                const std::int64_t segmentId =
+                    InsertWhisperFinalSegment(
+                        runId,
+                        meetingId,
+                        source,
+                        sequence,
+                        startMs,
+                        endMs,
+                        rawText,
+                        finalText);
+                if (segmentId <= 0) {
+                    throw std::runtime_error(
+                        "Whisper 最终字幕写入数据库失败");
+                }
+
+                refinedSegments.push_back({
+                    segmentId,
+                    source,
+                    sequence,
+                    startMs,
+                    endMs,
+                    finalText
+                });
+                WritePostProcessMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_postprocess_segment\","
+                    "\"meeting_id\":" + std::to_string(meetingId) +
+                    ",\"segment_id\":" + std::to_string(segmentId) +
+                    ",\"source\":\"" +
+                    meetingai::proto::jsonEscape(source) +
+                    "\",\"sequence\":" + std::to_string(sequence) +
+                    ",\"start_ms\":" + std::to_string(startMs) +
+                    ",\"end_ms\":" + std::to_string(endMs) +
+                    ",\"text\":\"" +
+                    meetingai::proto::jsonEscape(finalText) +
+                    "\"}\n");
+                ++sequence;
+            }
+            ++sourceIndex;
+        }
+
+        if (refinedSegments.empty()) {
+            throw std::runtime_error(
+                "Whisper 未从会议录音中识别出有效文字");
+        }
+
+        // 从这一刻开始，数据库的规范会议原文切换到 Whisper 版本。
+        if (!UpdateTranscriptionRun(
+                runId,
+                translationMode == "off"
+                    ? "summarizing"
+                    : "translating",
+                72,
+                {},
+                true)) {
+            throw std::runtime_error("无法发布 Whisper 最终稿");
+        }
+
+        if (translationMode != "off") {
+            SendPostProcessStatus(
+                hPipe,
+                meetingId,
+                "translating",
+                74,
+                "正在生成最终译文…");
+            const std::string enZhModelDir =
+                meetingai::util::resolveModelFileUtf8(
+                    L"translation\\opus-mt-en-zh");
+            const std::string zhEnModelDir =
+                meetingai::util::resolveModelFileUtf8(
+                    L"translation\\opus-mt-zh-en");
+            const bool translationReady = g_offline_translator.Start(
+                translationMode,
+                enZhModelDir,
+                zhEnModelDir,
+                [hPipe, meetingId](
+                    const meetingai::translation::TranslationEvent& event) {
+                    if (event.targetLanguage.rfind("error:", 0) == 0) {
+                        WritePostProcessMessage(
+                            hPipe,
+                            "{\"type\":\"streaming_postprocess_warning\","
+                            "\"meeting_id\":" +
+                            std::to_string(meetingId) +
+                            ",\"message\":\"" +
+                            meetingai::proto::jsonEscape(
+                                event.targetLanguage.substr(6)) +
+                            "\"}\n");
+                        return;
+                    }
+                    const std::int64_t segmentId =
+                        static_cast<std::int64_t>(event.utteranceId);
+                    if (!InsertStreamingTranslation(
+                            segmentId,
+                            event.targetLanguage,
+                            event.text)) {
+                        WritePostProcessMessage(
+                            hPipe,
+                            "{\"type\":\"streaming_postprocess_warning\","
+                            "\"meeting_id\":" +
+                            std::to_string(meetingId) +
+                            ",\"message\":\"最终译文写入数据库失败\"}\n");
+                        return;
+                    }
+                    WritePostProcessMessage(
+                        hPipe,
+                        "{\"type\":\"streaming_postprocess_translation\","
+                        "\"meeting_id\":" +
+                        std::to_string(meetingId) +
+                        ",\"segment_id\":" +
+                        std::to_string(segmentId) +
+                        ",\"source\":\"" +
+                        meetingai::proto::jsonEscape(event.source) +
+                        "\",\"target_language\":\"" +
+                        meetingai::proto::jsonEscape(
+                            event.targetLanguage) +
+                        "\",\"text\":\"" +
+                        meetingai::proto::jsonEscape(event.text) +
+                        "\"}\n");
+                });
+            if (translationReady) {
+                for (const auto& segment : refinedSegments) {
+                    g_offline_translator.Submit(
+                        segment.source,
+                        segment.segmentId,
+                        segment.text,
+                        true);
+                }
+                g_offline_translator.Stop(true);
+            }
+            else {
+                WritePostProcessMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_postprocess_warning\","
+                    "\"meeting_id\":" + std::to_string(meetingId) +
+                    ",\"message\":\"最终译文暂未生成: " +
+                    meetingai::proto::jsonEscape(
+                        g_offline_translator.GetLastError()) +
+                    "\"}\n");
+            }
+        }
+
+        if (summaryEnabled) {
+            if (!UpdateTranscriptionRun(
+                runId,
+                "summarizing",
+                90)) {
+                throw std::runtime_error(
+                    "无法保存最终会议纪要任务状态");
+            }
+            SendPostProcessStatus(
+                hPipe,
+                meetingId,
+                "summarizing",
+                90,
+                "正在依据 Whisper 最终稿生成最终会议纪要…");
+            StartMeetingSummaryService(hPipe, meetingId, true);
+            auto summaryFinalizer = std::async(
+                std::launch::async,
+                [] {
+                    g_meeting_summary.Stop(true);
+                });
+            const auto summaryStartedAt =
+                std::chrono::steady_clock::now();
+            while (summaryFinalizer.wait_for(
+                       std::chrono::seconds(5)) !=
+                   std::future_status::ready) {
+                const auto elapsedSeconds =
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::steady_clock::now() -
+                        summaryStartedAt).count();
+                const int progress = std::min(
+                    97,
+                    90 + static_cast<int>(elapsedSeconds / 20));
+                const std::string message =
+                    "Granite 正在生成最终会议纪要 · 已用时 " +
+                    std::to_string(elapsedSeconds) + " 秒";
+                UpdateTranscriptionRun(
+                    runId,
+                    "summarizing",
+                    progress);
+                SendPostProcessStatus(
+                    hPipe,
+                    meetingId,
+                    "summarizing",
+                    progress,
+                    message);
+            }
+            summaryFinalizer.get();
+            UpdateTranscriptionRun(
+                runId,
+                "saving",
+                98);
+            SendPostProcessStatus(
+                hPipe,
+                meetingId,
+                "saving",
+                98,
+                "最终会议纪要已生成，正在保存任务状态…");
+        }
+
+        if (!UpdateTranscriptionRun(
+                runId,
+                "complete",
+                100,
+                {},
+                true)) {
+            // SQLite 短暂忙碌时再试一次，避免内容已写入但任务永久停在 90%。
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(150));
+            if (!UpdateTranscriptionRun(
+                    runId,
+                    "complete",
+                    100,
+                    {},
+                    true)) {
+                throw std::runtime_error(
+                    "最终稿已生成，但任务完成状态写入数据库失败");
+            }
+        }
+        SendPostProcessStatus(
+            hPipe,
+            meetingId,
+            "complete",
+            100,
+            "会议最终稿处理已完成");
+        WritePostProcessMessage(
+            hPipe,
+            "{\"type\":\"streaming_postprocess_complete\","
+            "\"meeting_id\":" + std::to_string(meetingId) +
+            ",\"transcription_run_id\":" + std::to_string(runId) +
+            ",\"segments\":" +
+            std::to_string(refinedSegments.size()) + "}\n");
+
+    }
+    catch (const std::exception& exception) {
+        g_offline_translator.Stop(false);
+        g_meeting_summary.Stop(false);
+        if (runId > 0) {
+            UpdateTranscriptionRun(
+                runId,
+                "failed",
+                100,
+                exception.what());
+        }
+        SendPostProcessStatus(
+            hPipe,
+            meetingId,
+            "failed",
+            100,
+            exception.what());
+        WritePostProcessMessage(
+            hPipe,
+            "{\"type\":\"streaming_postprocess_error\","
+            "\"meeting_id\":" + std::to_string(meetingId) +
+            ",\"message\":\"" +
+            meetingai::proto::jsonEscape(exception.what()) +
+            "\"}\n");
+    }
+
+    g_postprocess_running.store(false);
+    WritePostProcessMessage(
+        hPipe,
+        "{\"type\":\"streaming_stopped\"}\n");
+}
+
+static bool StartMeetingPostProcess(
+    HANDLE hPipe,
+    std::int64_t meetingId,
+    std::unordered_map<std::string, std::string> audioPaths,
+    const std::string& translationMode,
+    const std::string& whisperHotwords,
+    bool summaryEnabled) {
+    std::lock_guard<std::mutex> lock(g_postprocess_mutex);
+    if (g_postprocess_running.load()) {
+        return false;
+    }
+    if (g_postprocess_thread.joinable()) {
+        g_postprocess_thread.join();
+    }
+    g_postprocess_running.store(true);
+    g_postprocess_thread = std::thread(
+        RunMeetingPostProcess,
+        hPipe,
+        meetingId,
+        std::move(audioPaths),
+        translationMode,
+        whisperHotwords,
+        summaryEnabled);
+    return true;
 }
 
 // ========== 工具函数：解码 JSON Unicode 转义序列 ==========
@@ -463,7 +965,7 @@ static void handleLLaVACommand(HANDLE hPipe, const std::string& command) {
                 std::lock_guard<std::mutex> lock(g_llava_mutex);
                 if (!g_llava_loaded) {
                     InitializeLLaVAGenAI(hPipe, device);
-                    g_llava_loaded = true;
+                    g_llava_loaded = g_llava != nullptr;
                 }
             }
 
@@ -1007,20 +1509,15 @@ static void handleCountTokensCommand(HANDLE hPipe, const std::string& command) {
 static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
     std::wcout << L"[Worker] 处理转录命令\n";
 
-    // ★ 仅初始化一次模型（支持热拔插）
+    // 模型必须由 Startup 页面显式加载。
     {
         std::lock_guard<std::mutex> lock(g_whisper_mutex);
         if (!g_whisper_loaded) {
-            std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-            if (!InitWhisperOnce(modelPathOnce)) {
-                std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
-                DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-            }
-            else {
-                g_whisper_loaded = true;
-                const char* ok = "{\"type\":\"stage\",\"name\":\"model_ready\"}\n";
-                DWORD written; WriteFile(hPipe, ok, (DWORD)strlen(ok), &written, nullptr);
-            }
+            std::string err =
+                "{\"type\":\"error\",\"message\":\"Legacy Whisper 未加载，请先到 Startup 手动加载\"}\n";
+            DWORD written;
+            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+            return;
         }
     }
 
@@ -1278,6 +1775,19 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             // 排查时等于完全失明。
             std::cout << "[Worker] recv start_streaming" << std::endl;
 
+            if (g_postprocess_running.load()) {
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_error\","
+                    "\"message\":\"上一场会议正在生成最终稿，请完成后再开始新会议\"}\n");
+                return;
+            }
+            // 上一场会议完成后可能保留了手动“重新生成纪要”服务。
+            // 新会议开始前先关闭，避免两个会议共享同一个摘要状态。
+            if (g_meeting_summary.IsRunning()) {
+                g_meeting_summary.Stop(false);
+            }
+
             // 进度也通过管道回传一份，否则 Host 只能干等，看不出卡在哪一步
             auto notify = [hPipe](const std::string& text) {
                 std::string msg = "{\"type\":\"info\",\"message\":\"" +
@@ -1287,18 +1797,40 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
 
             const auto meetingContext =
                 meetingai::proto::extractMeetingContext(command);
+            const bool ragContextEnabled =
+                meetingai::proto::extractRagContextEnabled(command);
+            const bool asrHotwordsEnabled =
+                meetingai::proto::extractAsrHotwordsEnabled(command);
             const std::string hotwordsBuffer =
-                meetingai::proto::buildSherpaHotwordsBuffer(
-                    meetingContext);
+                asrHotwordsEnabled
+                    ? meetingai::proto::buildSherpaHotwordsBuffer(
+                        meetingContext)
+                    : std::string{};
+            std::string whisperHotwords;
+            for (const auto& hotword :
+                 asrHotwordsEnabled
+                    ? meetingContext.hotwords
+                    : std::vector<
+                        meetingai::proto::MeetingHotwordConfig>{}) {
+                if (hotword.text.empty()) {
+                    continue;
+                }
+                if (!whisperHotwords.empty()) {
+                    whisperHotwords += ", ";
+                }
+                whisperHotwords += hotword.text;
+                // Whisper 的 prompt 上下文不宜无限增长；Sherpa 仍保留完整
+                // 的最多 100 条热词。
+                if (whisperHotwords.size() >= 1000) {
+                    break;
+                }
+            }
             const int requestedSampleRate =
                 meetingai::proto::extractSampleRate(command);
-            const std::string requestedRecognizerSignature =
-                std::to_string(requestedSampleRate) +
-                (hotwordsBuffer.empty() ? ":greedy" : ":hotwords");
 
-            // 通用模式继续使用 greedy；有会议热词时改用
-            // modified_beam_search。两场都有热词的会议可复用模型，
-            // 具体词表在创建 stream 时注入，不需要每次重载模型。
+            // 模型必须预先由 Startup 页面加载。Startup 使用支持动态热词
+            // 的 modified_beam_search recognizer，因此是否启用术语增强只
+            // 决定创建 stream 时是否注入热词，不会再偷偷切换或重载模型。
             {
                 std::lock_guard<std::mutex> lock(g_sherpa_mutex);
                 if (g_sherpa && g_sherpa->IsRunning()) {
@@ -1309,77 +1841,19 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                     return;
                 }
 
-                if (g_sherpa_loaded &&
-                    g_sherpa_recognizer_signature !=
-                        requestedRecognizerSignature) {
-                    notify(
-                        "[Sherpa] 会议热词模式发生变化，正在切换解码器…");
-                    g_sherpa->Stop();
-                    g_sherpa.reset();
-                    g_sherpa_loaded = false;
-                    g_sherpa_recognizer_signature.clear();
+                if (!g_sherpa_loaded || !g_sherpa) {
+                    WriteStreamingMessage(
+                        hPipe,
+                        "{\"type\":\"streaming_error\","
+                        "\"message\":\"Sherpa 实时转录模型未加载，请先到 Startup 手动加载\"}\n");
+                    return;
                 }
-
-                if (!g_sherpa_loaded) {
-                    g_sherpa = std::make_unique<meetingai::transcribe::SherpaStreamingTranscriber>();
-
-                    // 模型路径（用户手动下载并解压）。必须走 models 目录解析：
-                    // 相对路径会按 Worker 的 CWD 找，而 CWD 继承自 Host 的输出目录。
-                    std::string modelDir = meetingai::util::resolveModelFileUtf8(
-                        L"sherpa\\sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20");
-                    std::string tokensPath = modelDir + "\\tokens.txt";
-                    std::string bpeVocabPath = modelDir + "\\bpe.vocab";
-
-                    // sherpa 创建失败只会回一句没信息量的错误，这里先自己报清楚缺什么
-                    {
-                        std::error_code ec;
-                        const char* missing = nullptr;
-                        if (!std::filesystem::is_directory(modelDir, ec)) missing = "模型目录不存在";
-                        else if (!std::filesystem::exists(tokensPath, ec)) missing = "tokens.txt 不存在";
-                        else if (!hotwordsBuffer.empty() &&
-                                 !std::filesystem::exists(bpeVocabPath, ec))
-                            missing = "bpe.vocab 不存在";
-                        else if (!std::filesystem::exists(modelDir + "\\encoder-epoch-99-avg-1.onnx", ec))
-                            missing = "encoder-epoch-99-avg-1.onnx 不存在";
-                        if (missing) {
-                            std::string err = std::string("{\"type\":\"streaming_error\",\"message\":\"") +
-                                missing + ": " + meetingai::proto::jsonEscape(modelDir) + "\"}\n";
-                            WriteStreamingMessage(hPipe, err);
-                            g_sherpa.reset();
-                            g_sherpa_recognizer_signature.clear();
-                            return;
-                        }
-                    }
-
-                    std::cout << "[Worker] sherpa model dir: " << modelDir << std::endl;
-                    notify("[Sherpa] 正在加载模型（首次约需数十秒）: " + modelDir);
-
-                    const auto t0 = std::chrono::steady_clock::now();
-                    bool ok = g_sherpa->Initialize(
-                        modelDir,
-                        tokensPath,
-                        requestedSampleRate,
-                        hotwordsBuffer,
-                        bpeVocabPath);
-                    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - t0).count();
-
-                    if (!ok) {
-                        std::cout << "[Worker] sherpa init FAILED after " << elapsedMs
-                                  << "ms: " << g_sherpa->GetLastError() << std::endl;
-                        std::string err = "{\"type\":\"streaming_error\",\"message\":\"Sherpa 模型初始化失败: " +
-                            meetingai::proto::jsonEscape(g_sherpa->GetLastError()) + "\"}\n";
-                        WriteStreamingMessage(hPipe, err);
-                        g_sherpa.reset();
-                        g_sherpa_recognizer_signature.clear();
-                        return;
-                    }
-
-                    g_sherpa_loaded = true;
-                    g_sherpa_recognizer_signature =
-                        requestedRecognizerSignature;
-                    std::cout << "[Worker] sherpa model loaded in " << elapsedMs << "ms" << std::endl;
-                    notify("[Sherpa] 模型加载完成，耗时 " + std::to_string(elapsedMs) + " ms");
+                if (requestedSampleRate != 16000) {
+                    WriteStreamingMessage(
+                        hPipe,
+                        "{\"type\":\"streaming_error\","
+                        "\"message\":\"当前 Sherpa 模型固定使用 16000Hz 音频\"}\n");
+                    return;
                 }
 
                 if (!hotwordsBuffer.empty()) {
@@ -1388,27 +1862,9 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                         std::to_string(meetingContext.hotwords.size()) +
                         " 个上下文热词");
                 }
-
-                // 标点模型（可选）。只尝试一次，失败后不再重试，也不影响转录。
-                if (!g_punct_attempted) {
-                    g_punct_attempted = true;
-
-                    const std::string punctDir = meetingai::util::resolveModelFileUtf8(
-                        L"sherpa\\sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8");
-
-                    auto punct = std::make_unique<meetingai::transcribe::Punctuator>();
-                    const auto p0 = std::chrono::steady_clock::now();
-                    if (punct->Initialize(punctDir)) {
-                        const auto punctMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - p0).count();
-                        g_punct = std::move(punct);
-                        std::cout << "[Worker] punctuation model loaded in " << punctMs << "ms" << std::endl;
-                        notify("[Sherpa] 标点模型已加载，耗时 " + std::to_string(punctMs) + " ms");
-                    }
-                    else {
-                        std::cout << "[Worker] punctuation disabled: " << punct->GetLastError() << std::endl;
-                        notify("[Sherpa] 未启用标点（" + punct->GetLastError() + "），转录不受影响");
-                    }
+                if (!g_punct) {
+                    notify(
+                        "[Sherpa] 标点模型未加载；实时转录继续运行，但不做标点恢复");
                 }
             }
 
@@ -1422,7 +1878,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             const std::string translationMode =
                 meetingai::proto::extractTranslationMode(command);
             if (translationMode != "off") {
-                notify("[Translation] 正在加载 CTranslate2 / OPUS-MT 离线模型…");
+                notify("[Translation] 正在检查 Startup 已加载的离线翻译模型…");
             }
 
             const std::string enZhModelDir =
@@ -1557,6 +2013,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             const int streamingSampleRate =
                 meetingai::proto::extractSampleRate(command);
             const bool ragEnabled =
+                ragContextEnabled &&
                 meetingContext.HasPreparation() &&
                 !meetingContext.documentIds.empty();
             const std::string contextSnapshotJson =
@@ -1570,7 +2027,9 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 meetingContext.title,
                 meetingContext.preparationId,
                 contextSnapshotJson,
-                static_cast<int>(meetingContext.hotwords.size()),
+                asrHotwordsEnabled
+                    ? static_cast<int>(meetingContext.hotwords.size())
+                    : 0,
                 ragEnabled);
             if (g_streaming_meeting_id <= 0) {
                 for (const std::string& source :
@@ -1594,6 +2053,48 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
 
             const bool summaryEnabled =
                 meetingai::proto::extractSummaryEnabled(command);
+            g_streaming_translation_mode = activeTranslationMode;
+            g_streaming_whisper_hotwords = std::move(whisperHotwords);
+            g_streaming_summary_enabled = summaryEnabled;
+            g_streaming_recording_failed = false;
+
+            std::string recordingError;
+            if (!g_meeting_audio_recorder.Start(
+                    g_streaming_meeting_id,
+                    g_streaming_active_sources,
+                    streamingSampleRate,
+                    recordingError)) {
+                for (const std::string& source :
+                     g_streaming_active_sources) {
+                    std::vector<
+                        meetingai::transcribe::SherpaStreamResult> ignored;
+                    g_sherpa->EndSession(source, ignored);
+                }
+                g_offline_translator.Stop(false);
+                CloseStreamingMeetingRecord();
+                g_streaming_active_sources.clear();
+                g_streaming_pending_raw.clear();
+                g_streaming_utterance_ids.clear();
+                ResetStreamingPersistenceState();
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_error\",\"message\":\"" +
+                    meetingai::proto::jsonEscape(recordingError) +
+                    "\"}\n");
+                return;
+            }
+            for (const auto& [source, mediaPath] :
+                 g_meeting_audio_recorder.Paths()) {
+                if (!UpdateStreamingMediaPath(
+                        g_streaming_meeting_id,
+                        source,
+                        mediaPath)) {
+                    WriteStreamingMessage(
+                        hPipe,
+                        "{\"type\":\"streaming_persistence_error\","
+                        "\"message\":\"会议录音路径写入数据库失败\"}\n");
+                }
+            }
 
             // 发送成功响应
             std::string ok = "{\"type\":\"streaming_started\",\"source\":\"" +
@@ -1607,13 +2108,19 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 ",\"context_title\":\"" +
                 meetingai::proto::jsonEscape(meetingContext.title) +
                 "\",\"hotword_count\":" +
-                std::to_string(meetingContext.hotwords.size()) +
+                std::to_string(
+                    asrHotwordsEnabled
+                        ? meetingContext.hotwords.size()
+                        : 0) +
                 ",\"context_document_count\":" +
                 std::to_string(meetingContext.documentIds.size()) +
                 ",\"rag_enabled\":" +
                 (ragEnabled ? "true" : "false") +
+                ",\"asr_hotwords_enabled\":" +
+                (asrHotwordsEnabled ? "true" : "false") +
                 ",\"summary_enabled\":" +
                 (summaryEnabled ? "true" : "false") +
+                ",\"postprocess_enabled\":true" +
                 "}\n";
             WriteStreamingMessage(hPipe, ok);
 
@@ -1680,6 +2187,18 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             }
 
             // 发送音频到转录器
+            if (!g_streaming_recording_failed &&
+                !g_meeting_audio_recorder.Append(
+                    source,
+                    samples.data(),
+                    static_cast<int>(samples.size()))) {
+                g_streaming_recording_failed = true;
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_persistence_error\","
+                    "\"message\":\"会议录音写入失败；实时转录仍会继续\"}\n");
+            }
+
             std::vector<meetingai::transcribe::SherpaStreamResult> results;
             if (!g_sherpa->AcceptWaveform(
                 source,
@@ -1769,6 +2288,7 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
             if (!g_sherpa || !g_sherpa->IsRunning()) {
                 g_offline_translator.Stop(false);
                 g_meeting_summary.Stop(false);
+                g_meeting_audio_recorder.Stop();
                 CloseStreamingMeetingRecord();
                 ResetStreamingPersistenceState();
                 std::string err = "{\"type\":\"streaming_error\",\"message\":\"流式会话未启动\"}\n";
@@ -1778,9 +2298,23 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
 
             const std::int64_t completedMeetingId =
                 g_streaming_meeting_id;
-            const bool keepPostMeetingSummary =
-                g_meeting_summary.IsRunning();
+            const std::string completedTranslationMode =
+                g_streaming_translation_mode;
+            const std::string completedWhisperHotwords =
+                g_streaming_whisper_hotwords;
+            const bool completedSummaryEnabled =
+                g_streaming_summary_enabled;
             std::string stopError;
+
+            // Host 已经停止采集和发送音频，此时先立即封口 WAV。
+            // 实时译文排空和 Granite 当前摘要线程退出都可能耗时几十秒，
+            // 不能让这些工作阻塞“录音已安全保存”的确认。
+            WriteStreamingMessage(
+                hPipe,
+                "{\"type\":\"streaming_stop_progress\","
+                "\"message\":\"正在封存会议录音…\"}\n");
+            const auto audioPaths = g_meeting_audio_recorder.Stop();
+
             for (const std::string& source : g_streaming_active_sources) {
                 if (!g_sherpa->IsRunning(source)) {
                     continue;
@@ -1804,26 +2338,25 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 flushPendingTranscript(source);
             }
 
-            // flushPendingTranscript 已把最后原文和 final 翻译任务排入队列。
-            // 翻译队列排空和 Granite 最终详细摘要彼此独立，并行完成可显著
-            // 缩短停止后的等待时间；两者结束前仍不发送 streaming_stopped，
-            // 因而 Host 不会丢掉最后译文或最终摘要。
+            // EndSession 产生的最后一条字幕已经先于此消息写入管道，
+            // Host 收到回执后可以安全关闭实时 partial 并进入处理界面。
+            WriteStreamingMessage(
+                hPipe,
+                "{\"type\":\"streaming_recording_stopped\","
+                "\"meeting_id\":" +
+                std::to_string(completedMeetingId) +
+                ",\"postprocess_started\":false,"
+                "\"postprocess_pending\":true}\n");
+
+            // 先把实时稿最后一条译文排空。实时滚动摘要在这里结束，但不再
+            // 基于 Sherpa 稿生成“最终摘要”；真正的最终纪要会在 Whisper
+            // 精修稿发布以后生成。
             WriteStreamingMessage(
                 hPipe,
                 "{\"type\":\"streaming_stop_progress\","
-                "\"message\":\"正在完成最后译文和最终详细摘要…\"}\n");
-            auto translationFinalizer = std::async(
-                std::launch::async,
-                [] {
-                    g_offline_translator.Stop(true);
-                });
-            auto summaryFinalizer = std::async(
-                std::launch::async,
-                [] {
-                    g_meeting_summary.Stop(true);
-                });
-            translationFinalizer.get();
-            summaryFinalizer.get();
+                "\"message\":\"正在完成实时译文和字幕…\"}\n");
+            g_offline_translator.Stop(true);
+            g_meeting_summary.Stop(false);
 
             WriteStreamingMessage(
                 hPipe,
@@ -1831,20 +2364,13 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 "\"message\":\"正在保存会议记录…\"}\n");
             CloseStreamingMeetingRecord();
 
-            // 最终摘要生成完以后，为刚结束的 meeting 重开一个“只读数据库、
-            // 仅响应手动请求”的摘要服务。此服务没有 live transcript 通知，
-            // 因而不会继续自动生成；用户每次点击按钮时才会从数据库全文
-            // 重新生成一版详细摘要。
-            if (keepPostMeetingSummary && completedMeetingId > 0) {
-                StartMeetingSummaryService(
-                    hPipe,
-                    completedMeetingId,
-                    true);
-            }
-
             g_streaming_active_sources.clear();
             g_streaming_pending_raw.clear();
             g_streaming_utterance_ids.clear();
+            g_streaming_translation_mode = "off";
+            g_streaming_whisper_hotwords.clear();
+            g_streaming_summary_enabled = false;
+            g_streaming_recording_failed = false;
             ResetStreamingPersistenceState();
 
             if (!stopError.empty()) {
@@ -1853,16 +2379,31 @@ static void handleSherpaStreamingCommand(HANDLE hPipe, const std::string& comman
                 WriteStreamingMessage(hPipe, err);
             }
 
-            // 发送完成信号
-            WriteStreamingMessage(
+            const bool postProcessStarted = StartMeetingPostProcess(
                 hPipe,
-                "{\"type\":\"streaming_stopped\"}\n");
-            std::wcout << L"[Worker] 流式会话已停止\n";
+                completedMeetingId,
+                audioPaths,
+                completedTranslationMode,
+                completedWhisperHotwords,
+                completedSummaryEnabled);
+            if (!postProcessStarted) {
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_postprocess_error\","
+                    "\"meeting_id\":" +
+                    std::to_string(completedMeetingId) +
+                    ",\"message\":\"无法启动会后精修任务\"}\n");
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"streaming_stopped\"}\n");
+            }
+            std::wcout << L"[Worker] 录音已停止，会后精修已在后台启动\n";
         }
     }
     catch (const std::exception& e) {
         g_offline_translator.Stop(false);
         g_meeting_summary.Stop(false);
+        g_meeting_audio_recorder.Stop();
         CloseStreamingMeetingRecord();
         ResetStreamingPersistenceState();
         std::string err = std::string("{\"type\":\"streaming_error\",\"message\":\"") +
@@ -1883,6 +2424,344 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
         return TRUE; // 我们处理了
     }
     return FALSE;
+}
+
+static std::string ExtractJsonStringField(
+    const std::string& json,
+    const std::string& key,
+    const std::string& fallback = {}) {
+    const std::string marker = "\"" + key + "\":\"";
+    const auto markerPosition = json.find(marker);
+    if (markerPosition == std::string::npos) {
+        return fallback;
+    }
+    const auto valueStart = markerPosition + marker.size();
+    const auto valueEnd = json.find('"', valueStart);
+    return valueEnd == std::string::npos
+        ? fallback
+        : json.substr(valueStart, valueEnd - valueStart);
+}
+
+static void SendModelState(
+    HANDLE hPipe,
+    const std::string& model,
+    bool loaded,
+    const std::string& device = {},
+    const std::string& message = {}) {
+    WriteStreamingMessage(
+        hPipe,
+        "{\"type\":\"model_state\",\"model\":\"" +
+        meetingai::proto::jsonEscape(model) +
+        "\",\"loaded\":" + (loaded ? "true" : "false") +
+        ",\"device\":\"" +
+        meetingai::proto::jsonEscape(device) +
+        "\",\"message\":\"" +
+        meetingai::proto::jsonEscape(message) + "\"}\n");
+}
+
+static void SendModelStatusSnapshot(HANDLE hPipe) {
+    const bool translationEnZh =
+        g_offline_translator.IsDirectionLoaded("en_zh");
+    const bool translationZhEn =
+        g_offline_translator.IsDirectionLoaded("zh_en");
+    WriteStreamingMessage(
+        hPipe,
+        "{\"type\":\"model_status\","
+        "\"granite\":" + std::string(g_granite_loaded ? "true" : "false") +
+        ",\"embedding\":" +
+        std::string(g_embedding_loaded ? "true" : "false") +
+        ",\"legacy_whisper\":" +
+        std::string(g_whisper_loaded ? "true" : "false") +
+        ",\"openvino_whisper\":" +
+        std::string(
+            meetingai::transcribe::IsWhisperOpenVINOModelLoaded()
+                ? "true" : "false") +
+        ",\"sherpa\":" +
+        std::string(g_sherpa_loaded ? "true" : "false") +
+        ",\"punctuator\":" +
+        std::string(g_punct ? "true" : "false") +
+        ",\"translation_en_zh\":" +
+        std::string(translationEnZh ? "true" : "false") +
+        ",\"translation_zh_en\":" +
+        std::string(translationZhEn ? "true" : "false") +
+        ",\"llava\":" +
+        std::string(g_llava_loaded ? "true" : "false") +
+        ",\"stable_diffusion\":" +
+        std::string(g_sd_loaded ? "true" : "false") +
+        "}\n");
+}
+
+static bool HandleStartupModelCommand(
+    HANDLE hPipe,
+    const std::string& command) {
+    const std::string type =
+        ExtractJsonStringField(command, "type");
+    if (type == "get_model_status") {
+        SendModelStatusSnapshot(hPipe);
+        return true;
+    }
+
+    if (type == "load_granite") {
+        const std::string device =
+            ExtractJsonStringField(command, "device", "CPU");
+        bool loaded = false;
+        {
+            std::lock_guard<std::mutex> lock(g_granite_mutex);
+            if (!g_granite_loaded || !g_granite) {
+                InitializeGraniteGenAI(hPipe, device);
+                g_granite_loaded = g_granite != nullptr;
+            }
+            loaded = g_granite_loaded && g_granite != nullptr;
+            if (loaded) {
+                g_granite_device = device;
+            }
+        }
+        SendModelState(
+            hPipe,
+            "granite",
+            loaded,
+            loaded ? device : std::string{},
+            loaded ? "Granite 已就绪" : "Granite 加载失败");
+        return true;
+    }
+
+    if (type == "unload_granite") {
+        if (g_meeting_summary.IsRunning() ||
+            g_meeting_summary.IsGenerating()) {
+            SendModelState(
+                hPipe,
+                "granite",
+                true,
+                g_granite_device,
+                "Granite 正在生成会议摘要，暂时不能卸载");
+            return true;
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_granite_mutex);
+            g_granite.reset();
+            g_granite_loaded = false;
+        }
+        SendModelState(hPipe, "granite", false, {}, "Granite 已卸载");
+        return true;
+    }
+
+    if (type == "load_embedding") {
+        const std::string device =
+            ExtractJsonStringField(command, "device", "CPU");
+        bool loaded = false;
+        {
+            std::lock_guard<std::mutex> lock(g_embedding_mutex);
+            if (!g_embedding_loaded || !g_embedding) {
+                InitializeEmbeddingGenAI(hPipe, device);
+                g_embedding_loaded = g_embedding != nullptr;
+            }
+            loaded = g_embedding_loaded && g_embedding != nullptr;
+            if (loaded) {
+                g_embedding_device = device;
+            }
+        }
+        SendModelState(
+            hPipe,
+            "embedding",
+            loaded,
+            loaded ? device : std::string{},
+            loaded
+                ? "OpenVINO GenAI TextEmbeddingPipeline 已就绪"
+                : "Embedding 加载失败");
+        return true;
+    }
+
+    if (type == "unload_embedding") {
+        {
+            std::lock_guard<std::mutex> lock(g_embedding_mutex);
+            g_embedding.reset();
+            g_embedding_loaded = false;
+        }
+        SendModelState(
+            hPipe,
+            "embedding",
+            false,
+            {},
+            "Embedding 已卸载");
+        return true;
+    }
+
+    if (type == "load_sherpa") {
+        bool loaded = false;
+        std::string error;
+        {
+            std::lock_guard<std::mutex> lock(g_sherpa_mutex);
+            if (g_sherpa && g_sherpa->IsRunning()) {
+                error = "Sherpa 正在转录，不能重新加载";
+            }
+            else if (g_sherpa_loaded && g_sherpa) {
+                loaded = true;
+            }
+            else {
+                const std::string modelDir =
+                    meetingai::util::resolveModelFileUtf8(
+                        L"sherpa\\sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20");
+                const std::string tokensPath =
+                    modelDir + "\\tokens.txt";
+                const std::string bpeVocabPath =
+                    modelDir + "\\bpe.vocab";
+                auto transcriber =
+                    std::make_unique<
+                        meetingai::transcribe::SherpaStreamingTranscriber>();
+                loaded = transcriber->Initialize(
+                    modelDir,
+                    tokensPath,
+                    16000,
+                    {},
+                    bpeVocabPath,
+                    true);
+                if (loaded) {
+                    g_sherpa = std::move(transcriber);
+                    g_sherpa_loaded = true;
+                    g_sherpa_recognizer_signature =
+                        "16000:hotwords-capable";
+                }
+                else {
+                    error = transcriber->GetLastError();
+                    g_sherpa.reset();
+                    g_sherpa_loaded = false;
+                    g_sherpa_recognizer_signature.clear();
+                }
+            }
+        }
+        SendModelState(
+            hPipe,
+            "sherpa",
+            loaded,
+            loaded ? "CPU" : std::string{},
+            loaded ? "Sherpa 实时转录已就绪" : error);
+        return true;
+    }
+
+    if (type == "unload_sherpa") {
+        bool unloaded = false;
+        {
+            std::lock_guard<std::mutex> lock(g_sherpa_mutex);
+            if (!g_sherpa || !g_sherpa->IsRunning()) {
+                if (g_sherpa) {
+                    g_sherpa->Stop();
+                }
+                g_sherpa.reset();
+                g_sherpa_loaded = false;
+                g_sherpa_recognizer_signature.clear();
+                unloaded = true;
+            }
+        }
+        SendModelState(
+            hPipe,
+            "sherpa",
+            !unloaded,
+            unloaded ? std::string{} : "CPU",
+            unloaded
+                ? "Sherpa 已卸载"
+                : "Sherpa 正在转录，暂时不能卸载");
+        return true;
+    }
+
+    if (type == "load_punctuator") {
+        bool loaded = false;
+        std::string error;
+        {
+            std::lock_guard<std::mutex> lock(g_sherpa_mutex);
+            if (g_punct) {
+                loaded = true;
+            }
+            else {
+                const std::string modelDir =
+                    meetingai::util::resolveModelFileUtf8(
+                        L"sherpa\\sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8");
+                auto punctuator =
+                    std::make_unique<
+                        meetingai::transcribe::Punctuator>();
+                loaded = punctuator->Initialize(modelDir);
+                if (loaded) {
+                    g_punct = std::move(punctuator);
+                }
+                else {
+                    error = punctuator->GetLastError();
+                }
+            }
+        }
+        SendModelState(
+            hPipe,
+            "punctuator",
+            loaded,
+            loaded ? "CPU" : std::string{},
+            loaded ? "中英标点模型已就绪" : error);
+        return true;
+    }
+
+    if (type == "unload_punctuator") {
+        {
+            std::lock_guard<std::mutex> lock(g_sherpa_mutex);
+            g_punct.reset();
+            g_punct_attempted = false;
+        }
+        SendModelState(
+            hPipe,
+            "punctuator",
+            false,
+            {},
+            "中英标点模型已卸载");
+        return true;
+    }
+
+    if (type == "load_translation" ||
+        type == "unload_translation") {
+        const std::string direction =
+            ExtractJsonStringField(command, "direction");
+        const bool load = type == "load_translation";
+        bool success = false;
+        if (load) {
+            const std::wstring relativePath =
+                direction == "en_zh"
+                    ? L"translation\\opus-mt-en-zh"
+                    : L"translation\\opus-mt-zh-en";
+            success = g_offline_translator.LoadDirection(
+                direction,
+                meetingai::util::resolveModelFileUtf8(
+                    relativePath.c_str()));
+        }
+        else {
+            success =
+                g_offline_translator.UnloadDirection(direction);
+        }
+        const bool loaded =
+            g_offline_translator.IsDirectionLoaded(direction);
+        SendModelState(
+            hPipe,
+            direction == "en_zh"
+                ? "translation_en_zh"
+                : "translation_zh_en",
+            loaded,
+            loaded ? "CPU" : std::string{},
+            success
+                ? (loaded ? "翻译模型已就绪" : "翻译模型已卸载")
+                : g_offline_translator.GetLastError());
+        return true;
+    }
+
+    if (type == "unload_sd") {
+        {
+            std::lock_guard<std::mutex> lock(g_sd_mutex);
+            g_sd.reset();
+            g_sd_loaded = false;
+        }
+        SendModelState(
+            hPipe,
+            "stable_diffusion",
+            false,
+            {},
+            "Stable Diffusion 已卸载");
+        return true;
+    }
+
+    return false;
 }
 
 
@@ -2010,9 +2889,50 @@ int wmain() {
         std::string buffer;
         DWORD read = 0;
         char ch = 0;
+        DWORD pendingBytes = 0;
+        bool clientGone = false;
 
         while (true) {
-            // ReadFile 会阻塞直到有数据或对端关闭
+            // 同步(非 OVERLAPPED)管道句柄上，挂起的阻塞 ReadFile 会一直占住
+            // 文件对象的内核锁：其他线程(翻译/摘要/会后精修)对同一句柄的
+            // WriteFile 全部排在这次读后面等待。会议期间 Host 的音频包源源
+            // 不断、读很快完成，看不出问题；停止录音后 Host 不再发任何命令，
+            // 这里的 ReadFile 永远挂起，会后线程的第一条进度消息就被永久
+            // 堵死——这就是最终稿一直卡在 0%/2% 的根因(CancelSynchronousIo
+            // 也救不了它：写请求还排在文件对象锁上，尚未成为可取消的 I/O)。
+            // 因此改为 PeekNamedPipe 确认有数据后才调 ReadFile，让锁只在
+            // 真正搬运数据的瞬间被持有。
+            if (pendingBytes == 0) {
+                DWORD available = 0;
+                while (true) {
+                    if (!PeekNamedPipe(
+                            hPipe, nullptr, 0, nullptr, &available, nullptr)) {
+                        DWORD err = GetLastError();
+                        if (err == ERROR_BROKEN_PIPE) {
+                            std::wcout << L"[Worker] client disconnected\n";
+                        }
+                        else {
+                            meetingai::util::logLastError(
+                                L"[Worker] PeekNamedPipe failed");
+                        }
+                        clientGone = true;
+                        break;
+                    }
+                    if (available != 0 || g_shutdownRequested) {
+                        break;
+                    }
+                    Sleep(1);
+                }
+                if (clientGone) {
+                    break; // 退出连接循环，去清理并等待下一个客户端
+                }
+                if (available == 0 && g_shutdownRequested) {
+                    std::wcout << L"[Worker] global shutdown requested\n";
+                    break;
+                }
+                pendingBytes = available;
+            }
+
             if (!ReadFile(hPipe, &ch, 1, &read, nullptr)) {
                 DWORD err = GetLastError();
                 if (err == ERROR_BROKEN_PIPE) {
@@ -2028,6 +2948,7 @@ int wmain() {
                 std::wcout << L"[Worker] client closed\n";
                 break;
             }
+            pendingBytes -= read;
 
             // ★ 新增：全局退出检查
             if (g_shutdownRequested) {
@@ -2047,6 +2968,12 @@ int wmain() {
                     std::string bye = "{\"type\":\"bye\"}\n";
                     DWORD w = 0; WriteFile(hPipe, bye.data(), (DWORD)bye.size(), &w, nullptr);
                     break;
+                }
+
+                // ---- Startup 统一模型生命周期 ----
+                if (HandleStartupModelCommand(hPipe, buffer)) {
+                    buffer.clear();
+                    continue;
                 }
 
                 // ---- 新增：预加载模型命令 ----
@@ -2207,7 +3134,6 @@ int wmain() {
                 // ---- 新增：OpenVINO Whisper 加载命令 ----
                 if (buffer.find("\"load_whisper_openvino\"") != std::string::npos) {
                     std::wcout << L"[Worker] 收到 load_whisper_openvino 命令\n";
-                    DWORD written;
 
                     // 解析模型路径
                     std::string modelPath = meetingai::util::resolveModelFileUtf8(L"whisper_large_v3");
@@ -2238,25 +3164,33 @@ int wmain() {
                         }
                     }
 
-                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] OpenVINO Whisper 模型路径: " + modelPath + "\"}\n";
-                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
+                    std::string debug1 =
+                        "{\"type\":\"info\",\"message\":\"[Worker] OpenVINO Whisper 模型路径: " +
+                        meetingai::proto::jsonEscape(modelPath) + "\"}\n";
+                    WriteStreamingMessage(hPipe, debug1);
 
-                    std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker] OpenVINO Whisper 设备: " + device + "\"}\n";
-                    WriteFile(hPipe, debug2.data(), (DWORD)debug2.size(), &written, nullptr);
+                    std::string debug2 =
+                        "{\"type\":\"info\",\"message\":\"[Worker] OpenVINO Whisper 设备: " +
+                        meetingai::proto::jsonEscape(device) + "\"}\n";
+                    WriteStreamingMessage(hPipe, debug2);
 
                     std::string debug3 = "{\"type\":\"info\",\"message\":\"[Worker] 开始加载 OpenVINO Whisper 模型...\"}\n";
-                    WriteFile(hPipe, debug3.data(), (DWORD)debug3.size(), &written, nullptr);
+                    WriteStreamingMessage(hPipe, debug3);
 
                     // 加载 OpenVINO Whisper 模型（支持热拔插）
                     bool success = meetingai::transcribe::LoadWhisperOpenVINOModel(modelPath, device);
                     if (success) {
-                        std::string ready = "{\"type\":\"whisper_openvino_ready\",\"model_path\":\"" + modelPath + "\",\"device\":\"" + device + "\"}\n";
-                        WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
+                        std::string ready =
+                            "{\"type\":\"whisper_openvino_ready\",\"model_path\":\"" +
+                            meetingai::proto::jsonEscape(modelPath) +
+                            "\",\"device\":\"" +
+                            meetingai::proto::jsonEscape(device) + "\"}\n";
+                        WriteStreamingMessage(hPipe, ready);
                         std::wcout << L"[Worker] OpenVINO Whisper 模型加载成功\n";
                     }
                     else {
                         std::string err = "{\"type\":\"whisper_openvino_error\",\"message\":\"模型加载失败\"}\n";
-                        WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                        WriteStreamingMessage(hPipe, err);
                         std::wcerr << L"[Worker] OpenVINO Whisper 加载失败\n";
                     }
 
@@ -2383,7 +3317,8 @@ int wmain() {
                             std::lock_guard<std::mutex> lock(g_sd_mutex);
                             if (!g_sd_loaded) {
                                 InitializeSDEngine(hPipe, device);
-                                g_sd_loaded = true;
+                                g_sd_loaded =
+                                    g_sd && g_sd->isInitialized();
                             }
                         }
                     } else {
@@ -2415,8 +3350,75 @@ int wmain() {
                     continue;
                 }
 
+                // ---- Streaming Meeting：失败后重试会后精修 ----
+                if (meetingai::proto::isRetryMeetingPostProcess(buffer)) {
+                    const std::int64_t meetingId =
+                        meetingai::proto::extractMeetingId(buffer);
+                    if (meetingId <= 0) {
+                        WriteStreamingMessage(
+                            hPipe,
+                            "{\"type\":\"streaming_postprocess_error\","
+                            "\"message\":\"无效的会议编号\"}\n");
+                    }
+                    else if (g_postprocess_running.load()) {
+                        WriteStreamingMessage(
+                            hPipe,
+                            "{\"type\":\"streaming_postprocess_error\","
+                            "\"meeting_id\":" +
+                            std::to_string(meetingId) +
+                            ",\"message\":\"已有会后精修任务正在运行\"}\n");
+                    }
+                    else {
+                        MeetingPostProcessInput input;
+                        if (!LoadMeetingPostProcessInput(
+                                meetingId,
+                                input)) {
+                            WriteStreamingMessage(
+                                hPipe,
+                                "{\"type\":\"streaming_postprocess_error\","
+                                "\"meeting_id\":" +
+                                std::to_string(meetingId) +
+                                ",\"message\":\"找不到该会议的录音文件记录\"}\n");
+                        }
+                        else {
+                            if (g_meeting_summary.IsRunning()) {
+                                g_meeting_summary.Stop(false);
+                            }
+                            const bool started =
+                                StartMeetingPostProcess(
+                                    hPipe,
+                                    meetingId,
+                                    std::move(input.audioPaths),
+                                    input.translationMode,
+                                    input.hotwordsText,
+                                    meetingai::proto::
+                                        extractSummaryEnabled(buffer));
+                            if (!started) {
+                                WriteStreamingMessage(
+                                    hPipe,
+                                    "{\"type\":\"streaming_postprocess_error\","
+                                    "\"meeting_id\":" +
+                                    std::to_string(meetingId) +
+                                    ",\"message\":\"无法启动重试任务\"}\n");
+                            }
+                        }
+                    }
+                    buffer.clear();
+                    continue;
+                }
+
                 // ---- Streaming Meeting：手动立即生成一版滚动摘要 ----
                 if (meetingai::proto::isRequestMeetingSummary(buffer)) {
+                    if (!g_meeting_summary.IsRunning()) {
+                        const std::int64_t meetingId =
+                            meetingai::proto::extractMeetingId(buffer);
+                        if (meetingId > 0) {
+                            StartMeetingSummaryService(
+                                hPipe,
+                                meetingId,
+                                true);
+                        }
+                    }
                     if (g_meeting_summary.IsRunning()) {
                         g_meeting_summary.RequestNow();
                         WriteStreamingMessage(
@@ -2449,17 +3451,16 @@ int wmain() {
                 if (meetingai::proto::isStartStream(buffer)) {
                     std::wcout << L"[Worker] 处理 start_stream 命令\n";
 
-                    // 确保模型已加载（支持热拔插）
+                    // 旧流式管线同样遵守 Startup 手动加载规则。
                     {
                         std::lock_guard<std::mutex> lock(g_whisper_mutex);
                         if (!g_whisper_loaded) {
-                            std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-                            if (!InitWhisperOnce(modelPathOnce)) {
-                                std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
-                                DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                            } else {
-                                g_whisper_loaded = true;
-                            }
+                            std::string err =
+                                "{\"type\":\"error\",\"message\":\"Legacy Whisper 未加载，请先到 Startup 手动加载\"}\n";
+                            DWORD written;
+                            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                            buffer.clear();
+                            continue;
                         }
                     }
 
@@ -2510,17 +3511,16 @@ int wmain() {
                 // ---- v2 多流：start_stream2 / stream_chunk2 / stop_stream2 ----
                 if (meetingai::proto::isStartStream2(buffer)) {
                     std::wcout << L"[Worker] 处理 start_stream2 命令\n";
-                    // 确保模型已加载（支持热拔插）
+                    // 旧多流管线同样遵守 Startup 手动加载规则。
                     {
                         std::lock_guard<std::mutex> lock(g_whisper_mutex);
                         if (!g_whisper_loaded) {
-                            std::string modelPathOnce = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-                            if (!InitWhisperOnce(modelPathOnce)) {
-                                std::string err = "{\"type\":\"error\",\"message\":\"模型加载失败\"}\n";
-                                DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                            } else {
-                                g_whisper_loaded = true;
-                            }
+                            std::string err =
+                                "{\"type\":\"error\",\"message\":\"Legacy Whisper 未加载，请先到 Startup 手动加载\"}\n";
+                            DWORD written;
+                            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
+                            buffer.clear();
+                            continue;
                         }
                     }
                     std::string streamId = meetingai::proto::extractStreamId(buffer);
@@ -2596,6 +3596,7 @@ int wmain() {
             g_streaming_meeting_id > 0) {
             g_offline_translator.Stop(false);
             g_meeting_summary.Stop(false);
+            g_meeting_audio_recorder.Stop();
             if (g_sherpa) {
                 for (const std::string& source :
                      g_streaming_active_sources) {
@@ -2615,6 +3616,17 @@ int wmain() {
         }
         // 正常停止后可能保留了只响应手动请求的会后摘要服务。
         // Pipe 已断开时必须一并释放，避免回调继续持有失效的句柄。
+        if (g_meeting_summary.IsRunning()) {
+            g_meeting_summary.Stop(false);
+        }
+        // 会后精修仍在运行时，让它把数据库任务安全收尾后再释放管道。
+        // 这样即使用户在处理过程中关掉页面，已录制的会议仍会完成保存。
+        {
+            std::lock_guard<std::mutex> lock(g_postprocess_mutex);
+            if (g_postprocess_thread.joinable()) {
+                g_postprocess_thread.join();
+            }
+        }
         if (g_meeting_summary.IsRunning()) {
             g_meeting_summary.Stop(false);
         }

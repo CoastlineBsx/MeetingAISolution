@@ -23,6 +23,7 @@ public sealed partial class MainWindow : Window
     // 管道是单条字节流，多个并发 WriteAsync 会把 JSON 交错写坏。
     // 流式转录每秒会发多条音频包，必须串行化。
     private readonly SemaphoreSlim _pipeWriteLock = new(1, 1);
+    private readonly SemaphoreSlim _pipeConnectLock = new(1, 1);
 
     private void StopWorkerOnExit()
     {
@@ -172,7 +173,12 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            startupPage.BtnPreloadModels.IsEnabled = true;
+            startupPage.BtnLoadGranite.IsEnabled = true;
+            startupPage.BtnLoadEmbedding.IsEnabled = true;
+            startupPage.BtnLoadSherpa.IsEnabled = true;
+            startupPage.BtnLoadPunctuator.IsEnabled = true;
+            startupPage.BtnLoadTranslationEnZh.IsEnabled = true;
+            startupPage.BtnLoadTranslationZhEn.IsEnabled = true;
             BtnPing.IsEnabled = true;
             BtnTranscribe.IsEnabled = true;
             BtnLoopback.IsEnabled = true;
@@ -228,138 +234,61 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    public async void BtnPreloadModels_Click(object sender, RoutedEventArgs e)
-    {
-        if (_isGraniteEmbeddingLoaded)
-        {
-            // 卸载模型
-            await UnloadGraniteEmbeddingModels();
-        }
-        else
-        {
-            // 加载模型
-            await LoadGraniteEmbeddingModels();
-        }
-    }
-
-    private async Task LoadGraniteEmbeddingModels()
-    {
-        var page = GetStartupPage();
-        if (page == null) return;
-
-        try
-        {
-            await EnsurePipeAsync();
-
-            // 显示加载中状态
-            page.BtnPreloadModels.IsEnabled = false;
-            page.ProgressGraniteEmbedding.IsActive = true;
-            page.ProgressGraniteEmbedding.Visibility = Visibility.Visible;
-            page.CmbGraniteDevice.IsEnabled = false;
-            page.CmbEmbeddingDevice.IsEnabled = false;
-
-            // 读取当前设备选择
-            string graniteDevice = page.CmbGraniteDevice.SelectedIndex switch
-            {
-                1 => "GPU",
-                2 => "NPU",
-                _ => "CPU"  // 默认 CPU
-            };
-            string embeddingDevice = page.CmbEmbeddingDevice.SelectedIndex switch
-            {
-                1 => "GPU",
-                2 => "NPU",
-                _ => "CPU"  // 默认 CPU
-            };
-
-            await AppendLineAsync($"[Startup] Loading models: Granite-{graniteDevice}, Embedding-{embeddingDevice}");
-
-            // 发送预加载命令
-            var cmd = new { type = "preload_models", granite_device = graniteDevice, embedding_device = embeddingDevice };
-            var json = JsonSerializer.Serialize(cmd) + "\n";
-            var buf = Encoding.UTF8.GetBytes(json);
-            await _pipe.WriteAsync(buf, 0, buf.Length);
-            await _pipe.FlushAsync();
-
-            LblStatus.Text = "模型加载中...";
-        }
-        catch (Exception ex)
-        {
-            await AppendLineAsync($"[Startup] Model preload failed: {ex.Message}");
-            page.ProgressGraniteEmbedding.IsActive = false;
-            page.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-            page.BtnPreloadModels.IsEnabled = true;
-            page.CmbGraniteDevice.IsEnabled = true;
-            page.CmbEmbeddingDevice.IsEnabled = true;
-        }
-    }
-
-    private async Task UnloadGraniteEmbeddingModels()
-    {
-        var page = GetStartupPage();
-        if (page == null) return;
-
-        try
-        {
-            await AppendLineAsync("[Startup] Unloading Granite & Embedding models...");
-
-            // 显示卸载中状态
-            page.BtnPreloadModels.IsEnabled = false;
-            page.ProgressGraniteEmbedding.IsActive = true;
-            page.ProgressGraniteEmbedding.Visibility = Visibility.Visible;
-
-            await EnsurePipeAsync();
-
-            // 发送卸载命令
-            var unloadCmd = new
-            {
-                type = "unload_granite_embedding"
-            };
-            var json = JsonSerializer.Serialize(unloadCmd) + "\n";
-            var buf = Encoding.UTF8.GetBytes(json);
-            await _pipe.WriteAsync(buf, 0, buf.Length);
-            await _pipe.FlushAsync();
-
-            await AppendLineAsync("[Startup] Unload command sent");
-        }
-        catch (Exception ex)
-        {
-            await AppendLineAsync($"[Startup] Unload failed: {ex.Message}");
-            page.ProgressGraniteEmbedding.IsActive = false;
-            page.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-            page.BtnPreloadModels.IsEnabled = true;
-        }
-    }
-
     public async Task EnsurePipeAsync()
     {
-        if (_pipe is { IsConnected: true } && _reader != null && _readLoopTask != null)
-            return;
+        await _pipeConnectLock.WaitAsync();
+        try
+        {
+            // 多个页面可能同时检查模型状态。连接锁内必须再次检查，
+            // 否则后到的调用会销毁先到调用刚建立的读取循环。
+            if (_pipe is { IsConnected: true } &&
+                _reader != null &&
+                _readLoopTask is { IsCompleted: false })
+            {
+                return;
+            }
 
-        _pipeCts?.Cancel();
-        _pipeCts = null;
-        _readLoopTask = null;
-        _reader = null;
-        _pipe?.Dispose();
-        _pipe = null;
+            _pipeCts?.Cancel();
+            _pipeCts = null;
+            _readLoopTask = null;
+            _reader = null;
+            _pipe?.Dispose();
+            _pipe = null;
 
-        _pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await _pipe.ConnectAsync(30_000);
+            _pipe = new NamedPipeClientStream(
+                ".",
+                PipeName,
+                PipeDirection.InOut,
+                PipeOptions.Asynchronous);
+            await _pipe.ConnectAsync(30_000);
 
-        _reader = new StreamReader(_pipe, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+            _reader = new StreamReader(
+                _pipe,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: false,
+                bufferSize: 4096,
+                leaveOpen: true);
 
-        var testCmd = new PingMessage { payload = "init-check" };
-        var testJson = JsonSerializer.Serialize(testCmd, AppJsonContext.Default.PingMessage) + "\n";
+            var testCmd = new PingMessage { payload = "init-check" };
+            var testJson = JsonSerializer.Serialize(
+                testCmd,
+                AppJsonContext.Default.PingMessage) + "\n";
 
-        var testBuf = Encoding.UTF8.GetBytes(testJson);
-        await _pipe.WriteAsync(testBuf, 0, testBuf.Length);
-        await _pipe.FlushAsync();
+            var testBuf = Encoding.UTF8.GetBytes(testJson);
+            await _pipe.WriteAsync(testBuf, 0, testBuf.Length);
+            await _pipe.FlushAsync();
 
-        var ack = await _reader.ReadLineAsync();
-        await AppendLineAsync($"[Worker ACK] {ack}");
+            var ack = await _reader.ReadLineAsync();
+            await AppendLineAsync($"[Worker ACK] {ack}");
 
-        _pipeCts = new CancellationTokenSource();
-        _readLoopTask = Task.Run(() => PipeReadLoopAsync(_pipeCts.Token));
+            _pipeCts = new CancellationTokenSource();
+            _readLoopTask = Task.Run(
+                () => PipeReadLoopAsync(_pipeCts.Token));
+        }
+        finally
+        {
+            _pipeConnectLock.Release();
+        }
     }
 
     private async Task PipeReadLoopAsync(CancellationToken ct)
@@ -382,20 +311,31 @@ public sealed partial class MainWindow : Window
                     !line.Contains("\"type\":\"streaming_translation_partial\"") &&
                     !line.Contains("\"type\":\"streaming_summary_partial\""))
                 {
-                    await AppendLineAsync($"[Pipe] {line}");
+                    // 日志 UI 绝不能阻塞命名管道。否则 OutputBox 更新稍慢，
+                    // Worker 的同步 WriteFile 就会把整个会后 Whisper 线程堵死。
+                    _ = AppendLineAsync($"[Pipe] {line}");
                 }
 
                 // Split concatenated JSON messages (e.g., "}{"type":"embedding_ready")
                 var jsonMessages = SplitJsonMessages(line);
                 foreach (var jsonMsg in jsonMessages)
                 {
-                    await ProcessJsonMessage(jsonMsg);
+                    try
+                    {
+                        await ProcessJsonMessage(jsonMsg);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 单条业务消息失败不能杀掉整根管道的读取循环。
+                        _ = AppendLineAsync(
+                            $"[Pipe] Message handling error: {ex.Message}");
+                    }
                 }
             }
         }
         catch (Exception ex)
         {
-            await AppendLineAsync($"[Pipe] Read loop error: {ex.Message}");
+            _ = AppendLineAsync($"[Pipe] Read loop error: {ex.Message}");
         }
     }
 
@@ -441,6 +381,18 @@ public sealed partial class MainWindow : Window
             {
                 streamingHandler.Invoke(jsonMsg);
             }
+        }
+
+        if (jsonMsg.Contains("\"type\":\"model_state\""))
+        {
+            HandleModelStateMessage(jsonMsg);
+            return;
+        }
+
+        if (jsonMsg.Contains("\"type\":\"model_status\""))
+        {
+            HandleModelStatusMessage(jsonMsg);
+            return;
         }
 
         // ========== Info 消息处理（设备枚举等） ==========
@@ -518,9 +470,13 @@ public sealed partial class MainWindow : Window
                     var startupPage = GetStartupPage();
                     if (startupPage != null)
                     {
-                        startupPage.ProgressGraniteEmbedding.IsActive = false;
-                        startupPage.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-                        startupPage.BtnPreloadModels.IsEnabled = true;
+                        startupPage.ProgressGranite.IsActive = false;
+                        startupPage.ProgressGranite.Visibility = Visibility.Collapsed;
+                        startupPage.BtnLoadGranite.Content = "Unload Granite";
+                        startupPage.BtnLoadGranite.IsEnabled = true;
+                        startupPage.CmbGraniteDevice.IsEnabled = false;
+                        startupPage.TxtGraniteState.Text =
+                            $"Ready · {device}";
                     }
 
                     // Update IE Chat UI to enable upload button
@@ -615,12 +571,15 @@ public sealed partial class MainWindow : Window
                     var startupPage = GetStartupPage();
                     if (startupPage != null)
                     {
-                        startupPage.ProgressGraniteEmbedding.IsActive = false;
-                        startupPage.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-                        startupPage.BtnPreloadModels.Content = "Unload Models";
-                        startupPage.BtnPreloadModels.IsEnabled = true;
+                        startupPage.ProgressEmbedding.IsActive = false;
+                        startupPage.ProgressEmbedding.Visibility = Visibility.Collapsed;
+                        startupPage.BtnLoadEmbedding.Content = "Unload Embedding";
+                        startupPage.BtnLoadEmbedding.IsEnabled = true;
+                        startupPage.CmbEmbeddingDevice.IsEnabled = false;
+                        startupPage.TxtEmbeddingState.Text =
+                            $"Ready · {device} · {dim} dimensions · OpenVINO GenAI";
                     }
-                    _isGraniteEmbeddingLoaded = true;
+                    _isEmbeddingLoaded = true;
 
                     _ = AppendLineAsync("[DEBUG] *** UI更新已完成 ***");
                 });
@@ -642,14 +601,22 @@ public sealed partial class MainWindow : Window
                 var startupPage = GetStartupPage();
                 if (startupPage != null)
                 {
-                    startupPage.ProgressGraniteEmbedding.IsActive = false;
-                    startupPage.ProgressGraniteEmbedding.Visibility = Visibility.Collapsed;
-                    startupPage.BtnPreloadModels.Content = "Load Models";
-                    startupPage.BtnPreloadModels.IsEnabled = true;
+                    startupPage.ProgressGranite.IsActive = false;
+                    startupPage.ProgressGranite.Visibility = Visibility.Collapsed;
+                    startupPage.ProgressEmbedding.IsActive = false;
+                    startupPage.ProgressEmbedding.Visibility = Visibility.Collapsed;
+                    startupPage.BtnLoadGranite.Content = "Load Granite";
+                    startupPage.BtnLoadGranite.IsEnabled = true;
+                    startupPage.BtnLoadEmbedding.Content = "Load Embedding";
+                    startupPage.BtnLoadEmbedding.IsEnabled = true;
                     startupPage.CmbGraniteDevice.IsEnabled = true;
                     startupPage.CmbEmbeddingDevice.IsEnabled = true;
+                    startupPage.TxtGraniteState.Text = "Not loaded";
+                    startupPage.TxtEmbeddingState.Text =
+                        "Not loaded · OpenVINO GenAI TextEmbeddingPipeline";
                 }
-                _isGraniteEmbeddingLoaded = false;
+                _isGraniteLoaded = false;
+                _isEmbeddingLoaded = false;
             });
             return;
         }
@@ -821,7 +788,14 @@ public sealed partial class MainWindow : Window
                 await AppendLineAsync("[DEBUG] *** 调用 HandleOpenVINOWhisperLoadResponse ***");
                 HandleOpenVINOWhisperLoadResponse(true, $"Model loaded from {modelPath}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                await AppendLineAsync(
+                    $"[OpenVINO Whisper] Invalid ready response: {ex.Message}");
+                HandleOpenVINOWhisperLoadResponse(
+                    false,
+                    "Worker 返回的模型加载结果格式无效");
+            }
             return;
         }
 
@@ -835,7 +809,14 @@ public sealed partial class MainWindow : Window
                 await AppendLineAsync($"[OpenVINO Whisper] ✗ Error: {message}");
                 HandleOpenVINOWhisperLoadResponse(false, message);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                await AppendLineAsync(
+                    $"[OpenVINO Whisper] Invalid error response: {ex.Message}");
+                HandleOpenVINOWhisperLoadResponse(
+                    false,
+                    "Worker 返回的模型错误信息格式无效");
+            }
             return;
         }
 

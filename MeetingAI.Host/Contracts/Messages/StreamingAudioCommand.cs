@@ -53,6 +53,16 @@ public class StartStreamingCommand
     public bool summary_enabled { get; set; } = true;
 
     /// <summary>
+    /// 会议资料用于 RAG、摘要和会后问答；不改变语音解码。
+    /// </summary>
+    public bool rag_context_enabled { get; set; } = true;
+
+    /// <summary>
+    /// 将资料中的术语作为 Sherpa/Whisper 热词。与 RAG 独立控制。
+    /// </summary>
+    public bool asr_hotwords_enabled { get; set; } = false;
+
+    /// <summary>
     /// 可为空；为空表示通用会议，不绑定会前资料。
     /// </summary>
     public long? preparation_id { get; set; }
