@@ -168,6 +168,13 @@ public sealed partial class MainWindow : Window
     // ========== 实时流式转录消息处理器 ==========
     public Action<string>? StreamingMessageHandler { get; set; }
 
+    // ========== 会议问答（StreamingMeetingPage 询问本次会议） ==========
+    // 设置后，granite 流式 token/done 会优先交给会议问答，绕过聊天页面路由。
+    internal Action<string>? MeetingAskTokenHandler { get; set; }
+    internal Action? MeetingAskDoneHandler { get; set; }
+    internal bool IsGraniteLoaded => _isGraniteLoaded;
+    internal bool IsEmbeddingLoaded => _isEmbeddingLoaded;
+
     // ========== 语音输入相关 ==========
     private WasapiCapture? _voiceInputCapture;          // 语音输入麦克风捕获
     private WaveFileWriter? _voiceInputWriter;          // 语音输入 WAV 写入器

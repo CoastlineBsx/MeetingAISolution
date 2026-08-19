@@ -10,6 +10,7 @@
 #include <thread>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <future>
 #include <stdexcept>
@@ -336,6 +337,79 @@ struct RefinedMeetingSegment {
     std::string text;
 };
 
+// Whisper DTW 时间块约 10 秒一切，经常拦腰截断句子。判断累计文本是否
+// 已经到句尾（中英文终止标点），作为合并块的封口信号。
+static bool EndsWithSentenceTerminator(const std::string& text) {
+    static const char* kTerminators[] = {
+        ".", "!", "?", "\xE2\x80\xA6",          // … U+2026
+        "\xE3\x80\x82",                          // 。 U+3002
+        "\xEF\xBC\x81",                          // ！ U+FF01
+        "\xEF\xBC\x9F"                           // ？ U+FF1F
+    };
+    for (const char* terminator : kTerminators) {
+        const std::size_t length = std::strlen(terminator);
+        if (text.size() >= length &&
+            text.compare(text.size() - length, length, terminator) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 把 Whisper 的时间块合并为句子级片段：句尾标点封口；块间静音超过
+// 3 秒或累计过长也封口。时间戳取首块起点、末块终点。
+static std::vector<meetingai::transcribe::WhisperOpenVINOSegment>
+MergeWhisperChunksIntoSentences(
+    const std::vector<meetingai::transcribe::WhisperOpenVINOSegment>&
+        chunks) {
+    constexpr float kMaxGapSeconds = 3.0f;
+    constexpr std::size_t kMaxSegmentBytes = 400;
+
+    std::vector<meetingai::transcribe::WhisperOpenVINOSegment> merged;
+    meetingai::transcribe::WhisperOpenVINOSegment current{};
+    bool hasCurrent = false;
+
+    auto flush = [&merged, &current, &hasCurrent]() {
+        if (hasCurrent && !current.text.empty()) {
+            merged.push_back(current);
+        }
+        hasCurrent = false;
+    };
+
+    for (const auto& chunk : chunks) {
+        const std::string chunkText =
+            meetingai::proto::trim(chunk.text);
+        if (chunkText.empty()) {
+            continue;
+        }
+
+        if (hasCurrent &&
+            chunk.start_ts - current.end_ts > kMaxGapSeconds) {
+            flush();
+        }
+
+        if (!hasCurrent) {
+            current = chunk;
+            current.text = chunkText;
+            hasCurrent = true;
+        }
+        else {
+            current.text =
+                meetingai::transcribe::JoinTranscriptFragments(
+                    current.text,
+                    chunkText);
+            current.end_ts = chunk.end_ts;
+        }
+
+        if (EndsWithSentenceTerminator(current.text) ||
+            current.text.size() >= kMaxSegmentBytes) {
+            flush();
+        }
+    }
+    flush();
+    return merged;
+}
+
 static void SendPostProcessStatus(
     HANDLE hPipe,
     std::int64_t meetingId,
@@ -446,8 +520,12 @@ static void RunMeetingPostProcess(
                     std::string("音频的 Whisper 转录失败"));
             }
 
+            // 时间块 → 句子级片段，避免最终稿出现 10 秒硬切的断句。
+            const auto sentenceSegments =
+                MergeWhisperChunksIntoSentences(segments);
+
             std::int64_t sequence = 1;
-            for (const auto& whisperSegment : segments) {
+            for (const auto& whisperSegment : sentenceSegments) {
                 const std::string rawText =
                     meetingai::proto::trim(whisperSegment.text);
                 if (rawText.empty()) {
@@ -1058,6 +1136,47 @@ static void handleLLaVACommand(HANDLE hPipe, const std::string& command) {
     }
 }
 
+// 单轮流式生成不能占用管道命令线程：生成几十秒期间 streaming_audio
+// 命令会全部排队，实时字幕停摆。放到后台线程执行，并且必须持
+// g_granite_mutex —— 实时摘要线程也在用同一个 Granite 管线，无锁并发
+// 会把摘要服务打进错误状态。
+static std::mutex g_granite_stream_start_mutex;
+static std::thread g_granite_stream_thread;
+static std::atomic<bool> g_granite_stream_running{ false };
+
+static void RunGraniteStreamGenerate(
+    HANDLE hPipe,
+    std::string prompt,
+    int maxTokens,
+    float temperature) {
+    try {
+        std::lock_guard<std::mutex> graniteLock(g_granite_mutex);
+        if (!g_granite) {
+            throw std::runtime_error("Granite 模型未加载");
+        }
+        g_granite->generateStream(
+            prompt,
+            [hPipe](const std::string& token) {
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"token\",\"text\":\"" +
+                    meetingai::proto::jsonEscape(token) + "\"}\n");
+            },
+            maxTokens,
+            temperature);
+        WriteStreamingMessage(hPipe, "{\"type\":\"done\"}\n");
+    }
+    catch (const std::exception& e) {
+        std::wcerr << L"[Granite] 后台生成异常: " << e.what() << L"\n";
+        WriteStreamingMessage(
+            hPipe,
+            "{\"type\":\"error\",\"message\":\"" +
+            meetingai::proto::jsonEscape(e.what()) + "\"}\n");
+        WriteStreamingMessage(hPipe, "{\"type\":\"done\"}\n");
+    }
+    g_granite_stream_running.store(false);
+}
+
 // ========== Granite GenAI 命令处理 ==========
 static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
     try {
@@ -1079,31 +1198,34 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
         size_t typePos = command.find("\"type\"");
         if (typePos == std::string::npos) return;
 
-        // -------- 单轮流式生成 --------
+        // -------- 单轮流式生成（后台线程，不阻塞音频命令） --------
         if (command.find("\"granite_generate_stream\"") != std::string::npos) {
             std::string prompt = meetingai::proto::extractPrompt(command);
             int maxTokens = meetingai::proto::extractMaxTokens(command, g_max_tokens);
             float temp = meetingai::proto::extractTemperature(command, g_temperature);
 
-            std::wcout << L"[Granite] 单轮生成: " << prompt.c_str() << L"\n";
+            std::wcout << L"[Granite] 单轮生成(后台): "
+                       << prompt.substr(0, 80).c_str() << L"...\n";
 
-            g_granite->generateStream(prompt, [&](const std::string& token) {
-                // ===== DEBUG: 打印 token 的原始字节 =====
-                std::wcout << L"[DEBUG] Token length: " << token.size() << L" bytes" << std::endl;
-                std::wcout << L"[DEBUG] Token hex: ";
-                for (unsigned char c : token) {
-                    std::wcout << std::hex << std::setw(2) << std::setfill(L'0') << (int)c << L" ";
-                }
-                std::wcout << std::dec << std::endl;
-                std::wcout << L"[DEBUG] Token string: \"" << token.c_str() << L"\"" << std::endl;
-                // ===== END DEBUG =====
-
-                std::string chunk = "{\"type\":\"token\",\"text\":\"" +
-                    meetingai::proto::jsonEscape(token) + "\"}\n";
-                write_json(chunk);
-            }, maxTokens, temp);
-
-            write_json("{\"type\":\"done\"}\n");
+            std::lock_guard<std::mutex> startLock(
+                g_granite_stream_start_mutex);
+            if (g_granite_stream_running.load()) {
+                WriteStreamingMessage(
+                    hPipe,
+                    "{\"type\":\"token\",\"text\":\"Granite 正忙，请稍后再试。\"}\n");
+                WriteStreamingMessage(hPipe, "{\"type\":\"done\"}\n");
+                return;
+            }
+            if (g_granite_stream_thread.joinable()) {
+                g_granite_stream_thread.join();
+            }
+            g_granite_stream_running.store(true);
+            g_granite_stream_thread = std::thread(
+                RunGraniteStreamGenerate,
+                hPipe,
+                std::move(prompt),
+                maxTokens,
+                temp);
         }
         // -------- 多轮：开始会话 --------
         else if (command.find("\"granite_start_chat\"") != std::string::npos) {
@@ -1121,16 +1243,6 @@ static void handleGraniteCommand(HANDLE hPipe, const std::string& command) {
             std::wcout << L"[Granite] 多轮对话: " << prompt.c_str() << L"\n";
 
             g_granite->chatStream(prompt, [&](const std::string& token) {
-                // ===== DEBUG: 打印 token 的原始字节 =====
-                std::wcout << L"[DEBUG] Token length: " << token.size() << L" bytes" << std::endl;
-                std::wcout << L"[DEBUG] Token hex: ";
-                for (unsigned char c : token) {
-                    std::wcout << std::hex << std::setw(2) << std::setfill(L'0') << (int)c << L" ";
-                }
-                std::wcout << std::dec << std::endl;
-                std::wcout << L"[DEBUG] Token string: \"" << token.c_str() << L"\"" << std::endl;
-                // ===== END DEBUG =====
-
                 std::string chunk = "{\"type\":\"token\",\"text\":\"" +
                     meetingai::proto::jsonEscape(token) + "\"}\n";
                 write_json(chunk);
@@ -3625,6 +3737,12 @@ int wmain() {
             std::lock_guard<std::mutex> lock(g_postprocess_mutex);
             if (g_postprocess_thread.joinable()) {
                 g_postprocess_thread.join();
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_granite_stream_start_mutex);
+            if (g_granite_stream_thread.joinable()) {
+                g_granite_stream_thread.join();
             }
         }
         if (g_meeting_summary.IsRunning()) {

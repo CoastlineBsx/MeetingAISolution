@@ -84,6 +84,21 @@ public sealed partial class StreamingMeetingPage : Page
             }
         }
 
+        // 搜索/引用跳转后的短暂高亮；平时为 null（透明）
+        private Brush? _highlightBrush;
+        public Brush? HighlightBrush
+        {
+            get => _highlightBrush;
+            set
+            {
+                if (!ReferenceEquals(_highlightBrush, value))
+                {
+                    _highlightBrush = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
         private void OnPropertyChanged([CallerMemberName] string? name = null)
@@ -179,6 +194,8 @@ public sealed partial class StreamingMeetingPage : Page
         _translationStates = new();
     private readonly Dictionary<long, StreamingCaption>
         _refinedCaptionBySegment = new();
+    private readonly Dictionary<long, StreamingCaption>
+        _liveCaptionBySegment = new();
     private DateTime _lastScrollTime = DateTime.MinValue;
 
     // ========== 音频捕获 ==========
@@ -705,12 +722,26 @@ public sealed partial class StreamingMeetingPage : Page
             foreach (var caption in liveCaptions)
             {
                 _captions.Add(caption);
+                if (caption.SegmentId > 0)
+                {
+                    _liveCaptionBySegment[caption.SegmentId] = caption;
+                    RegisterAskSegment(
+                        caption.SegmentId,
+                        caption.SpeakerName,
+                        caption.Text,
+                        isRefined: false);
+                }
             }
             foreach (var caption in finalCaptions)
             {
                 _refinedCaptions.Add(caption);
                 _refinedCaptionBySegment[caption.SegmentId] =
                     caption;
+                RegisterAskSegment(
+                    caption.SegmentId,
+                    caption.SpeakerName,
+                    caption.Text,
+                    isRefined: true);
             }
             _refinedTranscriptReady =
                 _refinedCaptions.Count > 0;
@@ -1692,11 +1723,13 @@ public sealed partial class StreamingMeetingPage : Page
                     {
                         string source = Source();
                         long utteranceId = UtteranceId();
+                        long segmentId = SegmentId();
                         DispatcherQueue.TryEnqueue(
                             () => AddFinalTranscript(
                                 text,
                                 source,
-                                utteranceId));
+                                utteranceId,
+                                segmentId));
                     }
                     break;
                 }
@@ -1924,6 +1957,7 @@ public sealed partial class StreamingMeetingPage : Page
         }
         _refinedCaptions.Insert(insertAt, caption);
         _refinedCaptionBySegment[segmentId] = caption;
+        RegisterAskSegment(segmentId, source, text, isRefined: true);
     }
 
     private void UpdateRefinedTranslation(long segmentId, string text)
@@ -2061,7 +2095,8 @@ public sealed partial class StreamingMeetingPage : Page
     private void AddFinalTranscript(
         string text,
         string source,
-        long utteranceId)
+        long utteranceId,
+        long segmentId = 0)
     {
         var now = DateTime.Now;
         var state = GetCaptionState(source);
@@ -2079,6 +2114,18 @@ public sealed partial class StreamingMeetingPage : Page
         state = GetCaptionState(source);
         var para = EnsureParagraph(source, state);
         RegisterUtterance(source, utteranceId, para);
+
+        if (segmentId > 0)
+        {
+            // 段落可能合并多个 segment；首个 segment 的 id 作为段落锚点，
+            // 同时每个 segment 都能映射回所属段落（问答来源跳转用）。
+            if (para.SegmentId <= 0)
+            {
+                para.SegmentId = segmentId;
+            }
+            _liveCaptionBySegment[segmentId] = para;
+            RegisterAskSegment(segmentId, source, text, isRefined: false);
+        }
 
         state.ConfirmedText = JoinText(state.ConfirmedText, text);
         para.Text = state.ConfirmedText;
@@ -2402,6 +2449,8 @@ public sealed partial class StreamingMeetingPage : Page
         _captionStates.Clear();
         _captionByUtterance.Clear();
         _translationStates.Clear();
+        _liveCaptionBySegment.Clear();
+        ResetSearchAndAsk();
         _meetingEndTime = null;
         _postMeetingSummaryAvailable = false;
         _summaryServiceAvailable = false;

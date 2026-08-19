@@ -692,6 +692,13 @@ public sealed partial class MainWindow : Window
     // ========== 处理流式响应 ==========
     private Task HandleGraniteStreamToken(string token)
     {
+        // ========== 会议问答（询问本次会议） ==========
+        if (MeetingAskTokenHandler is { } meetingAskToken)
+        {
+            meetingAskToken(token);
+            return Task.CompletedTask;
+        }
+
         // ========== IE文档类型识别（主页IE模式） ==========
         if (_isIEDetecting && _ieDetectionBuffer != null)
         {
@@ -745,6 +752,13 @@ public sealed partial class MainWindow : Window
 
     private void HandleGraniteStreamDone()
     {
+        // ========== 会议问答完成（询问本次会议） ==========
+        if (MeetingAskDoneHandler is { } meetingAskDone)
+        {
+            meetingAskDone();
+            return;
+        }
+
         // ========== IE文档类型识别完成（主页IE模式） ==========
         if (_isIEDetecting && _ieDetectionBuffer != null)
         {

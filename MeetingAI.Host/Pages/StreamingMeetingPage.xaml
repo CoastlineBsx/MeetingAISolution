@@ -34,6 +34,8 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock Text="会议上下文：" VerticalAlignment="Center" FontWeight="SemiBold"/>
                     <ComboBox Grid.Column="1" x:Name="CmbMeetingContext"
@@ -72,6 +74,95 @@
                                    FontSize="12"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                     </StackPanel>
+
+                    <!-- 会议设置（原右侧 Status 卡上移） -->
+                    <StackPanel Grid.Row="2"
+                                Grid.ColumnSpan="5"
+                                Orientation="Horizontal"
+                                Spacing="24"
+                                Margin="0,10,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="8"
+                                    ToolTipService.ToolTip="同时监听建议佩戴耳机，避免对方声音被麦克风再次收录。">
+                            <TextBlock Text="音频来源:"
+                                       VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ComboBox x:Name="CmbAudioSource"
+                                      SelectedIndex="2"
+                                      MinWidth="210">
+                                <ComboBoxItem Content="我方（麦克风）"/>
+                                <ComboBoxItem Content="对方（会议音频）"/>
+                                <ComboBoxItem Content="我方 + 对方（同时）"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8"
+                                    ToolTipService.ToolTip="原文会立即显示，译文随后补到同一条字幕。">
+                            <TextBlock Text="实时翻译:"
+                                       VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ComboBox x:Name="CmbTranslationMode"
+                                      SelectedIndex="1"
+                                      MinWidth="210">
+                                <ComboBoxItem Content="关闭"/>
+                                <ComboBoxItem Content="自动互译（中 ↔ 英）"/>
+                                <ComboBoxItem Content="译为中文（英文 → 中文）"/>
+                                <ComboBoxItem Content="译为英文（中文 → 英文）"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <CheckBox x:Name="ChkLiveSummary"
+                                  IsChecked="True"
+                                  VerticalAlignment="Center"
+                                  ToolTipService.ToolTip="约一分钟自动更新实时速览；“生成详细摘要”会自适应会议内容。"
+                                  Content="启用 Granite 实时速览与详细摘要"/>
+                    </StackPanel>
+
+                    <!-- 运行状态（原右侧 Status 卡上移） -->
+                    <StackPanel Grid.Row="3"
+                                Grid.ColumnSpan="5"
+                                Orientation="Horizontal"
+                                Spacing="24"
+                                Margin="0,10,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="翻译状态:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="TxtTranslationStatus"
+                                       Text="未启动"
+                                       TextWrapping="Wrap"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Duration:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="TxtDuration"
+                                       x:FieldModifier="public"
+                                       Text="00:00:00"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                            <TextBlock Text="Speakers:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="TxtSpeakerCount"
+                                       x:FieldModifier="public"
+                                       Text="0"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="State:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="TxtStatus"
+                                       x:FieldModifier="public"
+                                       Text="Idle"
+                                       TextWrapping="Wrap"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Segments:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="TxtSegmentCount"
+                                       x:FieldModifier="public"
+                                       Text="0"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </StackPanel>
                 </Grid>
             </Border>
         </StackPanel>
@@ -108,6 +199,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0"
                                        x:Name="TxtCaptionTitle"
@@ -115,7 +207,30 @@
                                        FontWeight="SemiBold"
                                        FontSize="16"
                                        VerticalAlignment="Center"/>
-                            <StackPanel Grid.Column="1"
+                            <AutoSuggestBox Grid.Column="1"
+                                            x:Name="TxtCaptionSearch"
+                                            QueryIcon="Find"
+                                            PlaceholderText="搜索字幕（Enter 跳下一个）"
+                                            Width="240"
+                                            Margin="0,0,10,0"
+                                            VerticalAlignment="Center"
+                                            TextChanged="TxtCaptionSearch_TextChanged"
+                                            QuerySubmitted="TxtCaptionSearch_QuerySubmitted">
+                                <AutoSuggestBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Padding="0,4">
+                                            <TextBlock Text="{Binding Header}"
+                                                       FontSize="11"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding Snippet}"
+                                                       FontSize="12"
+                                                       TextWrapping="Wrap"
+                                                       MaxLines="2"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </AutoSuggestBox.ItemTemplate>
+                            </AutoSuggestBox>
+                            <StackPanel Grid.Column="2"
                                         Orientation="Horizontal"
                                         Spacing="6"
                                         Margin="0,0,10,0">
@@ -130,7 +245,7 @@
                                         Padding="10,4"
                                         Content="Whisper 最终稿"/>
                             </StackPanel>
-                            <Button Grid.Column="2"
+                            <Button Grid.Column="3"
                                     x:Name="BtnCopyCaptions"
                                     Click="BtnCopyCaptions_Click"
                                     Padding="10,4"
@@ -204,7 +319,10 @@
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Spacing="4">
+                                    <StackPanel Spacing="4"
+                                                Padding="6,2"
+                                                CornerRadius="4"
+                                                Background="{Binding HighlightBrush}">
                                         <!-- 说话人 + 时间戳 -->
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -241,11 +359,11 @@
                 </Grid>
             </Border>
 
-            <!-- 右侧：说话人列表 + 控制区 -->
+            <!-- 右侧：摘要（上） + 会议问答（下） -->
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="16"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="12"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
@@ -302,111 +420,8 @@
                     </Grid>
                 </Border>
 
-                <!-- 状态信息 -->
-                <Border Grid.Row="0"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Background="{ThemeResource LayerFillColorDefaultBrush}"
-                        Padding="16">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="📊 Status"
-                                   FontWeight="SemiBold"
-                                   FontSize="14"
-                                   Margin="0,0,0,4"/>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="音频来源:"
-                                       VerticalAlignment="Center"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <ComboBox x:Name="CmbAudioSource"
-                                      SelectedIndex="2"
-                                      MinWidth="210">
-                                <ComboBoxItem Content="我方（麦克风）"/>
-                                <ComboBoxItem Content="对方（会议音频）"/>
-                                <ComboBoxItem Content="我方 + 对方（同时）"/>
-                            </ComboBox>
-                        </StackPanel>
-                        <TextBlock Text="同时监听建议佩戴耳机，避免对方声音被麦克风再次收录。"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="实时翻译:"
-                                       VerticalAlignment="Center"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <ComboBox x:Name="CmbTranslationMode"
-                                      SelectedIndex="1"
-                                      MinWidth="210">
-                                <ComboBoxItem Content="关闭"/>
-                                <ComboBoxItem Content="自动互译（中 ↔ 英）"/>
-                                <ComboBoxItem Content="译为中文（英文 → 中文）"/>
-                                <ComboBoxItem Content="译为英文（中文 → 英文）"/>
-                            </ComboBox>
-                        </StackPanel>
-                        <TextBlock Text="原文会立即显示，译文随后补到同一条字幕。"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="翻译状态:"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock x:Name="TxtTranslationStatus"
-                                       Text="未启动"
-                                       TextWrapping="Wrap"
-                                       FontWeight="SemiBold"/>
-                        </StackPanel>
-
-                        <CheckBox x:Name="ChkLiveSummary"
-                                  IsChecked="True"
-                                  Content="启用 Granite 本地实时速览与详细摘要"/>
-                        <TextBlock Text="约一分钟自动更新实时速览；“生成详细摘要”会自适应会议内容，并包含当前尚未定稿的实时字幕。"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Duration:"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock x:Name="TxtDuration"
-                                       x:FieldModifier="public"
-                                       Text="00:00:00"
-                                       FontWeight="SemiBold"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
-                            <TextBlock Text="Speakers:"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock x:Name="TxtSpeakerCount"
-                                       x:FieldModifier="public"
-                                       Text="0"
-                                       FontWeight="SemiBold"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="State:"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock x:Name="TxtStatus"
-                                       x:FieldModifier="public"
-                                       Text="Idle"
-                                       TextWrapping="Wrap"
-                                       FontWeight="SemiBold"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Segments:"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock x:Name="TxtSegmentCount"
-                                       x:FieldModifier="public"
-                                       Text="0"
-                                       FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
                 <!-- Granite 本地滚动会议摘要 -->
-                <Border Grid.Row="2"
+                <Border Grid.Row="0"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         CornerRadius="8"
@@ -479,6 +494,87 @@
                                    Margin="0,8,0,0"
                                    FontSize="11"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                </Border>
+
+                <!-- 询问本次会议（本地 RAG 问答） -->
+                <Border Grid.Row="2"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        Padding="16"
+                        MinHeight="200">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Text="💬 询问本次会议"
+                                   FontWeight="SemiBold"
+                                   FontSize="14"
+                                   Margin="0,0,0,8"/>
+
+                        <Grid Grid.Row="1" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TxtAskInput"
+                                     PlaceholderText="例如：刚才提到了哪些公司？"
+                                     KeyDown="TxtAskInput_KeyDown"/>
+                            <Button Grid.Column="1"
+                                    x:Name="BtnAsk"
+                                    Click="BtnAsk_Click"
+                                    IsEnabled="False"
+                                    Padding="10,4"
+                                    Content="提问"/>
+                        </Grid>
+
+                        <TextBlock Grid.Row="2"
+                                   x:Name="TxtAskStatus"
+                                   Text="会议开始并出现定稿字幕后即可提问。"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="0,6,0,6"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                        <ScrollViewer Grid.Row="3"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <TextBlock x:Name="TxtAskAnswer"
+                                       Text=""
+                                       TextWrapping="Wrap"
+                                       IsTextSelectionEnabled="True"/>
+                        </ScrollViewer>
+
+                        <ListView Grid.Row="4"
+                                  x:Name="AskSourcesList"
+                                  MaxHeight="130"
+                                  Margin="0,8,0,0"
+                                  SelectionMode="None"
+                                  IsItemClickEnabled="True"
+                                  ItemClick="AskSourcesList_ItemClick">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="MinHeight" Value="28"/>
+                                    <Setter Property="Padding" Value="4,2"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Display}"
+                                               FontSize="12"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
                     </Grid>
                 </Border>
 

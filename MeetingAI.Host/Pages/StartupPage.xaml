@@ -192,7 +192,7 @@
                                 <TextBlock Text="Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                 <ComboBox x:Name="CmbOpenVINOWhisperDevice"
                                           x:FieldModifier="public"
-                                          SelectedIndex="0"
+                                          SelectedIndex="1"
                                           HorizontalAlignment="Stretch">
                                     <ComboBoxItem Content="CPU"/>
                                     <ComboBoxItem Content="GPU"/>
