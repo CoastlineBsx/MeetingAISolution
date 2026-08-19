@@ -3,10 +3,8 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
-# model files
-models/
-!MeetingAI.Host/RAG/Models/
-!MeetingAI.Host/RAG/Models/DocumentModels.cs
+# Large AI model files. C# source directories named Models remain tracked.
+/MeetingAI.Worker/models/
 
 # Restored dependency trees. Manifests and lock files stay in Git.
 vcpkg_installed/
