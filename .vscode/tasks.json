@@ -1,15 +1,10 @@
 {
   "version": "2.0.0",
-  "options": {
-    "env": {
-      "MSBUILD": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\amd64\\MSBuild.exe"
-    }
-  },
   "tasks": [
     {
       "label": "build all (x64 Debug)",
       "type": "shell",
-      "command": "& \"${env:MSBUILD}\" MeetingAISolution.sln -restore -p:Configuration=Debug -p:Platform=x64 -m -v:minimal",
+      "command": "& .\\scripts\\build.ps1 -Configuration Debug",
       "options": { "cwd": "${workspaceFolder}" },
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": "$msCompile"
@@ -17,7 +12,7 @@
     {
       "label": "build worker",
       "type": "shell",
-      "command": "& \"${env:MSBUILD}\" MeetingAI.Worker\\MeetingAI.Worker.vcxproj -p:SolutionDir=${workspaceFolder}\\ -p:Configuration=Debug -p:Platform=x64 -m -v:minimal",
+      "command": "& .\\scripts\\build.ps1 -Configuration Debug",
       "options": { "cwd": "${workspaceFolder}" },
       "group": "build",
       "problemMatcher": "$msCompile"
@@ -25,7 +20,7 @@
     {
       "label": "build host",
       "type": "shell",
-      "command": "& \"${env:MSBUILD}\" MeetingAI.Host\\MeetingAI.Host.csproj -restore -p:Configuration=Debug -p:Platform=x64 -m -v:minimal",
+      "command": "& .\\scripts\\build.ps1 -Configuration Debug",
       "options": { "cwd": "${workspaceFolder}" },
       "group": "build",
       "problemMatcher": "$msCompile"

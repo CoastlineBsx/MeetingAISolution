@@ -1,0 +1,49 @@
+name: windows-x64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    env:
+      MEETINGAI_NATIVE_BUNDLE_URI: ${{ secrets.MEETINGAI_NATIVE_BUNDLE_URI }}
+      MEETINGAI_NATIVE_BUNDLE_SHA256: ${{ secrets.MEETINGAI_NATIVE_BUNDLE_SHA256 }}
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Verify native dependency configuration
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MEETINGAI_NATIVE_BUNDLE_URI) -or
+              [string]::IsNullOrWhiteSpace($env:MEETINGAI_NATIVE_BUNDLE_SHA256)) {
+            throw 'Configure MEETINGAI_NATIVE_BUNDLE_URI and MEETINGAI_NATIVE_BUNDLE_SHA256 repository secrets.'
+          }
+
+      - name: Build Release x64
+        shell: pwsh
+        run: .\scripts\build.ps1 -Configuration Release
+
+      - name: Create portable package
+        shell: pwsh
+        run: .\scripts\package.ps1 -Configuration Release -SkipBuild
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeetingAI-Release-win-x64
+          path: artifacts/publish/MeetingAI-Release-win-x64.zip
+          if-no-files-found: error

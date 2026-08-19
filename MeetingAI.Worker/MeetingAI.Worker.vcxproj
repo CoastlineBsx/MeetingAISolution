@@ -2,14 +2,6 @@
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="..\packages\Microsoft.Windows.CppWinRT.2.0.250303.1\build\native\Microsoft.Windows.CppWinRT.props" Condition="Exists('..\packages\Microsoft.Windows.CppWinRT.2.0.250303.1\build\native\Microsoft.Windows.CppWinRT.props')" />
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|Win32">
-      <Configuration>Debug</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|Win32">
-      <Configuration>Release</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
     <ProjectConfiguration Include="Debug|x64">
       <Configuration>Debug</Configuration>
       <Platform>x64</Platform>
@@ -27,19 +19,6 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
@@ -58,12 +37,6 @@
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-  </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -74,6 +47,7 @@
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnableManifest>true</VcpkgEnableManifest>
     <VcpkgManifestRoot>$(ProjectDir)..\</VcpkgManifestRoot>
+    <VcpkgTriplet>x64-windows</VcpkgTriplet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(ProjectDir)..\artifacts\bin\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
@@ -83,32 +57,6 @@
     <OutDir>$(ProjectDir)..\artifacts\bin\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(ProjectDir)..\artifacts\obj\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-    </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-    </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -120,7 +68,7 @@
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)include\meetingai\translation;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src;$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\include;$(ProjectDir)third_party\ctranslate2\include;$(ProjectDir)third_party\sentencepiece\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)include\meetingai\translation;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src;$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\include;$(ProjectDir)third_party\ctranslate2\include;$(ProjectDir)third_party\sentencepiece\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <CompileAs>
       </CompileAs>
@@ -128,8 +76,8 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib;openvino_genaid.lib;openvinod.lib;sherpa-onnx-c-api.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib;$(ProjectDir)third_party\ctranslate2\lib;$(ProjectDir)third_party\sentencepiece\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);openvino_genaid.lib;openvinod.lib;sherpa-onnx-c-api.lib;ctranslate2.lib;sentencepiece.lib</AdditionalDependencies>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
@@ -150,7 +98,7 @@ xcopy /Y /D "$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-s
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)include\meetingai\translation;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src;$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\include;$(ProjectDir)third_party\ctranslate2\include;$(ProjectDir)third_party\sentencepiece\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\embedding;$(ProjectDir)include\meetingai\granite;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)include\meetingai\translation;$(ProjectDir)third_party\openvino_genai\include;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\libfvad\include;$(ProjectDir)third_party\libfvad\src;$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\include;$(ProjectDir)third_party\ctranslate2\include;$(ProjectDir)third_party\sentencepiece\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <OpenMPSupport>true</OpenMPSupport>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -161,8 +109,8 @@ xcopy /Y /D "$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-s
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);whisper.lib;ggml.lib;ggml-base.lib;ggml-cpu.lib;openvino_genai.lib;openvino.lib;sherpa-onnx-c-api.lib;ctranslate2.lib;sentencepiece.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ProjectDir)third_party\whisper\lib\$(Platform)\$(Configuration);$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib;$(ProjectDir)third_party\ctranslate2\lib;$(ProjectDir)third_party\sentencepiece\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);openvino_genai.lib;openvino.lib;sherpa-onnx-c-api.lib;ctranslate2.lib;sentencepiece.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)third_party\openvino_genai\lib\intel64\$(Configuration);$(ProjectDir)third_party\sherpa-onnx\sherpa-onnx-v1.12.17-win-x64-shared\lib;$(ProjectDir)third_party\ctranslate2\lib;$(ProjectDir)third_party\sentencepiece\lib</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
@@ -184,12 +132,6 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
     <ClCompile Include="src\main\main.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-      <ShowIncludes Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ShowIncludes>
-      <ShowIncludes Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ShowIncludes>
-    </ClCompile>
-    <ClCompile Include="src\main\main_genai_example.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="src\main\test_whisper_openvino.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -200,8 +142,8 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
     <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;$(ProjectDir)third_party\whisper\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)src;$(ProjectDir)src\util;$(ProjectDir)include\meetingai;$(ProjectDir)include\meetingai\app;$(ProjectDir)include\meetingai\ipc;$(ProjectDir)include\meetingai\transcribe;$(ProjectDir)include\meetingai\storage;$(ProjectDir)include\meetingai\proto;$(ProjectDir)include\meetingai\util;$(ProjectDir)third_party\sqlite\include;</AdditionalIncludeDirectories>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
@@ -213,7 +155,7 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
     </ClCompile>
     <ClCompile Include="src\summary\meeting_summary_policy.cpp" />
     <ClCompile Include="src\summary\meeting_summary_service.cpp" />
-    <ClCompile Include="src\transcribe\whisper_transcriber.cpp" />
+    <ClCompile Include="src\audio\wav_loader.cpp" />
     <ClCompile Include="src\transcribe\whisper_openvino_transcriber.cpp" />
     <ClCompile Include="src\transcribe\sherpa_streaming_transcriber.cpp" />
     <ClCompile Include="src\transcribe\punctuator.cpp" />
@@ -281,7 +223,7 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
   <ItemGroup>
     <ClInclude Include="include\meetingai\audio\meeting_audio_recorder.hpp" />
     <ClInclude Include="include\meetingai\embedding\embedding_genai.hpp" />
-    <ClInclude Include="include\meetingai\embedding\embedding_python_service.hpp" />
+    <ClInclude Include="include\meetingai\audio\wav_loader.hpp" />
     <ClInclude Include="include\meetingai\granite\granite_genai.hpp" />
     <ClInclude Include="include\meetingai\ipc\pipe_security.h" />
     <ClInclude Include="include\meetingai\proto\command_parser.h" />
@@ -289,7 +231,6 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
     <ClInclude Include="include\meetingai\storage\database.hpp" />
     <ClInclude Include="include\meetingai\summary\meeting_summary_policy.hpp" />
     <ClInclude Include="include\meetingai\summary\meeting_summary_service.hpp" />
-    <ClInclude Include="include\meetingai\transcribe\transcriber.hpp" />
     <ClInclude Include="include\meetingai\transcribe\whisper_openvino_transcriber.hpp" />
     <ClInclude Include="include\meetingai\transcribe\punctuator.hpp" />
     <ClInclude Include="include\meetingai\transcribe\transcript_text_normalizer.hpp" />
@@ -306,20 +247,12 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="third_party\sqlite\include\sqlite3.h" />
-    <ClInclude Include="third_party\whisper\include\ggml-alloc.h" />
-    <ClInclude Include="third_party\whisper\include\ggml-backend.h" />
-    <ClInclude Include="third_party\whisper\include\ggml-common.h" />
-    <ClInclude Include="third_party\whisper\include\ggml-cpu.h" />
-    <ClInclude Include="third_party\whisper\include\ggml.h" />
-    <ClInclude Include="third_party\whisper\include\whisper.h" />
     <ClInclude Include="third_party\libfvad\include\fvad.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="models\bge-m3-npu\config.json" />
     <None Include="models\bge-m3-npu\openvino_model.bin" />
     <None Include="models\bge-m3-npu\tokenizer.json" />
-    <None Include="models\ggml-large-v3-q5_0.bin" />
-    <None Include="models\ggml-large-v3.bin" />
     <None Include="packages.config" />
     <None Include="packages.lock.json" />
     <None Include="third_party\openvino_genai\bin\intel64\Debug\cache.json" />
@@ -384,14 +317,6 @@ xcopy /Y /D "$(ProjectDir)third_party\ctranslate2\runtime\*.dll" "$(OutDir)"
     <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_pytorch_frontend.lib" />
     <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_tensorflow_frontend.lib" />
     <Library Include="third_party\openvino_genai\lib\intel64\Release\openvino_tensorflow_lite_frontend.lib" />
-    <Library Include="third_party\whisper\lib\x64\Debug\ggml-base.lib" />
-    <Library Include="third_party\whisper\lib\x64\Debug\ggml-cpu.lib" />
-    <Library Include="third_party\whisper\lib\x64\Debug\ggml.lib" />
-    <Library Include="third_party\whisper\lib\x64\Debug\whisper.lib" />
-    <Library Include="third_party\whisper\lib\x64\Release\ggml-base.lib" />
-    <Library Include="third_party\whisper\lib\x64\Release\ggml-cpu.lib" />
-    <Library Include="third_party\whisper\lib\x64\Release\ggml.lib" />
-    <Library Include="third_party\whisper\lib\x64\Release\whisper.lib" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="CMakeLists.txt" />

@@ -8,6 +8,14 @@ models/
 !MeetingAI.Host/RAG/Models/
 !MeetingAI.Host/RAG/Models/DocumentModels.cs
 
+# Restored dependency trees. Manifests and lock files stay in Git.
+vcpkg_installed/
+MeetingAI.Worker/vcpkg_installed/
+MeetingAI.Worker/third_party/openvino_genai/
+MeetingAI.Worker/third_party/sherpa-onnx/
+MeetingAI.Worker/third_party/ctranslate2/
+MeetingAI.Worker/third_party/sentencepiece/
+
 # User-specific files
 *.rsuser
 *.suo

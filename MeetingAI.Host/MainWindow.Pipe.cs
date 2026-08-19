@@ -208,7 +208,6 @@ public sealed partial class MainWindow : Window
             BtnLLaVAMode.IsEnabled = true;
 
             // 启用Startup页面的模型加载按钮
-            startupPage.BtnLoadWhisper.IsEnabled = true;
             startupPage.BtnLoadOpenVINOWhisper.IsEnabled = true;
             startupPage.BtnLoadLLaVA.IsEnabled = true;
             startupPage.BtnLoadSD.IsEnabled = true;
@@ -732,46 +731,6 @@ public sealed partial class MainWindow : Window
             {
                 await AppendLineAsync($"[SD] 处理消息异常: {ex.Message}");
             }
-            return;
-        }
-
-        // ========== Whisper 消息处理 ==========
-        if (jsonMsg.Contains("\"type\":\"whisper_ready\""))
-        {
-            await AppendLineAsync("[DEBUG] *** whisper_ready 处理代码被执行 ***");
-            try
-            {
-                using var jd = JsonDocument.Parse(jsonMsg);
-                var root = jd.RootElement;
-                string device = root.TryGetProperty("device", out var d) ? (d.GetString() ?? "unknown") : "unknown";
-                await AppendLineAsync($"[Whisper] ✅ Model ready (device={device})");
-                await AppendLineAsync("[DEBUG] *** 调用 HandleWhisperLoadResponse ***");
-                HandleWhisperLoadResponse(true, $"Model loaded on {device}");
-            }
-            catch { }
-            return;
-        }
-
-        if (jsonMsg.Contains("\"type\":\"whisper_error\""))
-        {
-            try
-            {
-                using var jd = JsonDocument.Parse(jsonMsg);
-                var root = jd.RootElement;
-                string message = root.TryGetProperty("message", out var m) ? (m.GetString() ?? "Unknown error") : "Unknown error";
-                await AppendLineAsync($"[Whisper] ✗ Error: {message}");
-                HandleWhisperLoadResponse(false, message);
-            }
-            catch { }
-            return;
-        }
-
-        if (jsonMsg.Contains("\"type\":\"whisper_unloaded\""))
-        {
-            await AppendLineAsync("[DEBUG] *** whisper_unloaded 处理代码被执行 ***");
-            await AppendLineAsync("[Startup] ✓ Whisper model unloaded");
-            await AppendLineAsync("[DEBUG] *** 调用 HandleWhisperUnloadResponse ***");
-            HandleWhisperUnloadResponse(true, "");
             return;
         }
 

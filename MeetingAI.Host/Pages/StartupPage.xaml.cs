@@ -32,11 +32,6 @@ public sealed partial class StartupPage : Page
         _mainWindow?.BtnLoadEmbedding_Click(sender, e);
     }
 
-    private void BtnLoadWhisper_Click(object sender, RoutedEventArgs e)
-    {
-        _mainWindow?.BtnLoadWhisper_Click(sender, e);
-    }
-
     private void BtnLoadOpenVINOWhisper_Click(object sender, RoutedEventArgs e)
     {
         _mainWindow?.BtnLoadOpenVINOWhisper_Click(sender, e);

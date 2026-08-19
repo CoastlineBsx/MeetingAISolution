@@ -6,8 +6,8 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build all (x64 Debug)",
-      "program": "${workspaceFolder}/artifacts/bin/Debug/x64/x64/Debug/net8.0-windows10.0.19041.0/MeetingAI.Host.exe",
-      "cwd": "${workspaceFolder}/artifacts/bin/Debug/x64/x64/Debug/net8.0-windows10.0.19041.0",
+      "program": "${workspaceFolder}/artifacts/bin/Debug/x64/x64/Debug/net8.0-windows10.0.19041.0/win-x64/MeetingAI.Host.exe",
+      "cwd": "${workspaceFolder}/artifacts/bin/Debug/x64/x64/Debug/net8.0-windows10.0.19041.0/win-x64",
       "console": "internalConsole",
       "stopAtEntry": false
     },

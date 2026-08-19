@@ -19,157 +19,6 @@ public sealed partial class MainWindow : Window
         // 初始化（如果需要）
     }
 
-    // ========== 加载/卸载 Whisper 模型 ==========
-    public async void BtnLoadWhisper_Click(object sender, RoutedEventArgs e)
-    {
-        if (_isWhisperLoaded)
-        {
-            // 卸载模型
-            await UnloadWhisperModel();
-        }
-        else
-        {
-            // 加载模型
-            await LoadWhisperModel();
-        }
-    }
-
-    private async Task LoadWhisperModel()
-    {
-        var page = GetStartupPage();
-        if (page == null) return;
-
-        try
-        {
-            await AppendLineAsync("[Startup] Loading Whisper model...");
-
-            // 显示加载中状态
-            page.BtnLoadWhisper.IsEnabled = false;
-            page.ProgressWhisper.IsActive = true;
-            page.ProgressWhisper.Visibility = Visibility.Visible;
-            page.CmbWhisperDevice.IsEnabled = false;
-
-            await EnsurePipeAsync();
-
-            // 读取用户选择的设备
-            string whisperDevice = page.CmbWhisperDevice.SelectedIndex switch
-            {
-                1 => "GPU",
-                2 => "NPU",
-                _ => "CPU"  // 默认 CPU
-            };
-
-            await AppendLineAsync($"[Startup] Whisper device: {whisperDevice}");
-
-            // 发送加载 Whisper 命令
-            var loadCmd = new
-            {
-                type = "load_whisper",
-                device = whisperDevice
-            };
-            var json = JsonSerializer.Serialize(loadCmd) + "\n";
-            await SendJsonAsync(json);
-
-            await AppendLineAsync("[Startup] Whisper load command sent, waiting for Worker response...");
-        }
-        catch (Exception ex)
-        {
-            await AppendLineAsync($"[Startup] Whisper load failed: {ex.Message}");
-            page.ProgressWhisper.IsActive = false;
-            page.ProgressWhisper.Visibility = Visibility.Collapsed;
-            page.BtnLoadWhisper.IsEnabled = true;
-            page.CmbWhisperDevice.IsEnabled = true;
-        }
-    }
-
-    private async Task UnloadWhisperModel()
-    {
-        var page = GetStartupPage();
-        if (page == null) return;
-
-        try
-        {
-            await AppendLineAsync("[Startup] Unloading Whisper model...");
-
-            // 显示卸载中状态
-            page.BtnLoadWhisper.IsEnabled = false;
-            page.ProgressWhisper.IsActive = true;
-            page.ProgressWhisper.Visibility = Visibility.Visible;
-
-            await EnsurePipeAsync();
-
-            // 发送卸载 Whisper 命令
-            var unloadCmd = new
-            {
-                type = "unload_whisper"
-            };
-            var json = JsonSerializer.Serialize(unloadCmd) + "\n";
-            await SendJsonAsync(json);
-
-            await AppendLineAsync("[Startup] Whisper unload command sent");
-        }
-        catch (Exception ex)
-        {
-            await AppendLineAsync($"[Startup] Whisper unload failed: {ex.Message}");
-            page.ProgressWhisper.IsActive = false;
-            page.ProgressWhisper.Visibility = Visibility.Collapsed;
-            page.BtnLoadWhisper.IsEnabled = true;
-        }
-    }
-
-    // ========== 处理 Whisper 响应 ==========
-    private void HandleWhisperLoadResponse(bool success, string message)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            var page = GetStartupPage();
-            if (page == null) return;
-
-            page.ProgressWhisper.IsActive = false;
-            page.ProgressWhisper.Visibility = Visibility.Collapsed;
-
-            if (success)
-            {
-                _isWhisperLoaded = true;
-                page.BtnLoadWhisper.Content = "Unload Model";
-                page.BtnLoadWhisper.IsEnabled = true;
-                _ = AppendLineAsync($"[Startup] ✓ Whisper model loaded: {message}");
-            }
-            else
-            {
-                page.BtnLoadWhisper.IsEnabled = true;
-                page.CmbWhisperDevice.IsEnabled = true;
-                _ = AppendLineAsync($"[Startup] ✗ Whisper load failed: {message}");
-            }
-        });
-    }
-
-    private void HandleWhisperUnloadResponse(bool success, string message)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            var page = GetStartupPage();
-            if (page == null) return;
-
-            page.ProgressWhisper.IsActive = false;
-            page.ProgressWhisper.Visibility = Visibility.Collapsed;
-
-            if (success)
-            {
-                _isWhisperLoaded = false;
-                page.BtnLoadWhisper.Content = "Load Model";
-                page.BtnLoadWhisper.IsEnabled = true;
-                page.CmbWhisperDevice.IsEnabled = true;
-                _ = AppendLineAsync($"[Startup] ✓ Whisper model unloaded");
-            }
-            else
-            {
-                page.BtnLoadWhisper.IsEnabled = true;
-                _ = AppendLineAsync($"[Startup] ✗ Whisper unload failed: {message}");
-            }
-        });
-    }
-
     // ========== 加载/卸载 OpenVINO Whisper 模型 ==========
     public async void BtnLoadOpenVINOWhisper_Click(object sender, RoutedEventArgs e)
     {
@@ -553,7 +402,6 @@ public sealed partial class MainWindow : Window
             // bool，不能让 UI 回调继续捕获 root/JsonElement。
             bool graniteLoaded = Loaded("granite");
             bool embeddingLoaded = Loaded("embedding");
-            bool legacyWhisperLoaded = Loaded("legacy_whisper");
             bool openVinoWhisperLoaded = Loaded("openvino_whisper");
             bool sherpaLoaded = Loaded("sherpa");
             bool punctuatorLoaded = Loaded("punctuator");
@@ -568,9 +416,6 @@ public sealed partial class MainWindow : Window
                     "granite", graniteLoaded, "", "");
                 ApplyManagedModelState(
                     "embedding", embeddingLoaded, "", "");
-                ApplyManagedModelState(
-                    "legacy_whisper",
-                    legacyWhisperLoaded, "", "");
                 ApplyManagedModelState(
                     "openvino_whisper",
                     openVinoWhisperLoaded, "", "");
@@ -638,13 +483,6 @@ public sealed partial class MainWindow : Window
                     stateText +
                     " · OpenVINO GenAI TextEmbeddingPipeline";
                 SetManagedModelBusy(model, false);
-                break;
-            case "legacy_whisper":
-                _isWhisperLoaded = loaded;
-                page.BtnLoadWhisper.Content =
-                    loaded ? "Unload Model" : "Load Model";
-                page.BtnLoadWhisper.IsEnabled = true;
-                page.CmbWhisperDevice.IsEnabled = !loaded;
                 break;
             case "openvino_whisper":
                 _isOpenVINOWhisperLoaded = loaded;

@@ -153,7 +153,6 @@ public sealed partial class MainWindow : Window
     // ========== 模型加载状态 ==========
     private bool _isGraniteLoaded = false;
     private bool _isEmbeddingLoaded = false;
-    private bool _isWhisperLoaded = false;
     private bool _isOpenVINOWhisperLoaded = false;
     private bool _isSherpaLoaded = false;
     private bool _isPunctuatorLoaded = false;

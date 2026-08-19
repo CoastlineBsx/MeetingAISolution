@@ -37,9 +37,6 @@
     <Filter Include="include\meetingai">
       <UniqueIdentifier>{f8e4afc1-0ad1-43f1-9ed0-e0d7f59db711}</UniqueIdentifier>
     </Filter>
-    <Filter Include="third_party\whisper">
-      <UniqueIdentifier>{a5a7ce23-1ab4-45ca-8cd4-1b860c59d72b}</UniqueIdentifier>
-    </Filter>
     <Filter Include="third_party\sqlite">
       <UniqueIdentifier>{4a1da69c-a9e3-408a-8699-7101cc8f5f4c}</UniqueIdentifier>
     </Filter>
@@ -78,21 +75,6 @@
     </Filter>
     <Filter Include="third_party\sqlite\src">
       <UniqueIdentifier>{c5a6ec23-651c-4c04-84cb-7cacf00048c8}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\whisper\include">
-      <UniqueIdentifier>{a046340a-e989-4d91-a235-41e5b6cf61aa}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\whisper\lib">
-      <UniqueIdentifier>{58330f4d-777d-444b-9f3d-091af20e8872}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\whisper\lib\x64">
-      <UniqueIdentifier>{53c2a8b1-efb9-40cb-a6e9-6e2736ffd1b9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\whisper\lib\x64\Debug">
-      <UniqueIdentifier>{ee82c6d1-c01f-4e54-bc39-a634bc6ac742}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\whisper\lib\x64\Release">
-      <UniqueIdentifier>{4a1254c4-30b7-440e-a2c7-f4e5551179e4}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\main">
       <UniqueIdentifier>{a3a67a1f-ccde-4630-94a0-f171139fd939}</UniqueIdentifier>
@@ -186,8 +168,8 @@
     <ClCompile Include="third_party\sqlite\src\sqlite3.c">
       <Filter>third_party\sqlite\src</Filter>
     </ClCompile>
-    <ClCompile Include="src\transcribe\whisper_transcriber.cpp">
-      <Filter>src\transcribe</Filter>
+    <ClCompile Include="src\audio\wav_loader.cpp">
+      <Filter>src\audio</Filter>
     </ClCompile>
     <ClCompile Include="src\main\main.cpp">
       <Filter>src\main</Filter>
@@ -219,9 +201,6 @@
     <ClCompile Include="src\translation\offline_translator.cpp">
       <Filter>src\translation</Filter>
     </ClCompile>
-    <ClCompile Include="src\main\main_genai_example.cpp">
-      <Filter>src\main</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\meetingai\audio\meeting_audio_recorder.hpp">
@@ -242,24 +221,6 @@
     <ClInclude Include="third_party\sqlite\include\sqlite3.h">
       <Filter>third_party\sqlite\include</Filter>
     </ClInclude>
-    <ClInclude Include="third_party\whisper\include\ggml.h">
-      <Filter>third_party\whisper\include</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\whisper\include\ggml-alloc.h">
-      <Filter>third_party\whisper\include</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\whisper\include\ggml-backend.h">
-      <Filter>third_party\whisper\include</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\whisper\include\ggml-common.h">
-      <Filter>third_party\whisper\include</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\whisper\include\ggml-cpu.h">
-      <Filter>third_party\whisper\include</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\whisper\include\whisper.h">
-      <Filter>third_party\whisper\include</Filter>
-    </ClInclude>
     <ClInclude Include="src\pch.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -272,17 +233,14 @@
     <ClInclude Include="include\meetingai\summary\meeting_summary_policy.hpp">
       <Filter>include\meetingai\summary</Filter>
     </ClInclude>
-    <ClInclude Include="include\meetingai\transcribe\transcriber.hpp">
-      <Filter>include\meetingai\transcribe</Filter>
+    <ClInclude Include="include\meetingai\audio\wav_loader.hpp">
+      <Filter>include\meetingai\audio</Filter>
     </ClInclude>
     <ClInclude Include="third_party\libfvad\include\fvad.h" />
     <ClInclude Include="include\meetingai\granite\granite_genai.hpp">
       <Filter>include\meetingai\granite</Filter>
     </ClInclude>
     <ClInclude Include="include\meetingai\embedding\embedding_genai.hpp">
-      <Filter>include\meetingai\embedding</Filter>
-    </ClInclude>
-    <ClInclude Include="include\meetingai\embedding\embedding_python_service.hpp">
       <Filter>include\meetingai\embedding</Filter>
     </ClInclude>
     <ClInclude Include="include\meetingai\rag\text_chunker.hpp">
@@ -293,12 +251,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="models\ggml-large-v3-q5_0.bin">
-      <Filter>models</Filter>
-    </None>
-    <None Include="models\ggml-large-v3.bin">
-      <Filter>models</Filter>
-    </None>
     <None Include="third_party\openvino_genai\bin\intel64\Debug\cache.json">
       <Filter>third_party\openvino_genai\bin\intel64\Debug</Filter>
     </None>
@@ -438,30 +390,6 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <Library Include="third_party\whisper\lib\x64\Debug\ggml.lib">
-      <Filter>third_party\whisper\lib\x64\Debug</Filter>
-    </Library>
-    <Library Include="third_party\whisper\lib\x64\Debug\ggml-base.lib">
-      <Filter>third_party\whisper\lib\x64\Debug</Filter>
-    </Library>
-    <Library Include="third_party\whisper\lib\x64\Debug\ggml-cpu.lib">
-      <Filter>third_party\whisper\lib\x64\Debug</Filter>
-    </Library>
-    <Library Include="third_party\whisper\lib\x64\Debug\whisper.lib">
-      <Filter>third_party\whisper\lib\x64\Debug</Filter>
-    </Library>
-    <Library Include="third_party\whisper\lib\x64\Release\ggml.lib">
-      <Filter>third_party\whisper\lib\x64\Release</Filter>
-    </Library>
-    <Library Include="third_party\whisper\lib\x64\Release\ggml-base.lib">
-      <Filter>third_party\whisper\lib\x64\Release</Filter>
-    </Library>
-    <Library Include="third_party\whisper\lib\x64\Release\ggml-cpu.lib">
-      <Filter>third_party\whisper\lib\x64\Release</Filter>
-    </Library>
-    <Library Include="third_party\whisper\lib\x64\Release\whisper.lib">
-      <Filter>third_party\whisper\lib\x64\Release</Filter>
-    </Library>
     <Library Include="third_party\openvino_genai\lib\intel64\Debug\openvino_cd.lib">
       <Filter>third_party\openvino_genai\lib\intel64\Debug</Filter>
     </Library>

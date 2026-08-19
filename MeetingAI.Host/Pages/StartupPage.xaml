@@ -122,49 +122,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Whisper Model Group -->
-                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="20"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                    <StackPanel Spacing="16">
-                        <TextBlock Text="Legacy Whisper (Compatibility)"
-                                   FontSize="18"
-                                   FontWeight="SemiBold"/>
-                        <TextBlock Text="whisper.cpp compatibility pipeline for older pages. Streaming Meeting uses Sherpa live and OpenVINO Whisper for the final transcript."
-                                   FontSize="12"
-                                   TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Whisper Model Device" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <ComboBox x:Name="CmbWhisperDevice"
-                                      x:FieldModifier="public"
-                                      SelectedIndex="0"
-                                      HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="CPU"/>
-                            </ComboBox>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Spacing="12">
-                            <Button x:Name="BtnLoadWhisper"
-                                    x:FieldModifier="public"
-                                    Content="Load Model"
-                                    Click="BtnLoadWhisper_Click"
-                                    MinWidth="200"
-                                    IsEnabled="False"
-                                    Style="{ThemeResource AccentButtonStyle}"/>
-                            <ProgressRing x:Name="ProgressWhisper"
-                                          x:FieldModifier="public"
-                                          Width="24"
-                                          Height="24"
-                                          IsActive="False"
-                                          Visibility="Collapsed"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
                 <!-- OpenVINO Whisper Model Group -->
                 <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"

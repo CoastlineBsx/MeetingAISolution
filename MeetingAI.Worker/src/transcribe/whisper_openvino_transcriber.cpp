@@ -7,13 +7,10 @@
 #include <mutex>
 #include <atomic>
 #include <thread>
+#include "audio/wav_loader.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 
 namespace fs = std::filesystem;
-
-// 声明外部函数：复用现有的 WAV 加载函数（在 whisper_transcriber.cpp 中）
-// 该函数已经实现了：16kHz 重采样 + 单声道转换 + 音频增强
-extern bool LoadWavFile(const std::string& filename, std::vector<float>& audio_data);
 
 namespace meetingai::transcribe {
 
@@ -87,9 +84,9 @@ bool TranscribeAudioFileOpenVINO(
         // ========== 1. 报告进度：开始加载音频 ==========
         if (progressCallback) progressCallback(5);
 
-        // 加载音频文件（复用现有函数）
+        // 加载音频文件并转换为 OpenVINO Whisper 所需的 16 kHz 单声道。
         std::vector<float> audio_data;
-        if (!LoadWavFile(audioPath, audio_data)) {
+        if (!meetingai::audio::LoadWavFile16KhzMono(audioPath, audio_data)) {
             std::cerr << "[OpenVINO] 音频加载失败: " << audioPath << std::endl;
             return false;
         }

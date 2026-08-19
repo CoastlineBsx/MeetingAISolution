@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "archiveRoot": "MeetingAI.Worker/models",
+  "features": [
+    {
+      "id": "streaming",
+      "uriEnvironmentVariable": "MEETINGAI_MODEL_STREAMING_URI",
+      "sha256EnvironmentVariable": "MEETINGAI_MODEL_STREAMING_SHA256",
+      "paths": [
+        "sherpa/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
+        "sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8"
+      ]
+    },
+    {
+      "id": "offline-transcription",
+      "uriEnvironmentVariable": "MEETINGAI_MODEL_OFFLINE_TRANSCRIPTION_URI",
+      "sha256EnvironmentVariable": "MEETINGAI_MODEL_OFFLINE_TRANSCRIPTION_SHA256",
+      "paths": ["whisper_large_v3"]
+    },
+    {
+      "id": "translation",
+      "uriEnvironmentVariable": "MEETINGAI_MODEL_TRANSLATION_URI",
+      "sha256EnvironmentVariable": "MEETINGAI_MODEL_TRANSLATION_SHA256",
+      "paths": [
+        "translation/opus-mt-en-zh",
+        "translation/opus-mt-zh-en"
+      ]
+    },
+    {
+      "id": "rag",
+      "uriEnvironmentVariable": "MEETINGAI_MODEL_RAG_URI",
+      "sha256EnvironmentVariable": "MEETINGAI_MODEL_RAG_SHA256",
+      "paths": ["bge-m3-npu"]
+    },
+    {
+      "id": "assistant",
+      "uriEnvironmentVariable": "MEETINGAI_MODEL_ASSISTANT_URI",
+      "sha256EnvironmentVariable": "MEETINGAI_MODEL_ASSISTANT_SHA256",
+      "paths": ["granite-3.3-2b-npu"]
+    },
+    {
+      "id": "vision",
+      "uriEnvironmentVariable": "MEETINGAI_MODEL_VISION_URI",
+      "sha256EnvironmentVariable": "MEETINGAI_MODEL_VISION_SHA256",
+      "paths": ["llava"]
+    },
+    {
+      "id": "image-generation",
+      "uriEnvironmentVariable": "MEETINGAI_MODEL_IMAGE_GENERATION_URI",
+      "sha256EnvironmentVariable": "MEETINGAI_MODEL_IMAGE_GENERATION_SHA256",
+      "paths": ["stable-deffusion-1.5"]
+    }
+  ]
+}

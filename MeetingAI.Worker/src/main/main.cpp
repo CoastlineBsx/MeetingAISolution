@@ -23,7 +23,6 @@
 #include "database.hpp"
 #include "paths.h"
 #include "sqlite3.h"
-#include "transcriber.hpp"
 #include "whisper_openvino_transcriber.hpp"  // ← 新增：OpenVINO Whisper
 #include "granite/granite_genai.hpp"  // ← OpenVINO 头文件
 #include "embedding/embedding_genai.hpp"  // ← 新增：Embedding GenAI
@@ -43,14 +42,7 @@
 // OpenVINO Core for device enumeration
 #include <openvino/openvino.hpp>
 
-// Whisper context 外部声明（定义在 whisper_transcriber.cpp 中）
-extern struct whisper_context* g_whisper_ctx;
-extern void CleanupWhisper();  // Whisper 清理函数
-
 // ========== 热拔插支持：使用 mutex + bool 替代 once_flag ==========
-static std::mutex g_whisper_mutex;
-static bool g_whisper_loaded = false;
-
 static std::mutex g_granite_mutex;
 static bool g_granite_loaded = false;
 
@@ -1617,84 +1609,6 @@ static void handleCountTokensCommand(HANDLE hPipe, const std::string& command) {
     }
 }
 
-// 新增：处理转录命令
-static void handleTranscribeCommand(HANDLE hPipe, const std::string& command) {
-    std::wcout << L"[Worker] 处理转录命令\n";
-
-    // 模型必须由 Startup 页面显式加载。
-    {
-        std::lock_guard<std::mutex> lock(g_whisper_mutex);
-        if (!g_whisper_loaded) {
-            std::string err =
-                "{\"type\":\"error\",\"message\":\"Legacy Whisper 未加载，请先到 Startup 手动加载\"}\n";
-            DWORD written;
-            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-            return;
-        }
-    }
-
-
-    // 提取文件路径
-    std::string audioPath = meetingai::proto::extractPath(command);
-    if (audioPath.empty()) {
-        std::string error = "{\"type\":\"error\",\"message\":\"无法解析音频文件路径\"}\n";
-        DWORD written;
-        WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
-        return;
-    }
-    
-    std::wcout << L"[Worker] 音频文件路径: " << audioPath.c_str() << L"\n";
-    
-    // 假设模型路径（你需要根据实际情况调整）
-    //std::string modelPath = "models\\ggml-small.bin";  
-    std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-    g_pipe_for_callback = hPipe;
-    
-    // 提取mode参数
-    std::string sceneMode = meetingai::proto::extractMode(command);
-    std::cout << "[Worker] 转录模式: " << sceneMode << std::endl;
-
-    // 提取language参数
-    std::string language = meetingai::proto::extractLanguage(command);
-    std::cout << "[Worker] 语言设置: " << language << std::endl;
-
-    // 执行转录
-    std::vector<WhisperSegment> segments;
-    bool success = TranscribeAudioFile(modelPath, audioPath, segments, sceneMode, language);
-    g_pipe_for_callback = NULL; // 清理
-    if (!success) {
-        std::string error = "{\"type\":\"error\",\"message\":\"转录失败\"}\n";
-        DWORD written;
-        WriteFile(hPipe, error.data(), static_cast<DWORD>(error.size()), &written, nullptr);
-        return;
-    }
-    
-    // 发送每个转录片段
-    for (const auto& segment : segments) {
-        // 插入数据库
-        InsertTranscript("Unknown", segment.text, segment.start_time);
-        
-        // 发送给 Host
-        std::string response = std::string("{\"type\":\"asr_segment\",\"text\":\"") +
-            meetingai::proto::jsonEscape(segment.text) +
-            "\",\"t0_ms\":" + std::to_string((int)(segment.start_time * 1000)) +
-            ",\"t1_ms\":" + std::to_string((int)(segment.end_time * 1000)) + "}\n";
-
-
-            
-        DWORD written;
-        WriteFile(hPipe, response.data(), static_cast<DWORD>(response.size()), &written, nullptr);
-        
-        std::wcout << L"[Worker] 发送片段: " << segment.text.c_str() << L"\n";
-    }
-    
-    // 发送完成信号
-    std::string complete = "{\"type\":\"transcribe_complete\",\"segments\":" +
-        std::to_string(segments.size()) + "}\n";
-    DWORD written;
-    WriteFile(hPipe, complete.data(), static_cast<DWORD>(complete.size()), &written, nullptr);
-}
-
 // 新增：处理 OpenVINO Whisper 转录命令
 static void handleTranscribeOpenVINOCommand(HANDLE hPipe, const std::string& command) {
     std::wcout << L"[Worker] 处理 OpenVINO Whisper 转录命令\n";
@@ -2582,8 +2496,6 @@ static void SendModelStatusSnapshot(HANDLE hPipe) {
         "\"granite\":" + std::string(g_granite_loaded ? "true" : "false") +
         ",\"embedding\":" +
         std::string(g_embedding_loaded ? "true" : "false") +
-        ",\"legacy_whisper\":" +
-        std::string(g_whisper_loaded ? "true" : "false") +
         ",\"openvino_whisper\":" +
         std::string(
             meetingai::transcribe::IsWhisperOpenVINOModelLoaded()
@@ -3174,75 +3086,6 @@ int wmain() {
                     continue;
                 }
 
-                // ---- 新增：Whisper 加载命令 ----
-                if (buffer.find("\"load_whisper\"") != std::string::npos) {
-                    std::wcout << L"[Worker] 收到 load_whisper 命令\n";
-                    DWORD written;
-
-                    // 解析设备选择
-                    std::string device = "GPU";  // 默认使用 GPU
-                    auto devicePos = buffer.find("\"device\":\"");
-                    if (devicePos != std::string::npos) {
-                        auto start = devicePos + 10;
-                        auto end = buffer.find("\"", start);
-                        if (end != std::string::npos) {
-                            device = buffer.substr(start, end - start);
-                        }
-                    }
-
-                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] Whisper 设备: " + device + "\"}\n";
-                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
-
-                    std::string debug2 = "{\"type\":\"info\",\"message\":\"[Worker] 开始加载 Whisper 模型...\"}\n";
-                    WriteFile(hPipe, debug2.data(), (DWORD)debug2.size(), &written, nullptr);
-
-                    // 加载 Whisper 模型（支持热拔插）
-                    {
-                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
-                        if (!g_whisper_loaded) {
-                            std::string modelPath = meetingai::util::resolveModelFileUtf8(L"ggml-large-v3.bin");
-                            if (!InitWhisperOnce(modelPath)) {
-                                std::string err = "{\"type\":\"whisper_error\",\"message\":\"Whisper 模型加载失败\"}\n";
-                                WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                            } else {
-                                g_whisper_loaded = true;
-                                std::string ready = "{\"type\":\"whisper_ready\",\"device\":\"" + device + "\"}\n";
-                                WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
-                            }
-                        } else {
-                            // 已经加载过，直接发送 ready 消息
-                            std::string ready = "{\"type\":\"whisper_ready\",\"device\":\"" + device + "\"}\n";
-                            WriteFile(hPipe, ready.data(), (DWORD)ready.size(), &written, nullptr);
-                        }
-                    }
-
-                    buffer.clear();
-                    continue;
-                }
-
-                // ---- 新增：Whisper 卸载命令 ----
-                if (buffer.find("\"unload_whisper\"") != std::string::npos) {
-                    std::wcout << L"[Worker] 收到 unload_whisper 命令\n";
-                    DWORD written;
-
-                    std::string debug1 = "{\"type\":\"info\",\"message\":\"[Worker] 正在卸载 Whisper 模型...\"}\n";
-                    WriteFile(hPipe, debug1.data(), (DWORD)debug1.size(), &written, nullptr);
-
-                    // 释放 Whisper 资源（支持热拔插）
-                    {
-                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
-                        CleanupWhisper();
-                        g_whisper_loaded = false;
-                    }
-
-                    std::string unloaded = "{\"type\":\"whisper_unloaded\"}\n";
-                    WriteFile(hPipe, unloaded.data(), (DWORD)unloaded.size(), &written, nullptr);
-
-                    std::wcout << L"[Worker] Whisper 模型已卸载\n";
-                    buffer.clear();
-                    continue;
-                }
-
                 // ---- 新增：OpenVINO Whisper 加载命令 ----
                 if (buffer.find("\"load_whisper_openvino\"") != std::string::npos) {
                     std::wcout << L"[Worker] 收到 load_whisper_openvino 命令\n";
@@ -3448,13 +3291,6 @@ int wmain() {
                     continue;
                 }
 
-                // ---- 新增：转录命令处理 ----
-                if (meetingai::proto::isTranscribe(buffer)) {
-                    handleTranscribeCommand(hPipe, buffer);
-                    buffer.clear();
-                    continue;
-                }
-
                 // ---- 新增：OpenVINO Whisper 转录命令处理 ----
                 if (meetingai::proto::isTranscribeOpenVINO(buffer)) {
                     handleTranscribeOpenVINOCommand(hPipe, buffer);
@@ -3555,129 +3391,6 @@ int wmain() {
                     meetingai::proto::isStreamingAudio(buffer) ||
                     meetingai::proto::isStopStreaming(buffer)) {
                     handleSherpaStreamingCommand(hPipe, buffer);
-                    buffer.clear();
-                    continue;
-                }
-
-                // ---- 新增：流式转录命令处理 ----
-                if (meetingai::proto::isStartStream(buffer)) {
-                    std::wcout << L"[Worker] 处理 start_stream 命令\n";
-
-                    // 旧流式管线同样遵守 Startup 手动加载规则。
-                    {
-                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
-                        if (!g_whisper_loaded) {
-                            std::string err =
-                                "{\"type\":\"error\",\"message\":\"Legacy Whisper 未加载，请先到 Startup 手动加载\"}\n";
-                            DWORD written;
-                            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                            buffer.clear();
-                            continue;
-                        }
-                    }
-
-                    std::string mode = meetingai::proto::extractMode(buffer);
-                    std::string lang = meetingai::proto::extractLanguage(buffer);
-
-                    bool success = StartStream(mode, lang);
-                    if (success) {
-                        std::string resp = "{\"type\":\"stream_started\",\"mode\":\"" + mode + "\",\"language\":\"" + lang + "\"}\n";
-                        DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
-                    } else {
-                        std::string err = "{\"type\":\"error\",\"message\":\"启动流式转录失败\"}\n";
-                        DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                    }
-                    buffer.clear();
-                    continue;
-                }
-
-                if (meetingai::proto::isStreamChunk(buffer)) {
-                    // 处理音频块（v1 单流）
-                    std::string audioData = meetingai::proto::extractData(buffer);
-                    std::vector<WhisperSegment> segments;
-
-                    bool success = ProcessStreamChunk(audioData, segments);
-                    if (success) {
-                        // 发送新识别的段落
-                        for (const auto& seg : segments) {
-                            std::string resp = std::string("{\"type\":\"stream_segment\",\"text\":\"") +
-                                meetingai::proto::jsonEscape(seg.text) +
-                                "\",\"t0_ms\":" + std::to_string((int)(seg.start_time * 1000)) +
-                                ",\"t1_ms\":" + std::to_string((int)(seg.end_time * 1000)) + "}\n";
-                            DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
-                        }
-                    }
-                    buffer.clear();
-                    continue;
-                }
-
-                if (meetingai::proto::isStopStream(buffer)) {
-                    std::wcout << L"[Worker] 处理 stop_stream 命令\n";
-                    StopStream();
-                    std::string resp = "{\"type\":\"stream_stopped\"}\n";
-                    DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
-                    buffer.clear();
-                    continue;
-                }
-
-                // ---- v2 多流：start_stream2 / stream_chunk2 / stop_stream2 ----
-                if (meetingai::proto::isStartStream2(buffer)) {
-                    std::wcout << L"[Worker] 处理 start_stream2 命令\n";
-                    // 旧多流管线同样遵守 Startup 手动加载规则。
-                    {
-                        std::lock_guard<std::mutex> lock(g_whisper_mutex);
-                        if (!g_whisper_loaded) {
-                            std::string err =
-                                "{\"type\":\"error\",\"message\":\"Legacy Whisper 未加载，请先到 Startup 手动加载\"}\n";
-                            DWORD written;
-                            WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                            buffer.clear();
-                            continue;
-                        }
-                    }
-                    std::string streamId = meetingai::proto::extractStreamId(buffer);
-                    std::string source   = meetingai::proto::extractSource(buffer);
-                    std::string mode     = meetingai::proto::extractMode(buffer);
-                    std::string lang     = meetingai::proto::extractLanguage(buffer);
-                    bool ok = StartStream2(streamId, source, mode, lang);
-                    if (ok) {
-                        std::string resp = std::string("{\"type\":\"stream_started2\",\"stream_id\":\"") + streamId +
-                            "\",\"source\":\"" + source + "\",\"mode\":\"" + mode + "\",\"language\":\"" + lang + "\"}\n";
-                        DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
-                    } else {
-                        std::string err = std::string("{\"type\":\"error\",\"message\":\"start_stream2 失败\",\"stream_id\":\"") + streamId + "\"}\n";
-                        DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                    }
-                    buffer.clear();
-                    continue;
-                }
-                if (meetingai::proto::isStreamChunk2(buffer)) {
-                    std::string streamId = meetingai::proto::extractStreamId(buffer);
-                    std::string audioData = meetingai::proto::extractData(buffer);
-                    int sr = meetingai::proto::extractSampleRate(buffer);
-                    long long ts = meetingai::proto::extractTimestampMs(buffer);
-                    std::vector<WhisperSegment> segments;
-                    bool ok = ProcessStreamChunk2(streamId, audioData, segments, sr, ts);
-                    if (ok) {
-                        std::string source = GetStreamSource2(streamId);
-                        for (const auto& seg : segments) {
-                            std::string resp = std::string("{\"type\":\"stream_segment2\",\"stream_id\":\"") + streamId + "\",\"source\":\"" + source +
-                                "\",\"text\":\"" + meetingai::proto::jsonEscape(seg.text) + "\",\"t0_ms\":" + std::to_string((int)(seg.start_time*1000)) +
-                                ",\"t1_ms\":" + std::to_string((int)(seg.end_time*1000)) + "}\n";
-                            DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
-                        }
-                    } else {
-                        std::string err = std::string("{\"type\":\"error\",\"message\":\"stream_chunk2 失败\",\"stream_id\":\"") + streamId + "\"}\n";
-                        DWORD written; WriteFile(hPipe, err.data(), (DWORD)err.size(), &written, nullptr);
-                    }
-                    buffer.clear();
-                    continue;
-                }
-                if (meetingai::proto::isStopStream2(buffer)) {
-                    std::string streamId = meetingai::proto::extractStreamId(buffer);
-                    StopStream2(streamId);
-                    std::string resp = std::string("{\"type\":\"stream_stopped2\",\"stream_id\":\"") + streamId + "\"}\n";
-                    DWORD written; WriteFile(hPipe, resp.data(), (DWORD)resp.size(), &written, nullptr);
                     buffer.clear();
                     continue;
                 }

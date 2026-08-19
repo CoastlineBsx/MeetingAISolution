@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "bundleVersion": "2025.3-1",
+  "platform": "win-x64",
+  "archiveName": "meetingai-native-win-x64-2025.3-1.zip",
+  "uriEnvironmentVariable": "MEETINGAI_NATIVE_BUNDLE_URI",
+  "sha256EnvironmentVariable": "MEETINGAI_NATIVE_BUNDLE_SHA256",
+  "directories": [
+    "MeetingAI.Worker/third_party/openvino_genai",
+    "MeetingAI.Worker/third_party/sherpa-onnx",
+    "MeetingAI.Worker/third_party/ctranslate2",
+    "MeetingAI.Worker/third_party/sentencepiece"
+  ],
+  "required": {
+    "common": [
+      "MeetingAI.Worker/third_party/openvino_genai/include/openvino/openvino.hpp",
+      "MeetingAI.Worker/third_party/sherpa-onnx/sherpa-onnx-v1.12.17-win-x64-shared/include/sherpa-onnx/c-api/c-api.h",
+      "MeetingAI.Worker/third_party/sherpa-onnx/sherpa-onnx-v1.12.17-win-x64-shared/lib/sherpa-onnx-c-api.lib",
+      "MeetingAI.Worker/third_party/sherpa-onnx/sherpa-onnx-v1.12.17-win-x64-shared/lib/sherpa-onnx-c-api.dll",
+      "MeetingAI.Worker/third_party/ctranslate2/include/ctranslate2/translator.h",
+      "MeetingAI.Worker/third_party/ctranslate2/lib/ctranslate2.lib",
+      "MeetingAI.Worker/third_party/ctranslate2/runtime/ctranslate2.dll",
+      "MeetingAI.Worker/third_party/sentencepiece/include/sentencepiece_processor.h",
+      "MeetingAI.Worker/third_party/sentencepiece/lib/sentencepiece.lib"
+    ],
+    "Debug": [
+      "MeetingAI.Worker/third_party/openvino_genai/lib/intel64/Debug/openvinod.lib",
+      "MeetingAI.Worker/third_party/openvino_genai/lib/intel64/Debug/openvino_genaid.lib",
+      "MeetingAI.Worker/third_party/openvino_genai/bin/intel64/Debug/openvinod.dll",
+      "MeetingAI.Worker/third_party/openvino_genai/bin/intel64/Debug/openvino_genaid.dll"
+    ],
+    "Release": [
+      "MeetingAI.Worker/third_party/openvino_genai/lib/intel64/Release/openvino.lib",
+      "MeetingAI.Worker/third_party/openvino_genai/lib/intel64/Release/openvino_genai.lib",
+      "MeetingAI.Worker/third_party/openvino_genai/bin/intel64/Release/openvino.dll",
+      "MeetingAI.Worker/third_party/openvino_genai/bin/intel64/Release/openvino_genai.dll"
+    ]
+  }
+}
