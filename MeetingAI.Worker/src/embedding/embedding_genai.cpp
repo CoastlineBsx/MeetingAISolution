@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -227,12 +228,44 @@ fs::path PrepareTextEmbeddingPipelineModel(
     std::ostringstream cacheName;
     cacheName << "embedding-genai-" << std::hex
               << StablePathHash(hashInput);
-    const fs::path cacheRoot =
+    const fs::path dataCacheRoot =
         fs::path(meetingai::util::utf8ToW(
             meetingai::util::getDataRoot())) /
         L"model_cache" /
         meetingai::util::utf8ToW(cacheName.str());
-    fs::create_directories(cacheRoot);
+
+    // Windows hard links cannot cross volumes. Portable builds are often
+    // extracted to D: while LOCALAPPDATA remains on C:, so keep the adapter
+    // cache beside the model whenever the roots differ. If that location is
+    // not writable, the copy fallback below still allows initialization.
+    fs::path cacheRoot = dataCacheRoot;
+    auto volumeName = [](const fs::path& path) {
+        std::wstring value = path.root_name().wstring();
+        std::transform(
+            value.begin(), value.end(), value.begin(),
+            [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+        return value;
+    };
+    if (!sourceRoot.root_name().empty() &&
+        volumeName(sourceRoot) != volumeName(dataCacheRoot)) {
+        const fs::path colocatedCache =
+            sourceRoot.parent_path() /
+            L".meetingai-cache" /
+            meetingai::util::utf8ToW(cacheName.str());
+        std::error_code colocatedError;
+        fs::create_directories(colocatedCache, colocatedError);
+        if (!colocatedError) {
+            cacheRoot = colocatedCache;
+        }
+    }
+
+    std::error_code cacheError;
+    fs::create_directories(cacheRoot, cacheError);
+    if (cacheError) {
+        throw std::runtime_error(
+            "Unable to create embedding model cache: " +
+            cacheError.message());
+    }
 
     for (const auto& entry : fs::directory_iterator(sourceRoot)) {
         if (!entry.is_regular_file() ||
@@ -242,13 +275,34 @@ fs::path PrepareTextEmbeddingPipelineModel(
         const fs::path destination =
             cacheRoot / entry.path().filename();
         std::error_code equivalentError;
-        if (fs::exists(destination) &&
-            fs::equivalent(
-                entry.path(),
-                destination,
-                equivalentError) &&
-            !equivalentError) {
-            continue;
+        if (fs::exists(destination)) {
+            if (fs::equivalent(
+                    entry.path(),
+                    destination,
+                    equivalentError) &&
+                !equivalentError) {
+                continue;
+            }
+
+            std::error_code sourceMetadataError;
+            std::error_code destinationMetadataError;
+            const auto sourceSize =
+                fs::file_size(entry.path(), sourceMetadataError);
+            const auto destinationSize =
+                fs::file_size(destination, destinationMetadataError);
+            if (!sourceMetadataError && !destinationMetadataError &&
+                sourceSize == destinationSize) {
+                std::error_code sourceTimeError;
+                std::error_code destinationTimeError;
+                const auto sourceTime =
+                    fs::last_write_time(entry.path(), sourceTimeError);
+                const auto destinationTime =
+                    fs::last_write_time(destination, destinationTimeError);
+                if (!sourceTimeError && !destinationTimeError &&
+                    sourceTime == destinationTime) {
+                    continue;
+                }
+            }
         }
 
         std::error_code operationError;
@@ -262,16 +316,11 @@ fs::path PrepareTextEmbeddingPipelineModel(
             continue;
         }
 
-        // JSON and tokenizer metadata are small enough to copy when hard
-        // links are unavailable. Never silently duplicate the large weights.
-        const auto fileSize = entry.file_size();
-        if (fileSize > 64ULL * 1024ULL * 1024ULL) {
-            throw std::runtime_error(
-                "Unable to create a hard link for " +
-                entry.path().filename().string() +
-                "; place the model and MeetingAI data directory "
-                "on the same drive");
-        }
+        std::cerr
+            << "[Embedding GenAI] Hard link unavailable for "
+            << entry.path().filename().string()
+            << "; copying into the model cache instead."
+            << std::endl;
         operationError.clear();
         fs::copy_file(
             entry.path(),
@@ -282,6 +331,15 @@ fs::path PrepareTextEmbeddingPipelineModel(
             throw std::runtime_error(
                 "Unable to prepare TextEmbeddingPipeline files: " +
                 operationError.message());
+        }
+
+        std::error_code sourceTimeError;
+        const auto sourceTime =
+            fs::last_write_time(entry.path(), sourceTimeError);
+        if (!sourceTimeError) {
+            std::error_code destinationTimeError;
+            fs::last_write_time(
+                destination, sourceTime, destinationTimeError);
         }
     }
 

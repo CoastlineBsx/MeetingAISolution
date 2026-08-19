@@ -89,7 +89,7 @@ $env:MEETINGAI_MODEL_STREAMING_SHA256 = '<sha256>'
 .\scripts\package.ps1 -Configuration Release
 ```
 
-输出为 `artifacts/publish/MeetingAI-Release-win-x64.zip`。用户包自带 .NET 运行时和 Windows App SDK，不要求目标电脑安装 Visual Studio 或 .NET SDK；默认不包含大模型。
+输出为 `artifacts/publish/MeetingAI-Release-win-x64.zip`。用户包自带 .NET 运行时和 Windows App SDK，不要求目标电脑安装 Visual Studio 或 .NET SDK；默认不包含大模型。便携包自动包含 `portable.flag`，因此放在 C、D、E 等可写磁盘时，数据和模型适配缓存都会保存在程序目录下的 `data` 文件夹中。
 
 ## CI 配置
 
